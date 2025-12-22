@@ -1131,11 +1131,7 @@ Comprehensive video series covering:
 - Advanced features and techniques
 
 ### 📚 **Documentation**
-- [Full API Reference](http://apexifyjs.jedi-studio.com)
-- [Examples Gallery](#examples)
-- [TypeScript Types](#typescript-support)
-- [Performance Guide](#performance)
-
+- [Full API Reference](https://apexifyjs.vercel.app)
 ---
 
 ## 🤝 Contributing
@@ -1151,7 +1147,7 @@ We welcome contributions! Here's how you can help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/apexify.git
+git clone https://github.com/EIAS79/Apexify.js.git
 
 # Install dependencies
 npm install
@@ -1172,12 +1168,12 @@ npm run build
 ### Join Our Discord Community
 
 [![Jedi Studio](https://img.shields.io/badge/Discord-Jedi%20Studio-7289DA?style=for-the-badge&logo=discord)](https://discord.gg/CS2NRSPyze)
-[![FresedGPT](https://img.shields.io/badge/Discord-FresedGPT-7289DA?style=for-the-badge&logo=discord)](https://discord.gg/94qUZWhwFE)
-[![ElectronHub](https://img.shields.io/badge/Discord-ElectronHub-7289DA?style=for-the-badge&logo=discord)](https://discord.gg/83XcjD8vgW)
+[![Ethical Programming](https://img.shields.io/badge/Discord-FresedGPT-7289DA?style=for-the-badge&logo=discord)](https://discord.gg/94qUZWhwFE)
+
 
 ### Documentation & Resources
 
-[![Documentation](https://img.shields.io/badge/Docs-Apexify.js-blue?style=for-the-badge)](http://apexifyjs.jedi-studio.com)
+[![Documentation](https://img.shields.io/badge/Docs-Apexify.js-blue?style=for-the-badge)](https://apexifyjs.vercel.app)
 [![Support Server](https://img.shields.io/badge/Support-Discord-7289DA?style=for-the-badge&logo=discord)](https://discord.gg/mDyXV9hzXw)
 
 </div>

@@ -1,16 +1,16 @@
 {
   "name": "apexify.js",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "🎨 Advanced Canvas Rendering Library - Professional image processing, shape drawing, text effects, patterns, filters, and charts. Built with TypeScript & Rust for high performance.",
   "author": "zenith-79",
   "license": "MIT",
-  "homepage": "https://github.com/zenith-79/apexify.js#readme",
+  "homepage": "https://apexifyjs.vercel.app",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zenith-79/apexify.js.git"
+    "url": "https://github.com/EIAS79/Apexify.js"
   },
   "bugs": {
-    "url": "https://github.com/zenith-79/apexify.js/issues"
+    "url": "https://github.com/EIAS79/Apexify.js/issues"
   },
   "engines": {
     "node": ">=16.0.0"
