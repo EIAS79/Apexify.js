@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "module": "NodeNext",
+        "target": "ES2022",
+        "moduleResolution": "nodenext",
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "typeRoots": ["./node_modules/@types", "./types"],
+        "types": []
+    },
+    "ts-node": {
+        "files": true,
+        "compilerOptions": {
+            "module": "CommonJS",
+            "moduleResolution": "node"
+        }
+    },
+    "include": ["./lib/**/*", "./types/**/*", "./test-collage.ts"],
+    "exclude": ["node_modules"]
+}
