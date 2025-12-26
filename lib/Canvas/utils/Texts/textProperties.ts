@@ -202,14 +202,27 @@ export function createGradient(
   startY: number,
   endX: number,
   endY: number
-) {
+): CanvasGradient | CanvasPattern {
   if (!gradientOptions || !gradientOptions.type || !gradientOptions.colors) {
     throw new Error("Invalid gradient options. Provide a valid object with type and colors properties.");
   }
 
   let gradient: CanvasGradient;
+  const width = Math.abs(endX - startX) || 100;
+  const height = Math.abs(endY - startY) || 100;
+  
   if (gradientOptions.type === "linear") {
     gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+    for (const colorStop of gradientOptions.colors) {
+      gradient.addColorStop(colorStop.stop, colorStop.color);
+    }
+    
+    // Handle repeat mode for linear gradients
+    if (gradientOptions.repeat && gradientOptions.repeat !== 'no-repeat') {
+      return createRepeatingGradientPattern(ctx, gradient, gradientOptions.repeat, width, height);
+    }
+    
+    return gradient;
   } else if (gradientOptions.type === "radial") {
     gradient = ctx.createRadialGradient(
       gradientOptions.startX || startX,
@@ -219,13 +232,57 @@ export function createGradient(
       gradientOptions.endY || endY,
       gradientOptions.endRadius || 0
     );
+    for (const colorStop of gradientOptions.colors) {
+      gradient.addColorStop(colorStop.stop, colorStop.color);
+    }
+    
+    // Handle repeat mode for radial gradients
+    if (gradientOptions.repeat && gradientOptions.repeat !== 'no-repeat') {
+      return createRepeatingGradientPattern(ctx, gradient, gradientOptions.repeat, width, height);
+    }
+    
+    return gradient;
+  } else if (gradientOptions.type === "conic") {
+    const centerX = gradientOptions.centerX ?? (startX + endX) / 2;
+    const centerY = gradientOptions.centerY ?? (startY + endY) / 2;
+    const startAngle = gradientOptions.startAngle ?? 0;
+    const angleRad = (startAngle * Math.PI) / 180;
+    
+    gradient = ctx.createConicGradient(angleRad, centerX, centerY);
+    for (const colorStop of gradientOptions.colors) {
+      gradient.addColorStop(colorStop.stop, colorStop.color);
+    }
+    
+    return gradient;
   } else {
-    throw new Error('Unsupported gradient type. Use "linear" or "radial".');
+    throw new Error('Unsupported gradient type. Use "linear", "radial", or "conic".');
   }
+}
 
-  for (const colorStop of gradientOptions.colors) {
-    gradient.addColorStop(colorStop.stop, colorStop.color);
+/**
+ * Creates a repeating gradient pattern for linear and radial gradients
+ * @private
+ */
+function createRepeatingGradientPattern(
+  ctx: SKRSContext2D,
+  gradient: CanvasGradient,
+  repeat: 'repeat' | 'reflect',
+  width: number,
+  height: number
+): CanvasPattern {
+  const { createCanvas } = require('@napi-rs/canvas');
+  const patternCanvas = createCanvas(width, height);
+  const patternCtx = patternCanvas.getContext('2d') as SKRSContext2D;
+  
+  // Draw the gradient on the pattern canvas
+  patternCtx.fillStyle = gradient;
+  patternCtx.fillRect(0, 0, width, height);
+  
+  // Create pattern from the canvas
+  const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
+  if (!pattern) {
+    throw new Error('Failed to create repeating gradient pattern');
   }
-
-  return gradient;
+  
+  return pattern;
 }

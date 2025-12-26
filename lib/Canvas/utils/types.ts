@@ -52,6 +52,7 @@ export type gradient =
       endX?: number;   endY?: number;
       rotate?: number;           // degrees, rotation around pivot (default: canvas center)
       pivotX?: number; pivotY?: number; // optional pivot for rotation
+      repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for gradient (default: 'no-repeat')
       colors: GradientStop[];
     }
   | {
@@ -61,6 +62,16 @@ export type gradient =
       endX?: number;   endY?: number;   endRadius?: number;   // outer circle
       // rotation is NOP for perfectly concentric radial, but supported if centers aren't equal
       rotate?: number; pivotX?: number; pivotY?: number;
+      repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for gradient (default: 'no-repeat')
+      colors: GradientStop[];
+    }
+  | {
+      type: 'conic';
+      // Conic gradient (sweeps around a point)
+      centerX?: number; centerY?: number; // Center point (default: canvas center)
+      startAngle?: number; // Starting angle in degrees (default: 0)
+      rotate?: number; // Rotation around center in degrees (default: 0)
+      pivotX?: number; pivotY?: number; // Optional pivot for rotation
       colors: GradientStop[];
     };
 
@@ -556,192 +567,6 @@ export interface CustomOptions {
     };
 }
 
-export interface ChartData {
-    height?: number;
-    width?: number;
-    widthPerc?: number;
-    heightPerc?: number;
-    title?: {
-        title?: string;
-        color?: string;
-        size?: number;
-    };
-    bg?: {
-        image?: string;
-        bgColor?: string;
-    };
-    grid?: {
-        enable: boolean;
-        color?: string;
-        width?: number;
-    };
-    axis?: {
-        color?: string;
-        size?: number;
-    };
-    labels?: {
-        color?: string;
-        fontSize?: number;
-    };
-}
-
-export interface DataPoint {
-    label: string;
-    barColor?: string;
-    stroke?: { 
-        color?: string;
-        width?: number;
-    }
-    value: number;
-    position: {
-        startsXLabel: number;
-        endsXLabel: number;
-    };
-}
-
-export interface barChart_1 {
-    chartData?: ChartData;
-    xLabels: number[];
-    yLabels: number[];
-    data: {
-        xAxis: DataPoint[];
-        yAxis: number[];
-        keys?: { [color: string]: string };
-        keyColor?: string;
-        xTitle?: string;
-        yTitle?: string;
-        labelStyle?: {
-            color?: string;
-            size?: number;
-        };
-    };
-}
-
-
-export interface bgConfig {
-    width?: number;
-    height?: number;
-    bgcolor?: string;
-  }
-  
-export interface KeyBoxConfig {
-    width?: number;
-    height?: number;
-    radius?: number;
-    bgcolor?: string;
-    x?: number;
-    y?: number;
-    content?: KeyBoxContent;
-  }
-  
-  export interface KeyBoxContent {
-    keyTitle?: {
-      text?: string;
-      fontSize?: number;
-      x?: number;
-      y?: number;
-    };
-    keys?: {
-      x?: number;
-      y?: number;
-      fontSize?: number;
-    };
-  }
-  
-export interface StrokeConfig {
-    color?: string;
-    size?: number;
-  }
-  
-export interface TitleConfig {
-    text?: string;
-    color?: string;
-    fontSize?: number;
-    x?: number;
-    y?: number;
-  }
-  
-export interface PieDataConfig {
-    x?: number;
-    y?: number;
-    stroke?: StrokeConfig;
-    title?: TitleConfig;
-    boxes?: {
-      labelDistance?: number;
-      width?: number;
-      height?: number;
-      fontSize?: number;
-      labelColor?: string;
-      boxColor?: string;
-      strokeColor?: string;
-
-    };
-    radius?: number;
-  }
-  
-export interface PieConfig {
-    canvas?: bgConfig;
-    keyBox?: KeyBoxConfig;
-    pieData?: PieDataConfig;
-  }
-  
-export  interface DataItem {
-    label: string;
-    color: string;
-    value: number;
-    key: string;
-  }
-  
-export  interface PieChartData {
-    data?: DataItem[];
-    pieConfig?: PieConfig;
-  }
-
-  
-export interface DataPoint {
-    label: string;
-    y: number;
-}
-
-export interface LineChartConfig {
-    yLabels: string[];
-    fillArea: { color: string }[];
-    lineColor: string[];
-    plot?: {
-        enable: boolean;
-        color: string[];
-        size: number;
-    };
-    yaxisLabel?: {
-        label?: string;
-        x?: number;
-        y?: number; 
-        color?: string;
-        fontSize?: string;
-    };
-    lineTension?: number[];
-    grid?: {
-        type: 'vertical' | 'horizontal' | 'both';
-        color: string;
-        width: number;
-    };
-    keys?: { [color: string]: string };
-    keysConfig?: {
-        radius?: number;
-        keyPadding?: number;
-        textPadding?: number;
-        lineWidth?: number;
-        fontColor?: string;
-    }
-    canvas?: {
-        bgColor?: string;
-        fontColor?: string;
-        fontSize?: number;
-        width?: number;
-        height?: number;
-        image?: string;
-    };
-}
 
 
 
@@ -760,7 +585,7 @@ export interface cropOptions {
 
 
 export interface GradientConfig{
-    type: 'linear' | 'radial';
+    type: 'linear' | 'radial' | 'conic';
     startX?: number;
     startY?: number;
     endX?: number;
@@ -768,6 +593,10 @@ export interface GradientConfig{
     startRadius?: number;
     endRadius?: number;
     angle?: number;
+    centerX?: number; // For conic gradients
+    centerY?: number; // For conic gradients
+    startAngle?: number; // For conic gradients (in degrees)
+    repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for linear and radial gradients
     colors: {
       stop: number;
       color: string;
@@ -846,7 +675,7 @@ export interface GradientConfig{
     
 // Batch operation types
 export interface BatchOperation {
-  type: 'canvas' | 'image' | 'text' | 'chart';
+  type: 'canvas' | 'image' | 'text';
   config: any;
 }
 

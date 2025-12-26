@@ -5,6 +5,246 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2024-12-20
+
+### ✨ Added
+
+##### Chart System Enhancements (Complete Rewrite & Major Upgrades!)
+
+- **Gradient Support for All Charts**: Professional gradient fills throughout
+  - **Background Gradients**: Apply linear, radial, or conic gradients to chart backgrounds
+  - **Bar/Line Gradients**: Individual bars and lines can use gradient fills
+  - **Title Gradients**: Chart titles support gradient text colors
+  - **Label Gradients**: Bar labels, value labels, and point labels support gradients
+  - **Legend Gradients**: Legend boxes and legend text support gradient fills
+  - Full gradient control with custom color stops and positioning
+
+- **Enhanced Text Styling for All Charts**: Professional typography
+  - **Custom Fonts**: Support for custom font files (`.ttf`, `.otf`, `.woff`)
+  - **Text Effects**: Shadows, strokes, glows for all text elements
+  - **Text Decorations**: Bold, italic, underline, strikethrough support
+  - **Advanced Styling**: Custom font families, sizes, and spacing
+  - Applied to titles, labels, legends, and all chart text elements
+
+- **Enhanced Pie Charts**:
+  - Gradient slice fills
+  - Enhanced title and label styling
+  - Gradient legend backgrounds and text
+  - Connected legend with gradient support
+  - Small slice label positioning improvements
+
+- **Enhanced Bar Charts**:
+  - Gradient bar fills (standard, grouped, stacked charts)
+  - Enhanced title, bar label, and value label styling
+  - Gradient legend backgrounds and text
+  - Support for gradient bars in all chart types (standard, grouped, stacked, waterfall, lollipop)
+
+- **Enhanced Horizontal Bar Charts**:
+  - Gradient bar fills (standard, grouped, stacked charts)
+  - Enhanced title, bar label, and value label styling
+  - Gradient legend backgrounds and text
+  - Support for gradient bars in all chart types
+
+- **Enhanced Line Charts**:
+  - Gradient line fills
+  - Enhanced title and point label styling
+  - Gradient legend backgrounds and text
+  - Support for gradient lines in all series
+
+- **Comparison Charts** (`createComparisonChart`): Compare any two chart types side by side
+  - Compare any combination: pie/bar, line/bar, pie/line, line/line, bar/bar, pie/pie, pie/donut, horizontal/bar, horizontal/horizontal, horizontal/line, horizontal/pie
+  - Side-by-side or top-bottom layouts
+  - Shared background with gradient/image support
+  - General top title with gradient and enhanced text styling
+  - Individual chart titles, data, configs, and legends
+  - Full feature support: gradients for all elements, custom fonts, enhanced text styling
+  - Each chart maintains its own legend with full customization
+  - Configurable spacing between charts
+
+- **Comprehensive Test Suite**:
+  - Enhanced test files for all chart types
+  - Tests for gradients, custom fonts, and advanced styling
+  - 11+ tests per chart type covering all new features
+  - Comparison chart tests with full feature demonstrations
+  - Organized test structure with dedicated output folders
+
+### 🔧 Improved
+
+##### Major Architectural Restructuring (Complete Refactor!)
+- **Modular Architecture Implementation**: Complete restructure of `ApexPainter` into specialized Creator classes
+  - Created `extended/` folder with dedicated Creator classes:
+    - `CanvasCreator.ts` - Handles all canvas creation logic
+    - `ImageCreator.ts` - Handles all image and shape drawing logic
+    - `TextCreator.ts` - Handles all text rendering logic
+    - `GIFCreator.ts` - Handles all GIF creation logic
+    - `ChartCreator.ts` - Handles all chart generation logic
+    - `VideoCreator.ts` - Handles all video processing operations
+  - **ApexPainter as Facade Pattern**: Refactored `ApexPainter` to act as a facade/delegator
+    - All `create*` methods now delegate to corresponding Creator classes
+    - Clean separation of concerns between orchestration and implementation
+    - Better maintainability and testability
+    - Reduced `ApexPainter.ts` from monolithic to clean orchestrator
+
+- **Video Helpers Modularization**: Moved all video processing helper methods to dedicated `VideoHelpers` class
+  - Extracted 33+ video helper methods from `ApexPainter.ts` to `utils/Video/videoHelpers.ts`
+  - Moved `executeFFmpegWithProgress` method to `VideoHelpers` where it belongs
+  - Improved code organization and maintainability
+  - Reduced `ApexPainter.ts` size by ~2300+ lines
+
+- **Error Handling Standardization**: Created centralized error utility functions
+  - Added `getErrorMessage()` utility function to standardize error message extraction
+  - Added `getCanvasContext()` utility function for consistent canvas context handling
+  - Replaced 36+ duplicate error handling patterns across all files
+  - Replaced 23+ duplicate context error patterns
+  - Consistent error handling throughout the codebase
+
+- **Code Duplication Removal**: Removed redundant code and methods
+  - Removed duplicate `CanvasResults` interface (now imported from `CanvasCreator`)
+  - Removed redundant validation methods from `ApexPainter.ts`:
+    - `#validateImageProperties`, `#validateTextProperties`, `#validateCanvasConfig`, `#validateGIFOptions`
+    - `#validateImageArray`, `#validateTextArray`, `#renderEnhancedText`
+  - Removed redundant shape drawing methods (~500+ lines):
+    - `#drawImageBitmap`, `#drawShape`, `#isComplexShape`
+    - `#applyShapeShadow`, `#applyShapeStroke`, `#applyShapeStrokeStyle`
+    - `#applyComplexShapeStroke`, `#darkenColor`, `#lightenColor`
+  - All functionality properly delegated to Creator classes
+
+- **Improved Code Organization**:
+  - **Modular File Structure**: Organized code into logical modules:
+    - `extended/` - Specialized Creator classes for each feature type
+    - `utils/` - Shared utilities organized by category (Video, Image, Text, Charts, etc.)
+    - Clear separation between core functionality and utilities
+  - Better separation of concerns between `ApexPainter` and specialized Creator classes
+  - Cleaner `ApexPainter.ts` acting as a facade/delegator (reduced from ~6000+ lines to ~4300 lines)
+  - Video-specific functionality properly isolated in `VideoHelpers`
+  - Consistent import patterns and type definitions
+  - **Dependency Injection**: Creator classes use dependency injection for shared functionality
+  - **Type Safety**: Improved TypeScript types with proper interface exports from Creator classes
+
+##### Chart Architecture
+- **Code Organization**: Charts moved to dedicated `lib/Canvas/utils/Charts/` directory
+- **Unified API**: All charts accessible through single `ApexPainter.createChart()` method
+- **Type Safety**: Enhanced TypeScript types for all chart options
+- **Modularity**: Better code organization with shared utilities
+
+##### Chart Rendering
+- **Gradient Integration**: Full integration of ApexPainter's gradient system into all charts
+- **Text Rendering**: Enhanced text renderer used throughout all chart types
+- **Legend Styling**: Consistent legend styling across all chart types
+- **Background Support**: Unified background gradient/image/color support
+
+##### Chart Features
+- **Flexible Legend Positioning**: All charts support top, bottom, left, right legend positions
+- **Enhanced Label Styling**: All labels (titles, bar labels, value labels, point labels) support gradients and enhanced styling
+- **Consistent API**: Same styling options available across all chart types
+
+### 🐛 Fixed
+
+##### Chart Fixes
+- Fixed legend positioning issues when legend is at top with title
+- Fixed Y-axis label overlap with left-positioned legends in bar and horizontal bar charts
+- Fixed horizontal bar chart bars not showing when legend is at top
+- Improved legend spacing calculations to account for axis labels
+- Fixed async/await handling in legend rendering functions
+
+##### Code Quality Fixes
+- Fixed TypeScript compilation errors from duplicate interfaces
+- Resolved import path issues for `CanvasResults` interface
+- Fixed error handling inconsistencies across Creator classes
+- Improved type safety by removing redundant type definitions
+
+##### Professional Video Editing Features (10 Major Features!)
+
+- **Freeze Frame** (`freezeFrame`): Hold a frame for dramatic effect
+  - Freeze video at any specific time
+  - Configurable freeze duration
+  - Perfect for highlighting moments or creating photo-like effects
+  - Seamlessly merges with video before and after
+
+- **Export Presets** (`exportPreset`): Quick export with platform-optimized settings
+  - 10 pre-configured presets: YouTube, Instagram, TikTok, Twitter, Facebook, 4K, 1080p, 720p, Mobile, Web
+  - Automatic resolution, FPS, and bitrate optimization per platform
+  - One-command export for social media platforms
+  - Web-optimized formats (WebM for web preset)
+
+- **Progress Callbacks** (`onProgress`): Real-time progress tracking
+  - Track processing progress for all video operations
+  - Provides percent complete, elapsed time, and processing speed
+  - Perfect for progress bars and user feedback
+  - Works with all video operations (compress, convert, transitions, etc.)
+
+- **Audio Normalization** (`normalizeAudio`): Professional audio leveling
+  - Three normalization methods: LUFS (broadcast standard), Peak, RMS
+  - Configurable target levels
+  - Broadcast-compliant audio (-23 LUFS default)
+  - Consistent audio levels across videos
+
+- **LUT Support** (`applyLUT`): Cinematic color grading
+  - Apply Look-Up Tables (.cube files) for professional color grades
+  - Intensity control (0-1) for subtle or full application
+  - Film emulation and cinematic looks
+  - Consistent color grading across videos
+
+- **Video Transitions** (`addTransition`): Professional transitions between videos
+  - 9 transition types: fade, wipe, slide, zoom, rotate, dissolve, blur, circle, pixelize
+  - Direction support for wipe, slide, and zoom transitions
+  - Single-video fade in/out support
+  - Configurable transition duration
+  - Automatic video resolution matching
+
+- **Animated Text** (`addAnimatedText`): Advanced text animations with custom fonts
+  - 8 animation types: fadeIn, fadeOut, slideIn, slideOut, zoom, bounce, rotate, typewriter
+  - Custom font support (reuses `createText` font system)
+  - Font file loading (`.ttf`, `.otf`, `.woff`)
+  - Font name and family support
+  - Time-based text visibility
+  - Position control (coordinates or preset positions)
+  - Background color and styling options
+
+- **Create Video from Frames** (`createFromFrames`): Compile frames into video
+  - Create videos from edited frames/images
+  - Supports Buffers and file paths
+  - Configurable FPS, format, quality, and resolution
+  - Automatic dimension detection from first frame
+  - Perfect for frame-by-frame editing workflows
+
+- **Replace Video Segments** (`replaceSegment`): Replace video segments
+  - Replace segments with video from another source
+  - Replace segments with edited frames
+  - Precise time range control
+  - Flexible replacement duration
+  - Seamless merging with original video
+
+- **Partial Audio Muting** (`mute.ranges`): Mute specific time ranges
+  - Mute audio for specific time segments (e.g., 7-13 seconds)
+  - Multiple mute ranges support
+  - Full mute still supported (backward compatible)
+  - Professional audio editing capabilities
+
+### 🔧 Improved
+
+##### Enhanced Video Processing
+- **Progress Tracking**: All video operations now support progress callbacks
+- **Better Error Messages**: More descriptive errors with context
+- **Resource Management**: Improved cleanup of temporary files
+- **Font System Integration**: Animated text uses same font system as `createText`
+- **Transition Quality**: Optimized transition rendering with proper video scaling
+
+##### Video Workflow Enhancements
+- **Frame-to-Video Pipeline**: Complete workflow from frame extraction → editing → compilation
+- **Segment Replacement**: Advanced video editing with frame or video replacement
+- **Audio Control**: Fine-grained audio control with partial muting
+- **Export Optimization**: Platform-specific optimizations for better quality and file sizes
+
+### 🐛 Fixed
+
+- Fixed type definitions for `replaceSegment` to support both video and frame replacement
+- Improved error handling in transition operations
+- Better path resolution for LUT files
+- Fixed font path handling in animated text (consistent with `createText`)
+
+---
+
 ## [5.1.0] - 2024-12-20
 
 ### ✨ Added

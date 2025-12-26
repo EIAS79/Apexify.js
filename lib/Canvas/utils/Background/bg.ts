@@ -246,7 +246,7 @@ export function applyCanvasZoom(
 export function buildCanvasGradient(
   ctx: SKRSContext2D,
   cfg: { gradient: gradient; width: number; height: number }
-): CanvasGradient {
+): CanvasGradient | CanvasPattern {
   const { gradient, width, height } = cfg;
 
   if (gradient.type === 'linear') {
@@ -255,6 +255,7 @@ export function buildCanvasGradient(
       endX   = width, endY   = 0,
       rotate = 0,
       pivotX = width/2, pivotY = height/2,
+      repeat = 'no-repeat',
       colors
     } = gradient;
 
@@ -263,23 +264,84 @@ export function buildCanvasGradient(
 
     const g = ctx.createLinearGradient(sx, sy, ex, ey);
     for (const { stop, color } of colors) g.addColorStop(stop, color);
+    
+    // Handle repeat mode for linear gradients
+    if (repeat !== 'no-repeat') {
+      return createRepeatingGradientPattern(ctx, g, repeat, width, height);
+    }
+    
     return g;
   }
 
-  // radial
+  if (gradient.type === 'radial') {
+    const {
+      startX = width/2,  startY = height/2,  startRadius = 0,
+      endX   = width/2,  endY   = height/2,  endRadius   = Math.max(width, height)/2,
+      rotate = 0,
+      pivotX = width/2,  pivotY = height/2,
+      repeat = 'no-repeat',
+      colors
+    } = gradient;
+
+    // If centers differ, rotation will rotate both centers around pivot.
+    const [sx, sy] = rotatePoint(startX, startY, pivotX, pivotY, rotate);
+    const [ex, ey] = rotatePoint(endX,   endY,   pivotX, pivotY, rotate);
+
+    const g = ctx.createRadialGradient(sx, sy, startRadius, ex, ey, endRadius);
+    for (const { stop, color } of colors) g.addColorStop(stop, color);
+    
+    // Handle repeat mode for radial gradients
+    if (repeat !== 'no-repeat') {
+      return createRepeatingGradientPattern(ctx, g, repeat, width, height);
+    }
+    
+    return g;
+  }
+
+  // conic
   const {
-    startX = width/2,  startY = height/2,  startRadius = 0,
-    endX   = width/2,  endY   = height/2,  endRadius   = Math.max(width, height)/2,
-    rotate = 0,
-    pivotX = width/2,  pivotY = height/2,
+    centerX = width / 2,
+    centerY = height / 2,
+    startAngle = 0,
+    rotate: conicRotate = 0,
+    pivotX = width / 2,
+    pivotY = height / 2,
     colors
   } = gradient;
 
-  // If centers differ, rotation will rotate both centers around pivot.
-  const [sx, sy] = rotatePoint(startX, startY, pivotX, pivotY, rotate);
-  const [ex, ey] = rotatePoint(endX,   endY,   pivotX, pivotY, rotate);
+  const [cx, cy] = rotatePoint(centerX, centerY, pivotX, pivotY, conicRotate);
+  const angleRad = ((startAngle + conicRotate) * Math.PI) / 180;
 
-  const g = ctx.createRadialGradient(sx, sy, startRadius, ex, ey, endRadius);
+  const g = ctx.createConicGradient(angleRad, cx, cy);
   for (const { stop, color } of colors) g.addColorStop(stop, color);
   return g;
+}
+
+/**
+ * Creates a repeating gradient pattern for linear and radial gradients
+ * @private
+ */
+function createRepeatingGradientPattern(
+  ctx: SKRSContext2D,
+  gradient: CanvasGradient,
+  repeat: 'repeat' | 'reflect',
+  width: number,
+  height: number
+): CanvasPattern {
+  // Create a temporary canvas for the pattern
+  const { createCanvas } = require('@napi-rs/canvas');
+  const patternCanvas = createCanvas(width, height);
+  const patternCtx = patternCanvas.getContext('2d') as SKRSContext2D;
+  
+  // Draw the gradient on the pattern canvas
+  patternCtx.fillStyle = gradient;
+  patternCtx.fillRect(0, 0, width, height);
+  
+  // Create pattern from the canvas
+  const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
+  if (!pattern) {
+    throw new Error('Failed to create repeating gradient pattern');
+  }
+  
+  return pattern;
 }

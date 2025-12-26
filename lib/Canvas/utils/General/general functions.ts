@@ -4,6 +4,7 @@ import { cropOptions, ResizeOptions, GradientConfig, gradient, ImageFilter } fro
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from '@napi-rs/canvas';
 import fs from "fs";
 import axios from "axios";
+import { getErrorMessage, getCanvasContext } from '../errorUtils';
 
 export async function loadImages(imagePath: string) {
   try {
@@ -139,8 +140,7 @@ function createSolidColorImage(width: number | undefined, height: number | undef
     throw new Error("createSolidColorImage: width and height are required.");
   }
   const solidColorCanvas = createCanvas(width, height);
-  const ctx = solidColorCanvas.getContext('2d') as SKRSContext2D;
-  if (!ctx) throw new Error("Unable to get 2D context");
+  const ctx = getCanvasContext(solidColorCanvas);
 
   ctx.globalAlpha = opacity;
 
@@ -154,14 +154,15 @@ function createGradientImage(width: number | undefined, height: number | undefin
   if (!width || !height) {
     throw new Error("createGradientImage: width and height are required.");
   }
-  const { type, colors } = options;
+  const { type, colors, repeat = 'no-repeat' } = options;
 
   const gradientCanvas = createCanvas(width, height);
-  const ctx = gradientCanvas.getContext('2d') as SKRSContext2D;
-  if (!ctx) throw new Error("Unable to get 2D context");
+  const ctx = getCanvasContext(gradientCanvas);
+
+  let gradient: CanvasGradient | CanvasPattern;
 
   if (type === 'linear') {
-    const gradient = ctx.createLinearGradient(
+    const grad = ctx.createLinearGradient(
       options.startX || 0,
       options.startY || 0,
       options.endX || width,
@@ -169,12 +170,17 @@ function createGradientImage(width: number | undefined, height: number | undefin
     );
 
     colors.forEach(({ stop, color }: { stop: number; color: string }) => {
-      gradient.addColorStop(stop, color);
+      grad.addColorStop(stop, color);
     });
 
-    ctx.fillStyle = gradient;
+    // Handle repeat mode for linear gradients
+    if (repeat !== 'no-repeat') {
+      gradient = createRepeatingGradientPattern(ctx, grad, repeat, width, height);
+    } else {
+      gradient = grad;
+    }
   } else if (type === 'radial') {
-    const gradient = ctx.createRadialGradient(
+    const grad = ctx.createRadialGradient(
       options.startX || width / 2,
       options.startY || height / 2,
       options.startRadius || 0,
@@ -184,17 +190,63 @@ function createGradientImage(width: number | undefined, height: number | undefin
     );
 
     colors.forEach(({ stop, color }: { stop: number; color: string }) => {
-      gradient.addColorStop(stop, color);
+      grad.addColorStop(stop, color);
     });
 
-    ctx.fillStyle = gradient;
+    // Handle repeat mode for radial gradients
+    if (repeat !== 'no-repeat') {
+      gradient = createRepeatingGradientPattern(ctx, grad, repeat, width, height);
+    } else {
+      gradient = grad;
+    }
+  } else if (type === 'conic') {
+    const centerX = options.centerX ?? width / 2;
+    const centerY = options.centerY ?? height / 2;
+    const startAngle = options.startAngle ?? 0;
+    const angleRad = (startAngle * Math.PI) / 180;
+    
+    const grad = ctx.createConicGradient(angleRad, centerX, centerY);
+    colors.forEach(({ stop, color }: { stop: number; color: string }) => {
+      grad.addColorStop(stop, color);
+    });
+    
+    gradient = grad;
+  } else {
+    throw new Error(`Unsupported gradient type: ${type}`);
   }
 
   ctx.globalAlpha = opacity;
-
+  ctx.fillStyle = gradient as any;
   ctx.fillRect(0, 0, width, height);
 
   return gradientCanvas.toBuffer('image/png');
+}
+
+/**
+ * Creates a repeating gradient pattern for linear and radial gradients
+ * @private
+ */
+function createRepeatingGradientPattern(
+  ctx: SKRSContext2D,
+  gradient: CanvasGradient,
+  repeat: 'repeat' | 'reflect',
+  width: number,
+  height: number
+): CanvasPattern {
+  const patternCanvas = createCanvas(width, height);
+  const patternCtx = getCanvasContext(patternCanvas);
+  
+  // Draw the gradient on the pattern canvas
+  patternCtx.fillStyle = gradient;
+  patternCtx.fillRect(0, 0, width, height);
+  
+  // Create pattern from the canvas
+  const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
+  if (!pattern) {
+    throw new Error('Failed to create repeating gradient pattern');
+  }
+  
+  return pattern;
 }
 
 
@@ -236,8 +288,7 @@ export async function imgEffects(imagePath: string, filters: LegacyImageFilter[]
     }
 
     const canvas = createCanvas(image.width, image.height);
-    const ctx = canvas.getContext("2d") as SKRSContext2D;
-    if (!ctx) throw new Error("Unable to get 2D context");
+    const ctx = getCanvasContext(canvas);
 
     ctx.drawImage(image, 0, 0);
 
@@ -286,8 +337,7 @@ export async function imgEffects(imagePath: string, filters: LegacyImageFilter[]
 
     return canvas.toBuffer("image/png");
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    throw new Error(`imgEffects failed: ${errorMessage}`);
+    throw new Error(`imgEffects failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -322,8 +372,7 @@ export async function cropInner(options: cropOptions): Promise<Buffer> {
 
     // Create a canvas with the crop dimensions.
     const canvas = createCanvas(cropWidth, cropHeight);
-    const ctx = canvas.getContext('2d') as SKRSContext2D;
-    if (!ctx) throw new Error("Unable to get 2D context");
+    const ctx = getCanvasContext(canvas);
 
     // Optionally, apply a clipping mask if a radius is provided.
     if (options.radius !== undefined && options.radius !== null) {
@@ -377,8 +426,7 @@ export async function cropOuter(options: cropOptions): Promise<Buffer> {
 
     // Create a canvas matching the full image dimensions.
     const canvas = createCanvas(image.width, image.height);
-    const ctx = canvas.getContext('2d') as SKRSContext2D;
-    if (!ctx) throw new Error("Unable to get 2D context");
+    const ctx = getCanvasContext(canvas);
 
     // Draw the full image.
     ctx.drawImage(image, 0, 0);
@@ -434,8 +482,7 @@ export async function detectColors(imagePath: string): Promise<{ color: string; 
       }
 
       const canvas = createCanvas(image.width, image.height);
-      const ctx = canvas.getContext('2d') as SKRSContext2D;
-      if (!ctx) throw new Error("Unable to get 2D context");
+      const ctx = getCanvasContext(canvas);
       ctx.drawImage(image, 0, 0, image.width, image.height);
 
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -483,8 +530,7 @@ export async function removeColor(inputImagePath: string, colorToRemove: { red: 
       }
 
       const canvas = createCanvas(image.width, image.height);
-      const ctx = canvas.getContext('2d') as SKRSContext2D;
-      if (!ctx) throw new Error("Unable to get 2D context");
+      const ctx = getCanvasContext(canvas);
 
       ctx.drawImage(image, 0, 0, image.width, image.height);
 
@@ -567,8 +613,7 @@ function flipCanvas(ctx: SKRSContext2D, width: number, height: number, horizonta
 function rotateCanvas(ctx: SKRSContext2D, canvas: Canvas, degrees: number): void {
   const radians = (degrees * Math.PI) / 180;
   const newCanvas = createCanvas(canvas.width, canvas.height);
-  const newCtx = newCanvas.getContext("2d") as SKRSContext2D;
-  if (!newCtx) throw new Error("Unable to get 2D context");
+  const newCtx = getCanvasContext(newCanvas);
 
   newCtx.translate(canvas.width / 2, canvas.height / 2);
   newCtx.rotate(radians);

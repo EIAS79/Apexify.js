@@ -2,6 +2,7 @@ import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
 import { StitchOptions, CollageLayout } from '../types';
+import { getCanvasContext } from '../errorUtils';
 
 /**
  * Stitches multiple images together
@@ -73,8 +74,7 @@ export async function stitchImages(
 
   // Create canvas
   const canvas = createCanvas(canvasWidth, canvasHeight);
-  const ctx = canvas.getContext('2d') as SKRSContext2D;
-  if (!ctx) throw new Error("Unable to get 2D context");
+  const ctx = getCanvasContext(canvas);
 
   // Draw images
   let currentX = 0;
@@ -200,8 +200,7 @@ export async function createCollage(
 
   // Create canvas
   const canvas = createCanvas(canvasWidth, canvasHeight);
-  const ctx = canvas.getContext('2d') as SKRSContext2D;
-  if (!ctx) throw new Error("Unable to get 2D context");
+  const ctx = getCanvasContext(canvas);
 
   // Draw background
   ctx.fillStyle = background;

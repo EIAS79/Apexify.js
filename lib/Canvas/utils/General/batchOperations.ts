@@ -1,5 +1,6 @@
 import { ApexPainter } from '../../ApexPainter';
 import { BatchOperation, ChainOperation, CanvasConfig, ImageProperties, TextProperties } from '../types';
+import { getErrorMessage } from '../errorUtils';
 
 /**
  * Processes multiple operations in parallel
@@ -32,14 +33,11 @@ export async function batchOperations(
           const textBaseCanvas = await painter.createCanvas({ width: 800, height: 600 });
           return await painter.createText(op.config as TextProperties | TextProperties[], textBaseCanvas);
           
-        case 'chart':
-          return await painter.createChart(op.config, { chartType: 'bar', chartNumber: 1 });
-          
         default:
           throw new Error(`batch: Unknown operation type: ${op.type}`);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = getErrorMessage(error);
       throw new Error(`batch: Failed to process ${op.type} operation: ${errorMessage}`);
     }
   });
@@ -89,7 +87,7 @@ export async function chainOperations(
         throw new Error(`chain: Operation "${op.method}" did not return a buffer`);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = getErrorMessage(error);
       throw new Error(`chain: Failed to execute "${op.method}": ${errorMessage}`);
     }
   }

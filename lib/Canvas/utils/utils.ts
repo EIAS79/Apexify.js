@@ -10,7 +10,7 @@
 
 
 
-import { OutputFormat, CanvasConfig, ImageProperties, TextObject, TextProperties, GIFOptions, GIFResults, CustomOptions, cropOptions, GradientConfig, Frame, PatternOptions, ExtractFramesOptions, ResizeOptions, CropOptions, MaskOptions, BlendOptions, ShapeType, ShapeProperties, ImageFilter, barChart_1, PieChartData, LineChartConfig, BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions, SaveOptions, SaveResult } from "./types";
+import { OutputFormat, CanvasConfig, ImageProperties, TextObject, TextProperties, GIFOptions, GIFResults, CustomOptions, cropOptions, GradientConfig, Frame, PatternOptions, ExtractFramesOptions, ResizeOptions, CropOptions, MaskOptions, BlendOptions, ShapeType, ShapeProperties, ImageFilter, BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions, SaveOptions, SaveResult } from "./types";
 import { drawBackgroundColor, drawBackgroundGradient, customBackground, applyCanvasZoom, drawPattern, applyNoise } from "./Background/bg";
 import { buildPath, applyRotation, createGradientFill, fitInto, loadImageCached, applyStroke, drawBoxBackground, applyShadow } from './Image/imageProperties'
 import { applyImageFilters } from './Image/imageFilters'
@@ -18,7 +18,6 @@ import { applySimpleProfessionalFilters } from './Image/simpleProfessionalFilter
 import { drawText, WrappedText } from "./Texts/textProperties";
 import { loadImages, resizingImg, converter, applyColorFilters, imgEffects, cropOuter, cropInner, detectColors, removeColor, bgRemoval } from './General/general functions';
 import { customLines } from "./Custom/customLines";
-import { verticalBarChart, pieChart, lineChart } from './Charts/charts'
 import { url, arrayBuffer, base64, dataURL, blob  } from "./General/conversion";
 import { drawShape, isShapeSource, createShapePath } from "./Shapes/shapes";
 import { applyImageMask, applyClipPath, applyPerspectiveDistortion, applyBulgeDistortion, applyMeshWarp } from "./Image/imageMasking";
@@ -28,6 +27,8 @@ import { drawArrow, drawMarker, createSmoothPath, createCatmullRomPath, applyLin
 import { batchOperations, chainOperations } from "./General/batchOperations";
 import { stitchImages, createCollage } from "./General/imageStitching";
 import { compressImage, extractPalette } from "./General/imageCompression";
+import * as Charts from "./Charts/index";
+import { getErrorMessage, getCanvasContext } from "./errorUtils";
 
 export {
     url,
@@ -55,9 +56,6 @@ export {
     converter,
     applyColorFilters,
     imgEffects,
-    verticalBarChart,
-    pieChart,
-    lineChart,
     cropInner,
     cropOuter,
     detectColors,
@@ -89,9 +87,6 @@ export {
     createShapePath,
     applyImageFilters,
     applySimpleProfessionalFilters,
-    barChart_1,
-    PieChartData,
-    LineChartConfig,
     // New image masking and distortion
     applyImageMask,
     applyClipPath,
@@ -131,5 +126,10 @@ export {
     PaletteOptions,
     // Save options
     SaveOptions,
-    SaveResult
+    SaveResult,
+    // Error utilities
+    getErrorMessage,
+    getCanvasContext,
+    // Charts
+    Charts
 };

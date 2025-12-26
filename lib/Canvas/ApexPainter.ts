@@ -7,80 +7,153 @@ import axios from 'axios';
 import fs, { PathLike } from "fs";
 import path from "path";
 
+
 const execAsync = promisify(exec);
 import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions, GIFResults, CustomOptions, cropOptions,
-    drawBackgroundGradient, drawBackgroundColor, customBackground, customLines,
-    converter, resizingImg, applyColorFilters, imgEffects,verticalBarChart, pieChart,
-    lineChart, cropInner, cropOuter, bgRemoval, detectColors, removeColor, dataURL, 
+    customLines,
+    converter, resizingImg, applyColorFilters, imgEffects, cropInner, cropOuter, bgRemoval, detectColors, removeColor, dataURL, 
     base64, arrayBuffer, blob, url, GradientConfig, Frame,
-    ExtractFramesOptions, buildPath, ResizeOptions, MaskOptions, BlendOptions,
-    applyCanvasZoom, applyNoise,
-    applyStroke, applyRotation, applyShadow, drawBoxBackground, fitInto, loadImageCached,
-    drawShape, isShapeSource, ShapeType, createShapePath, createGradientFill, applySimpleProfessionalFilters,
-    ImageFilter, barChart_1, PieChartData, LineChartConfig,
-    // New features
-    applyImageMask, applyClipPath, applyPerspectiveDistortion, applyBulgeDistortion, applyMeshWarp,
-    applyVignette, applyLensFlare, applyChromaticAberration, applyFilmGrain,
-    renderTextOnPath,
+    ExtractFramesOptions, ResizeOptions, MaskOptions, BlendOptions,
+    ImageFilter,
     batchOperations, chainOperations,
     stitchImages as stitchImagesUtil, createCollage,
     compressImage, extractPalette as extractPaletteUtil,
     BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions,
-    SaveOptions, SaveResult
+    SaveOptions, SaveResult,
+    // Error utilities
+    getErrorMessage, getCanvasContext
     } from "./utils/utils";
-import { EnhancedTextRenderer } from "./utils/Texts/enhancedTextRenderer";
-import { EnhancedPatternRenderer } from "./utils/Patterns/enhancedPatternRenderer";
-
-  interface CanvasResults {
-    buffer: Buffer;
-    canvas: CanvasConfig;
-  }
+    import { CanvasCreator, type CanvasResults } from "./extended/CanvasCreator";
+    import { ImageCreator } from "./extended/ImageCreator";
+    import { TextCreator } from "./extended/TextCreator";
+    import { GIFCreator } from "./extended/GIFCreator";
+    import { ChartCreator } from "./extended/ChartCreator";
+    import { VideoCreator, VideoCreationOptions } from "./extended/VideoCreator";
+import { VideoHelpers } from "./utils/Video/videoHelpers";
 
 
 export class ApexPainter {
   private format?: OutputFormat;
   private saveCounter: number = 1;
+  
+  // Extended handlers
+  private canvasCreator: CanvasCreator;
+  private imageCreator: ImageCreator;
+  private textCreator: TextCreator;
+  private gifCreator: GIFCreator;
+  private chartCreator: ChartCreator;
+  private videoCreator: VideoCreator;
+  private videoHelpers: VideoHelpers;
 
   constructor({ type }: OutputFormat = { type: 'buffer' }) {
     this.format = { type: type || 'buffer' };
+    
+    // Initialize extended handlers
+    this.canvasCreator = new CanvasCreator();
+    this.imageCreator = new ImageCreator();
+    this.textCreator = new TextCreator();
+    this.gifCreator = new GIFCreator();
+    this.chartCreator = new ChartCreator();
+    this.videoCreator = new VideoCreator();
+    
+    // Set up dependencies for CanvasCreator
+    this.canvasCreator.setExtractVideoFrame(
+      (videoSource, frameNumber, timeSeconds, outputFormat, quality) =>
+        this.#extractVideoFrame(videoSource, frameNumber ?? 0, timeSeconds, outputFormat ?? 'jpg', quality ?? 2)
+    );
+    
+    // Set up dependencies for VideoCreator
+    this.videoCreator.setDependencies({
+      checkFFmpegAvailable: () => this.#checkFFmpegAvailable(),
+      getFFmpegInstallInstructions: () => this.#getFFmpegInstallInstructions(),
+      getVideoInfo: (videoSource, skipFFmpegCheck) => this.getVideoInfo(videoSource, skipFFmpegCheck),
+      extractVideoFrame: (videoSource, frameNumber, timeSeconds, outputFormat, quality) =>
+        this.#extractVideoFrame(videoSource, frameNumber ?? 0, timeSeconds, outputFormat ?? 'jpg', quality ?? 2),
+      extractFrames: (videoSource, options) => this.extractFrames(videoSource, options),
+      extractAllFrames: (videoSource, options) => this.extractAllFrames(videoSource, options)
+    });
+    
+    // Initialize VideoHelpers
+    this.videoHelpers = new VideoHelpers({
+      checkFFmpegAvailable: () => this.#checkFFmpegAvailable(),
+      getFFmpegInstallInstructions: () => this.#getFFmpegInstallInstructions(),
+      getVideoInfo: (videoSource, skipFFmpegCheck) => this.getVideoInfo(videoSource, skipFFmpegCheck),
+      extractVideoFrame: (videoSource, frameNumber, timeSeconds, outputFormat, quality) =>
+        this.#extractVideoFrame(videoSource, frameNumber ?? 0, timeSeconds, outputFormat ?? 'jpg', quality ?? 2),
+      createVideo: (options) => this.createVideo(options)
+    });
+    
+    // Set up helper methods for VideoCreator - use VideoHelpers for last 6 methods
+    this.videoCreator.setHelperMethods({
+      generateVideoThumbnail: (videoSource, options, videoInfo) =>
+        this.#generateVideoThumbnail(videoSource, options, videoInfo),
+      convertVideo: (videoSource, options) =>
+        this.#convertVideo(videoSource, options),
+      trimVideo: (videoSource, options) =>
+        this.#trimVideo(videoSource, options),
+      extractAudio: (videoSource, options) =>
+        this.#extractAudio(videoSource, options),
+      addWatermarkToVideo: (videoSource, options) =>
+        this.#addWatermarkToVideo(videoSource, options),
+      changeVideoSpeed: (videoSource, options) =>
+        this.#changeVideoSpeed(videoSource, options),
+      generateVideoPreview: (videoSource, options, videoInfo) =>
+        this.#generateVideoPreview(videoSource, options, videoInfo),
+      applyVideoEffects: (videoSource, options) =>
+        this.#applyVideoEffects(videoSource, options),
+      mergeVideos: (options) =>
+        this.#mergeVideos(options),
+      replaceVideoSegment: (videoSource, options) =>
+        this.#replaceVideoSegment(videoSource, options),
+      rotateVideo: (videoSource, options) =>
+        this.#rotateVideo(videoSource, options),
+      cropVideo: (videoSource, options) =>
+        this.#cropVideo(videoSource, options),
+      compressVideo: (videoSource, options) =>
+        this.#compressVideo(videoSource, options),
+      addTextToVideo: (videoSource, options) =>
+        this.#addTextToVideo(videoSource, options),
+      addFadeToVideo: (videoSource, options) =>
+        this.#addFadeToVideo(videoSource, options),
+      reverseVideo: (videoSource, options) =>
+        this.#reverseVideo(videoSource, options),
+      createVideoLoop: (videoSource, options) =>
+        this.#createVideoLoop(videoSource, options),
+      batchProcessVideos: (options) =>
+        this.#batchProcessVideos(options),
+      detectVideoScenes: (videoSource, options) =>
+        this.#detectVideoScenes(videoSource, options),
+      stabilizeVideo: (videoSource, options) =>
+        this.#stabilizeVideo(videoSource, options),
+      colorCorrectVideo: (videoSource, options) =>
+        this.#colorCorrectVideo(videoSource, options),
+      addPictureInPicture: (videoSource, options) =>
+        this.#addPictureInPicture(videoSource, options),
+      createSplitScreen: (options) =>
+        this.#createSplitScreen(options),
+      createTimeLapseVideo: (videoSource, options) =>
+        this.#createTimeLapseVideo(videoSource, options),
+      muteVideo: (videoSource, options) =>
+        this.#muteVideo(videoSource, options),
+      adjustVideoVolume: (videoSource, options) =>
+        this.#adjustVideoVolume(videoSource, options),
+      createVideoFromFrames: (options) =>
+        this.#createVideoFromFrames(options),
+      freezeVideoFrame: (videoSource, options, onProgress) =>
+        this.videoHelpers.freezeVideoFrame(videoSource, options, onProgress),
+      exportVideoPreset: (videoSource, options, onProgress) =>
+        this.videoHelpers.exportVideoPreset(videoSource, options, onProgress),
+      normalizeVideoAudio: (videoSource, options, onProgress) =>
+        this.videoHelpers.normalizeVideoAudio(videoSource, options, onProgress),
+      applyLUTToVideo: (videoSource, options, onProgress) =>
+        this.videoHelpers.applyLUTToVideo(videoSource, options, onProgress),
+      addVideoTransition: (videoSource, options, onProgress) =>
+        this.videoHelpers.addVideoTransition(videoSource, options, onProgress),
+      addAnimatedTextToVideo: (videoSource, options, onProgress) =>
+        this.videoHelpers.addAnimatedTextToVideo(videoSource, options, onProgress)
+    });
   }
 
-  /**
-   * Validates image properties for required fields.
-   * @private
-   * @param ip - Image properties to validate
-   */
-  #validateImageProperties(ip: ImageProperties): void {
-    if (!ip.source || ip.x == null || ip.y == null) {
-      throw new Error("createImage: source, x, and y are required.");
-    }
-  }
-
-  /**
-   * Validates text properties for required fields.
-   * @private
-   * @param textProps - Text properties to validate
-   */
-  #validateTextProperties(textProps: TextProperties): void {
-    if (!textProps.text || textProps.x == null || textProps.y == null) {
-      throw new Error("createText: text, x, and y are required.");
-    }
-  }
-
-  /**
-   * Renders enhanced text using the new text renderer.
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param textProps - Text properties
-   */
-  async #renderEnhancedText(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
-    // Check if text should be rendered on a path
-    if (textProps.path && textProps.textOnPath) {
-      renderTextOnPath(ctx, textProps.text, textProps.path, textProps.path.offset ?? 0);
-    } else {
-      await EnhancedTextRenderer.renderText(ctx, textProps);
-    }
-  }
 
   /**
    * Creates a canvas with the given configuration.
@@ -113,228 +186,9 @@ export class ApexPainter {
    * const buffer = result.buffer;
    * ```
    */
-  /**
-   * Validates canvas configuration.
-   * @private
-   * @param canvas - Canvas configuration to validate
-   */
-  #validateCanvasConfig(canvas: CanvasConfig): void {
-    if (!canvas) {
-      throw new Error("createCanvas: canvas configuration is required.");
-    }
-    
-    if (canvas.width !== undefined && (typeof canvas.width !== 'number' || canvas.width <= 0)) {
-      throw new Error("createCanvas: width must be a positive number.");
-    }
-    
-    if (canvas.height !== undefined && (typeof canvas.height !== 'number' || canvas.height <= 0)) {
-      throw new Error("createCanvas: height must be a positive number.");
-    }
-    
-    if (canvas.opacity !== undefined && (typeof canvas.opacity !== 'number' || canvas.opacity < 0 || canvas.opacity > 1)) {
-      throw new Error("createCanvas: opacity must be a number between 0 and 1.");
-    }
-    
-    if (canvas.zoom?.scale !== undefined && (typeof canvas.zoom.scale !== 'number' || canvas.zoom.scale <= 0)) {
-      throw new Error("createCanvas: zoom.scale must be a positive number.");
-    }
-  }
 
   async createCanvas(canvas: CanvasConfig): Promise<CanvasResults> {
-    try {
-      // Validate canvas configuration
-      this.#validateCanvasConfig(canvas);
-      
-      // Handle inherit sizing
-      if (canvas.customBg?.inherit) {
-        let p = canvas.customBg.source;
-        if (!/^https?:\/\//i.test(p)) p = path.join(process.cwd(), p);
-        try {
-          const img = await loadImage(p);
-          canvas.width = img.width;
-          canvas.height = img.height;
-        } catch (e: unknown) {
-          const errorMessage = e instanceof Error ? e.message : String(e);
-          throw new Error(`createCanvas: Failed to load image for inherit sizing: ${errorMessage}`);
-        }
-      }
-
-      // Handle video background inherit sizing
-      if (canvas.videoBg) {
-        try {
-          const frameBuffer = await this.#extractVideoFrame(
-            canvas.videoBg.source, 
-            canvas.videoBg.frame ?? 0,
-            canvas.videoBg.time,
-            canvas.videoBg.format || 'jpg',
-            canvas.videoBg.quality || 2
-          );
-          if (frameBuffer) {
-            const img = await loadImage(frameBuffer);
-            if (!canvas.width) canvas.width = img.width;
-            if (!canvas.height) canvas.height = img.height;
-          }
-        } catch (e: unknown) {
-          console.warn('createCanvas: Failed to extract video frame for sizing, using defaults');
-        }
-      }
-
-  // 2) Use final width/height after inherit
-  const width  = canvas.width  ?? 500;
-  const height = canvas.height ?? 500;
-
-  const {
-    x = 0, y = 0,
-    rotation = 0,
-    borderRadius = 0,
-    borderPosition = 'all',
-    opacity = 1,
-    colorBg, customBg, gradientBg, videoBg,
-    patternBg, noiseBg, blendMode,
-    zoom, stroke, shadow,
-    blur
-  } = canvas;
-
-  // Validate background configuration
-  const bgSources = [
-    canvas.colorBg ? 'colorBg' : null,
-    canvas.gradientBg ? 'gradientBg' : null,
-    canvas.customBg ? 'customBg' : null
-  ].filter(Boolean);
-
-  if (bgSources.length > 1) {
-    throw new Error(`createCanvas: only one of colorBg, gradientBg, or customBg can be used. You provided: ${bgSources.join(', ')}`);
-  }
-
-      const cv = createCanvas(width, height);
-      const ctx = cv.getContext('2d') as SKRSContext2D;
-      if (!ctx) throw new Error('Unable to get 2D context');
-
-
-      ctx.globalAlpha = opacity;
-
-      // ---- BACKGROUND (clipped) ----
-      ctx.save();
-      applyRotation(ctx, rotation, x, y, width, height);
-
-      buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-      ctx.clip();
-
-      applyCanvasZoom(ctx, width, height, zoom);
-
-      ctx.translate(x, y);
-      if (typeof blendMode === 'string') {
-        ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
-      }
-
-      // Draw background - videoBg takes priority, then customBg, then gradientBg, then colorBg
-      if (videoBg) {
-        try {
-          // For videoBg, always use PNG format to ensure compatibility with loadImage
-          // The rgb24 pixel format for JPEG can cause issues with loadImage
-          const frameBuffer = await this.#extractVideoFrame(
-            videoBg.source, 
-            videoBg.frame ?? 0,
-            videoBg.time,
-            'png', // Force PNG format for videoBg to ensure proper color rendering
-            2
-          );
-          if (frameBuffer && frameBuffer.length > 0) {
-            // Try loading from buffer first, if that fails, save to temp file and load from file
-            // This is a workaround for potential buffer compatibility issues with loadImage
-            let videoImg: Image;
-            try {
-              videoImg = await loadImage(frameBuffer);
-            } catch (bufferError) {
-              // If loading from buffer fails, try saving to temp file and loading from file
-              const tempFramePath = path.join(process.cwd(), '.temp-frames', `video-bg-temp-${Date.now()}.png`);
-              const frameDir = path.dirname(tempFramePath);
-              if (!fs.existsSync(frameDir)) {
-                fs.mkdirSync(frameDir, { recursive: true });
-              }
-              fs.writeFileSync(tempFramePath, frameBuffer);
-              videoImg = await loadImage(tempFramePath);
-              // Cleanup temp file after loading
-              if (fs.existsSync(tempFramePath)) {
-                fs.unlinkSync(tempFramePath);
-              }
-            }
-            
-            if (videoImg && videoImg.width > 0 && videoImg.height > 0) {
-              ctx.globalAlpha = videoBg.opacity ?? 1;
-              // Draw the video frame to fill the entire canvas
-              ctx.drawImage(videoImg, 0, 0, width, height);
-              ctx.globalAlpha = opacity;
-            } else {
-              throw new Error(`Extracted video frame has invalid dimensions: ${videoImg?.width}x${videoImg?.height}`);
-            }
-          } else {
-            throw new Error('Frame extraction returned empty buffer');
-          }
-        } catch (e: unknown) {
-          const errorMsg = e instanceof Error ? e.message : 'Unknown error';
-          // Re-throw FFmpeg installation errors so user sees installation guide
-          if (errorMsg.includes('FFMPEG NOT FOUND') || errorMsg.includes('FFmpeg')) {
-            throw e;
-          }
-          // Re-throw other errors instead of silently failing with black background
-          throw new Error(`createCanvas: videoBg extraction failed: ${errorMsg}`);
-        }
-      } else if (customBg) {
-        // Draw custom background with filters and opacity support
-        await customBackground(ctx, { ...canvas, blur });
-        // Apply filters to background if specified
-        if (customBg.filters && customBg.filters.length > 0) {
-          const tempCanvas = createCanvas(width, height);
-          const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-          if (tempCtx) {
-            tempCtx.drawImage(cv, 0, 0);
-            await applySimpleProfessionalFilters(tempCtx, customBg.filters, width, height);
-            ctx.clearRect(0, 0, width, height);
-            ctx.globalAlpha = customBg.opacity ?? 1;
-            ctx.drawImage(tempCanvas, 0, 0);
-            ctx.globalAlpha = opacity;
-          }
-        } else if (customBg.opacity !== undefined && customBg.opacity !== 1) {
-          ctx.globalAlpha = customBg.opacity;
-          await customBackground(ctx, { ...canvas, blur });
-          ctx.globalAlpha = opacity;
-        } else {
-          await customBackground(ctx, { ...canvas, blur });
-        }
-      } else if (gradientBg) {
-        await drawBackgroundGradient(ctx, { ...canvas, blur });
-      } else {
-        // Default to black background if no background is specified
-        await drawBackgroundColor(ctx, { ...canvas, blur, colorBg: colorBg ?? '#000' });
-      }
-
-      if (patternBg) await EnhancedPatternRenderer.renderPattern(ctx, cv, patternBg);
-      if (noiseBg)   applyNoise(ctx, width, height, noiseBg.intensity ?? 0.05);
-
-      ctx.restore();
-
-      // Apply shadow effect
-      if (shadow) {
-        ctx.save();
-        buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-        applyShadow(ctx, shadow, x, y, width, height);
-        ctx.restore();
-      }
-
-      // Apply stroke effect
-      if (stroke) {
-        ctx.save();
-        buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-        applyStroke(ctx, stroke, x, y, width, height);
-        ctx.restore();
-      }
-
-      return { buffer: cv.toBuffer('image/png'), canvas };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createCanvas failed: ${errorMessage}`);
-    }
+    return this.canvasCreator.createCanvas(canvas);
   }
 
 
@@ -381,507 +235,13 @@ export class ApexPainter {
    * ], canvasBuffer);
    * ```
    */
-  /**
-   * Validates image/shape properties array.
-   * @private
-   * @param images - Image properties to validate
-   */
-  #validateImageArray(images: ImageProperties | ImageProperties[]): void {
-    const list = Array.isArray(images) ? images : [images];
-    if (list.length === 0) {
-      throw new Error("createImage: At least one image/shape is required.");
-    }
-    for (const ip of list) {
-      this.#validateImageProperties(ip);
-    }
-  }
 
   async createImage(
     images: ImageProperties | ImageProperties[],
     canvasBuffer: CanvasResults | Buffer
   ): Promise<Buffer> {
-    try {
-      // Validate inputs
-      if (!canvasBuffer) {
-        throw new Error("createImage: canvasBuffer is required.");
-      }
-      this.#validateImageArray(images);
-      
-      const list = Array.isArray(images) ? images : [images];
-
-      // Load base canvas buffer
-      const base: Image = Buffer.isBuffer(canvasBuffer)
-        ? await loadImage(canvasBuffer)
-        : await loadImage((canvasBuffer as CanvasResults).buffer);
-
-      const cv = createCanvas(base.width, base.height);
-      const ctx = cv.getContext("2d") as SKRSContext2D;
-      if (!ctx) throw new Error("Unable to get 2D rendering context");
-
-      // Paint bg
-      ctx.drawImage(base, 0, 0);
-
-      // Draw each image/shape on canvas
-      for (const ip of list) {
-        await this.#drawImageBitmap(ctx, ip);
-      }
-
-      // Return updated buffer
-      return cv.toBuffer("image/png");
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createImage failed: ${errorMessage}`);
-    }
+    return this.imageCreator.createImage(images, canvasBuffer);
   }
-
-  /**
-   * Draws a single bitmap or shape with independent shadow & stroke.
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param ip - Image properties
-   */
-  async #drawImageBitmap(ctx: SKRSContext2D, ip: ImageProperties): Promise<void> {
-    const {
-      source, x, y,
-      width, height,
-      inherit,
-      fit = "fill",
-      align = "center",
-      rotation = 0,
-      opacity = 1,
-      blur = 0,
-      borderRadius = 0,
-      borderPosition = "all",
-      shadow,
-      stroke,
-      boxBackground,
-      shape,
-      filters,
-      filterIntensity = 1,
-      filterOrder = 'post',
-      mask,
-      clipPath,
-      distortion,
-      meshWarp,
-      effects
-    } = ip;
-
-    this.#validateImageProperties(ip);
-
-    // Check if source is a shape
-    if (isShapeSource(source)) {
-      await this.#drawShape(ctx, source, x, y, width ?? 100, height ?? 100, {
-        ...shape,
-        rotation,
-        opacity,
-        blur,
-        borderRadius,
-        borderPosition,
-        shadow,
-        stroke,
-        boxBackground,
-        filters
-      });
-      return;
-    }
-
-    // Handle image sources
-    const img = await loadImageCached(source);
-
-    // Resolve this image's destination box
-    const boxW = (inherit && !width)  ? img.width  : (width  ?? img.width);
-    const boxH = (inherit && !height) ? img.height : (height ?? img.height);
-    const box = { x, y, w: boxW, h: boxH };
-
-    ctx.save();
-
-    // Rotate around the box center; affects shadow, background, bitmap, stroke uniformly
-    applyRotation(ctx, rotation, box.x, box.y, box.w, box.h);
-
-    // 1) Shadow (independent) — supports gradient or color
-    applyShadow(ctx, box, shadow);
-
-    // 2) Optional box background (under bitmap, inside clip) — color or gradient
-    drawBoxBackground(ctx, box, boxBackground, borderRadius, borderPosition);
-
-    // 3) Clip to image border radius or custom clip path, then draw the bitmap with blur/opacity and fit/align
-    ctx.save();
-    if (clipPath && clipPath.length >= 3) {
-      applyClipPath(ctx, clipPath);
-    } else {
-      buildPath(ctx, box.x, box.y, box.w, box.h, borderRadius, borderPosition);
-      ctx.clip();
-    }
-
-    const { dx, dy, dw, dh, sx, sy, sw, sh } =
-      fitInto(box.x, box.y, box.w, box.h, img.width, img.height, fit, align);
-
-    const prevAlpha = ctx.globalAlpha;
-    ctx.globalAlpha = opacity ?? 1;
-    if ((blur ?? 0) > 0) ctx.filter = `blur(${blur}px)`;
-
-    // Apply professional image filters BEFORE drawing if filterOrder is 'pre'
-    if (filters && filters.length > 0 && filterOrder === 'pre') {
-      const adjustedFilters = filters.map(f => ({
-        ...f,
-        intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
-        value: f.value !== undefined ? f.value * filterIntensity : f.value,
-        radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
-      }));
-      await applySimpleProfessionalFilters(ctx, adjustedFilters, dw, dh);
-    }
-
-    // Apply distortion if specified (before drawing)
-    if (distortion) {
-      if (distortion.type === 'perspective' && distortion.points && distortion.points.length === 4) {
-        applyPerspectiveDistortion(ctx, img, distortion.points, dx, dy, dw, dh);
-        ctx.filter = "none";
-        ctx.globalAlpha = prevAlpha;
-        ctx.restore();
-        ctx.restore();
-        return;
-      } else if (distortion.type === 'bulge' || distortion.type === 'pinch') {
-        const centerX = dx + dw / 2;
-        const centerY = dy + dh / 2;
-        const radius = Math.min(dw, dh) / 2;
-        const intensity = (distortion.intensity ?? 0.5) * (distortion.type === 'pinch' ? -1 : 1);
-        applyBulgeDistortion(ctx, img, centerX, centerY, radius, intensity, dx, dy, dw, dh);
-        ctx.filter = "none";
-        ctx.globalAlpha = prevAlpha;
-        ctx.restore();
-        ctx.restore();
-        return;
-      }
-    }
-
-    // Apply mesh warp if specified
-    if (meshWarp && meshWarp.controlPoints) {
-      applyMeshWarp(ctx, img, meshWarp.gridX ?? 10, meshWarp.gridY ?? 10, meshWarp.controlPoints, dx, dy, dw, dh);
-      ctx.filter = "none";
-      ctx.globalAlpha = prevAlpha;
-      ctx.restore();
-      ctx.restore();
-      return;
-    }
-
-    // Draw image with or without masking
-    if (mask) {
-      await applyImageMask(ctx, img, mask.source, mask.mode ?? 'alpha', dx, dy, dw, dh);
-    } else {
-      ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
-    }
-
-    ctx.filter = "none";
-    ctx.globalAlpha = prevAlpha;
-    ctx.restore();
-
-    // Apply professional image filters AFTER drawing if filterOrder is 'post'
-    if (filters && filters.length > 0 && filterOrder === 'post') {
-      ctx.save();
-      const imageData = ctx.getImageData(box.x, box.y, box.w, box.h);
-      const tempCanvas = createCanvas(box.w, box.h);
-      const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-      if (tempCtx) {
-        tempCtx.putImageData(imageData, 0, 0);
-        const adjustedFilters = filters.map(f => ({
-          ...f,
-          intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
-          value: f.value !== undefined ? f.value * filterIntensity : f.value,
-          radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
-        }));
-        await applySimpleProfessionalFilters(tempCtx, adjustedFilters, box.w, box.h);
-        ctx.clearRect(box.x, box.y, box.w, box.h);
-        ctx.drawImage(tempCanvas, box.x, box.y);
-      }
-      ctx.restore();
-    }
-
-    // Apply effects stack
-    if (effects) {
-      ctx.save();
-      const effectsCtx = ctx;
-      if (effects.vignette) {
-        applyVignette(effectsCtx, effects.vignette.intensity, effects.vignette.size, box.w, box.h);
-      }
-      if (effects.lensFlare) {
-        applyLensFlare(effectsCtx, box.x + effects.lensFlare.x, box.y + effects.lensFlare.y, effects.lensFlare.intensity, box.w, box.h);
-      }
-      if (effects.chromaticAberration) {
-        const imageData = ctx.getImageData(box.x, box.y, box.w, box.h);
-        const tempCanvas = createCanvas(box.w, box.h);
-        const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-        if (tempCtx) {
-          tempCtx.putImageData(imageData, 0, 0);
-          applyChromaticAberration(tempCtx, effects.chromaticAberration.intensity, box.w, box.h);
-          ctx.clearRect(box.x, box.y, box.w, box.h);
-          ctx.drawImage(tempCanvas, box.x, box.y);
-        }
-      }
-      if (effects.filmGrain) {
-        const imageData = ctx.getImageData(box.x, box.y, box.w, box.h);
-        const tempCanvas = createCanvas(box.w, box.h);
-        const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-        if (tempCtx) {
-          tempCtx.putImageData(imageData, 0, 0);
-          applyFilmGrain(tempCtx, effects.filmGrain.intensity, box.w, box.h);
-          ctx.clearRect(box.x, box.y, box.w, box.h);
-          ctx.drawImage(tempCanvas, box.x, box.y);
-        }
-      }
-      ctx.restore();
-    }
-
-
-    // 4) Stroke (independent) — supports gradient or color
-    applyStroke(ctx, box, stroke);
-
-    ctx.restore();
-  }
-
-  /**
-   * Draws a shape with all effects (shadow, stroke, filters, etc.).
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param shapeType - Type of shape to draw
-   * @param x - X position
-   * @param y - Y position
-   * @param width - Shape width
-   * @param height - Shape height
-   * @param options - Shape drawing options
-   */
-  async #drawShape(
-    ctx: SKRSContext2D, 
-    shapeType: ShapeType, 
-    x: number, 
-    y: number, 
-    width: number, 
-    height: number,
-    options: {
-      rotation?: number;
-      opacity?: number;
-      blur?: number;
-      borderRadius?: number | 'circular';
-      borderPosition?: string;
-      shadow?: any;
-      stroke?: any;
-      boxBackground?: any;
-      fill?: boolean;
-      color?: string;
-      gradient?: any;
-      radius?: number;
-      sides?: number;
-      innerRadius?: number;
-      outerRadius?: number;
-      filters?: any[];
-    }
-  ): Promise<void> {
-    const box = { x, y, w: width, h: height };
-
-    ctx.save();
-
-    // Apply rotation
-    if (options.rotation) {
-      applyRotation(ctx, options.rotation, box.x, box.y, box.w, box.h);
-    }
-
-    // Apply opacity
-    if (options.opacity !== undefined) {
-      ctx.globalAlpha = options.opacity;
-    }
-
-    // Apply blur
-    if (options.blur && options.blur > 0) {
-      ctx.filter = `blur(${options.blur}px)`;
-    }
-
-    // 1) Custom Shadow for complex shapes (heart, star)
-    if (options.shadow && this.#isComplexShape(shapeType)) {
-      this.#applyShapeShadow(ctx, shapeType, x, y, width, height, options.shadow, {
-        radius: options.radius,
-        sides: options.sides,
-        innerRadius: options.innerRadius,
-        outerRadius: options.outerRadius
-      });
-    } else if (options.shadow) {
-      // Use standard shadow for simple shapes
-      applyShadow(ctx, box, options.shadow);
-    }
-
-    // 2) Optional box background
-    if (options.boxBackground) {
-      drawBoxBackground(ctx, box, options.boxBackground, options.borderRadius, options.borderPosition);
-    }
-
-    // 3) Draw the shape
-    ctx.save();
-    if (options.borderRadius) {
-      buildPath(ctx, box.x, box.y, box.w, box.h, options.borderRadius, options.borderPosition);
-      ctx.clip();
-    }
-
-    // Apply professional filters BEFORE drawing the shape
-    if (options.filters && options.filters.length > 0) {
-      await applySimpleProfessionalFilters(ctx, options.filters, width, height);
-    }
-
-    drawShape(ctx, shapeType, x, y, width, height, {
-      fill: options.fill,
-      color: options.color,
-      gradient: options.gradient,
-      radius: options.radius,
-      sides: options.sides,
-      innerRadius: options.innerRadius,
-      outerRadius: options.outerRadius
-    });
-
-    ctx.restore();
-
-
-    // 4) Custom Stroke for complex shapes (heart, star)
-    if (options.stroke && this.#isComplexShape(shapeType)) {
-      this.#applyShapeStroke(ctx, shapeType, x, y, width, height, options.stroke, {
-        radius: options.radius,
-        sides: options.sides,
-        innerRadius: options.innerRadius,
-        outerRadius: options.outerRadius
-      });
-    } else if (options.stroke) {
-      // Use standard stroke for simple shapes
-      applyStroke(ctx, box, options.stroke);
-    }
-
-    // Reset filters and alpha
-    ctx.filter = "none";
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  /**
-   * Checks if shape needs custom shadow/stroke (heart, star).
-   * @private
-   * @param shapeType - Type of shape
-   * @returns True if shape is complex and needs custom effects
-   */
-  #isComplexShape(shapeType: ShapeType): boolean {
-    return shapeType === 'heart' || shapeType === 'star';
-  }
-
-  /**
-   * Applies custom shadow for complex shapes (heart, star).
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param shapeType - Type of shape
-   * @param x - X position
-   * @param y - Y position
-   * @param width - Shape width
-   * @param height - Shape height
-   * @param shadow - Shadow options
-   * @param shapeOptions - Shape-specific options
-   */
-  #applyShapeShadow(
-    ctx: SKRSContext2D,
-    shapeType: ShapeType,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    shadow: any,
-    shapeProps: any
-  ): void {
-    const {
-      color = "rgba(0,0,0,1)",
-      gradient,
-      opacity = 0.4,
-      offsetX = 0,
-      offsetY = 0,
-      blur = 20
-    } = shadow;
-
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    if (blur > 0) ctx.filter = `blur(${blur}px)`;
-
-    // Set shadow color or gradient
-    if (gradient) {
-      const gfill = createGradientFill(ctx, gradient, { x: x + offsetX, y: y + offsetY, w: width, h: height });
-      ctx.fillStyle = gfill as any;
-    } else {
-      ctx.fillStyle = color;
-    }
-
-    // Create shadow path
-    createShapePath(ctx, shapeType, x + offsetX, y + offsetY, width, height, shapeProps);
-    ctx.fill();
-
-    ctx.filter = "none";
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  /**
-   * Applies custom stroke for complex shapes (heart, star).
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param shapeType - Type of shape
-   * @param x - X position
-   * @param y - Y position
-   * @param width - Shape width
-   * @param height - Shape height
-   * @param stroke - Stroke options
-   * @param shapeOptions - Shape-specific options
-   */
-  #applyShapeStroke(
-    ctx: SKRSContext2D,
-    shapeType: ShapeType,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    stroke: any,
-    shapeProps: any
-  ): void {
-    const {
-      color = "#000",
-      gradient,
-      width: strokeWidth = 2,
-      position = 0,
-      blur = 0,
-      opacity = 1,
-      style = 'solid'
-    } = stroke;
-
-    ctx.save();
-    if (blur > 0) ctx.filter = `blur(${blur}px)`;
-    ctx.globalAlpha = opacity;
-
-    // Set stroke color or gradient
-    if (gradient) {
-      const gstroke = createGradientFill(ctx, gradient, { x, y, w: width, h: height });
-      ctx.strokeStyle = gstroke as any;
-    } else {
-      ctx.strokeStyle = color;
-    }
-
-    ctx.lineWidth = strokeWidth;
-
-    // Apply stroke style
-    this.#applyShapeStrokeStyle(ctx, style, strokeWidth);
-
-    // Create stroke path
-    createShapePath(ctx, shapeType, x, y, width, height, shapeProps);
-    
-    // Handle complex stroke styles
-    if (style === 'groove' || style === 'ridge' || style === 'double') {
-      this.#applyComplexShapeStroke(ctx, style, strokeWidth, color, gradient);
-    } else {
-      ctx.stroke();
-    }
-
-    ctx.filter = "none";
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
 
   /**
    * Creates text on an existing canvas buffer with enhanced styling options.
@@ -937,68 +297,9 @@ export class ApexPainter {
    * ], canvasBuffer);
    * ```
    */
-  /**
-   * Validates text properties array.
-   * @private
-   * @param textArray - Text properties to validate
-   */
-  #validateTextArray(textArray: TextProperties | TextProperties[]): void {
-    const textList = Array.isArray(textArray) ? textArray : [textArray];
-    if (textList.length === 0) {
-      throw new Error("createText: At least one text object is required.");
-    }
-    for (const textProps of textList) {
-      this.#validateTextProperties(textProps);
-    }
-  }
 
   async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
-    try {
-      // Validate inputs
-      if (!canvasBuffer) {
-        throw new Error("createText: canvasBuffer is required.");
-      }
-      this.#validateTextArray(textArray);
-      
-      // Ensure textArray is an array
-      const textList = Array.isArray(textArray) ? textArray : [textArray];
-
-      // Load existing canvas buffer
-      let existingImage: Image;
-      
-      if (Buffer.isBuffer(canvasBuffer)) {
-        existingImage = await loadImage(canvasBuffer);
-      } else if (canvasBuffer && canvasBuffer.buffer) {
-        existingImage = await loadImage(canvasBuffer.buffer);
-      } else {
-        throw new Error('Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer');
-      }
-
-      if (!existingImage) {
-        throw new Error('Unable to load image from buffer');
-      }
-
-      // Create new canvas with same dimensions
-      const canvas = createCanvas(existingImage.width, existingImage.height);
-      const ctx = canvas.getContext("2d");
-
-      if (!ctx) {
-        throw new Error("Unable to get 2D rendering context");
-      }
-
-      // Draw existing image as background
-      ctx.drawImage(existingImage, 0, 0);
-
-      // Render each text object with enhanced features
-      for (const textProps of textList) {
-        await this.#renderEnhancedText(ctx, textProps);
-      }
-
-      return canvas.toBuffer("image/png");
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createText failed: ${errorMessage}`);
-    }
+    return this.textCreator.createText(textArray, canvasBuffer);
   }
 
 
@@ -1056,150 +357,13 @@ export class ApexPainter {
 
       return canvas.toBuffer("image/png");
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createCustom failed: ${errorMessage}`);
+      throw new Error(`createCustom failed: ${getErrorMessage(error)}`);
     }
   }
 
-  /**
-   * Validates GIF options and frames.
-   * @private
-   * @param gifFrames - GIF frames to validate
-   * @param options - GIF options to validate
-   */
-  #validateGIFOptions(gifFrames: { background: string; duration: number }[], options: GIFOptions): void {
-    if (!gifFrames || gifFrames.length === 0) {
-      throw new Error("createGIF: At least one frame is required.");
-    }
-    for (const frame of gifFrames) {
-      if (!frame.background) {
-        throw new Error("createGIF: Each frame must have a background property.");
-      }
-      if (typeof frame.duration !== 'number' || frame.duration < 0) {
-        throw new Error("createGIF: Each frame duration must be a non-negative number.");
-      }
-    }
-    if (options.outputFormat === "file" && !options.outputFile) {
-      throw new Error("createGIF: outputFile is required when outputFormat is 'file'.");
-    }
-    if (options.repeat !== undefined && (typeof options.repeat !== "number" || options.repeat < 0)) {
-      throw new Error("createGIF: repeat must be a non-negative number or undefined.");
-    }
-    if (options.quality !== undefined && (typeof options.quality !== "number" || options.quality < 1 || options.quality > 20)) {
-      throw new Error("createGIF: quality must be a number between 1 and 20 or undefined.");
-    }
-  }
 
   async createGIF(gifFrames: { background: string; duration: number }[], options: GIFOptions): Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | undefined> {
-    try {
-      this.#validateGIFOptions(gifFrames, options);
-      
-      async function resizeImage(image: Image, targetWidth: number, targetHeight: number) {
-      const canvas = createCanvas(targetWidth, targetHeight);
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
-      return canvas;
-  }
-
-  function createOutputStream(outputFile: string): fs.WriteStream {
-      return fs.createWriteStream(outputFile);
-  }
-
-  function createBufferStream(): PassThrough & { getBuffer: () => Buffer; chunks: Buffer[] } {
-      const bufferStream = new PassThrough();
-      const chunks: Buffer[] = [];
-  
-      bufferStream.on('data', (chunk: Buffer) => {
-          chunks.push(chunk);
-      });
-  
-      // Properly extend the stream object
-      const extendedStream = bufferStream as PassThrough & { getBuffer: () => Buffer; chunks: Buffer[] };
-      extendedStream.getBuffer = function (): Buffer {
-          return Buffer.concat(chunks);
-      };
-      extendedStream.chunks = chunks;
-  
-      return extendedStream;
-  }
-
-      // Validation is done in #validateGIFOptions
-  
-      const canvasWidth = options.width || 1200;
-      const canvasHeight = options.height || 1200;
-
-      const encoder = new GIFEncoder(canvasWidth, canvasHeight);
-      // Use buffer stream for buffer/base64/attachment, file stream only for 'file' format
-      const useBufferStream = options.outputFormat !== "file";
-      const outputStream = useBufferStream ? createBufferStream() : (options.outputFile ? createOutputStream(options.outputFile) : createBufferStream());
-      
-      encoder.createReadStream().pipe(outputStream);
-      
-      encoder.start();
-      encoder.setRepeat(options.repeat || 0);
-      encoder.setQuality(options.quality || 10);
-
-      const canvas = createCanvas(canvasWidth, canvasHeight);
-      const ctx = canvas.getContext("2d") as SKRSContext2D;
-      if (!ctx) throw new Error("Unable to get 2D context");
-      
-      for (const frame of gifFrames) {
-          const image = await loadImage(frame.background);
-          const resizedImage = await resizeImage(image, canvasWidth, canvasHeight);
-          
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(resizedImage, 0, 0);
-          
-          if (options.watermark?.enable) {
-              const watermark = await loadImage(options.watermark.url);
-              ctx.drawImage(watermark, 10, canvasHeight - watermark.height - 10);
-          }
-          
-          if (options.textOverlay) {
-              ctx.font = `${options.textOverlay.fontSize || 20}px Arial`;
-              ctx.fillStyle = options.textOverlay.fontColor || "white";
-              ctx.fillText(options.textOverlay.text, options.textOverlay.x || 10, options.textOverlay.y || 30);
-          }
-
-          encoder.setDelay(frame.duration);
-          encoder.addFrame(ctx as unknown as CanvasRenderingContext2D);
-      }
-      
-      encoder.finish();
-      
-      if (options.outputFormat === "file") {
-          outputStream.end();
-          await new Promise<void>((resolve) => outputStream.on("finish", () => resolve()));
-      } else if (options.outputFormat === "base64") {
-          // Wait for stream to finish before getting buffer
-          await new Promise<void>((resolve) => {
-              outputStream.on("end", () => resolve());
-              outputStream.end();
-          });
-          if ('getBuffer' in outputStream && typeof outputStream.getBuffer === 'function') {
-              return outputStream.getBuffer().toString("base64");
-          }
-          throw new Error("createGIF: Unable to get buffer for base64 output.");
-      } else if (options.outputFormat === "attachment") {
-          const gifStream = encoder.createReadStream();
-          return [{ attachment: gifStream, name: "gif.js" }];
-      } else if (options.outputFormat === "buffer") {
-          // Wait for stream to finish before getting buffer
-          await new Promise<void>((resolve) => {
-              outputStream.on("end", () => resolve());
-              outputStream.end();
-          });
-          if ('getBuffer' in outputStream && typeof outputStream.getBuffer === 'function') {
-              return outputStream.getBuffer();
-          }
-          throw new Error("createGIF: Unable to get buffer for buffer output.");
-      } else {
-          throw new Error("Invalid output format. Supported formats are 'file', 'base64', 'attachment', and 'buffer'.");
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createGIF failed: ${errorMessage}`);
-    }
+    return this.gifCreator.createGIF(gifFrames, options);
   }
 
   /**
@@ -1229,8 +393,7 @@ export class ApexPainter {
       this.#validateResizeOptions(resizeOptions);
       return await resizingImg(resizeOptions);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`resize failed: ${errorMessage}`);
+      throw new Error(`resize failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1258,8 +421,7 @@ export class ApexPainter {
       this.#validateConverterInputs(source, newExtension);
       return await converter(source, newExtension);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`imgConverter failed: ${errorMessage}`);
+      throw new Error(`imgConverter failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1283,8 +445,7 @@ export class ApexPainter {
       this.#validateEffectsInputs(source, filters);
       return await imgEffects(source, filters);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`effects failed: ${errorMessage}`);
+      throw new Error(`effects failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1308,8 +469,7 @@ export class ApexPainter {
       this.#validateColorFilterInputs(source, opacity);
       return await applyColorFilters(source, filterColor, opacity);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`colorsFilter failed: ${errorMessage}`);
+      throw new Error(`colorsFilter failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1320,8 +480,7 @@ export class ApexPainter {
       }
       return await detectColors(source);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`colorAnalysis failed: ${errorMessage}`);
+      throw new Error(`colorAnalysis failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1340,8 +499,7 @@ export class ApexPainter {
       }
       return await removeColor(source, colorToRemove);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`colorsRemover failed: ${errorMessage}`);
+      throw new Error(`colorsRemover failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1355,8 +513,7 @@ export class ApexPainter {
       }
       return await bgRemoval(imageURL, apiKey);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`removeBackground failed: ${errorMessage}`);
+      throw new Error(`removeBackground failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1409,8 +566,7 @@ export class ApexPainter {
       
       const baseImage = await loadImage(baseImageBuffer);
       const canvas = createCanvas(baseImage.width, baseImage.height);
-      const ctx = canvas.getContext('2d') as SKRSContext2D;
-      if (!ctx) throw new Error("Unable to get 2D context");
+      const ctx = getCanvasContext(canvas);
   
       ctx.globalCompositeOperation = defaultBlendMode;
       ctx.drawImage(baseImage, 0, 0);
@@ -1428,85 +584,11 @@ export class ApexPainter {
   
       return canvas.toBuffer('image/png');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`blend failed: ${errorMessage}`);
+      throw new Error(`blend failed: ${getErrorMessage(error)}`);
     }
   }
   
 
-  /**
-   * Validates chart inputs.
-   * @private
-   * @param data - Chart data to validate
-   * @param type - Chart type configuration to validate
-   */
-  #validateChartInputs(data: unknown, type: { chartType: string; chartNumber: number }): void {
-    if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
-      throw new Error("createChart: data object with datasets is required.");
-    }
-    if (!type || typeof type !== 'object') {
-      throw new Error("createChart: type configuration object is required.");
-    }
-    if (!type.chartType || typeof type.chartType !== 'string') {
-      throw new Error("createChart: type.chartType must be a string.");
-    }
-    if (typeof type.chartNumber !== 'number' || type.chartNumber < 1) {
-      throw new Error("createChart: type.chartNumber must be a positive number.");
-    }
-    const validChartTypes = ['bar', 'line', 'pie'];
-    if (!validChartTypes.includes(type.chartType.toLowerCase())) {
-      throw new Error(`createChart: Invalid chartType. Supported: ${validChartTypes.join(', ')}`);
-    }
-  }
-
-  async createChart(data: unknown, type: { chartType: string; chartNumber: number }): Promise<Buffer> {
-    try {
-      this.#validateChartInputs(data, type);
-
-      const { chartType, chartNumber } = type;
-
-    switch (chartType.toLowerCase()) {
-        case 'bar':
-            switch (chartNumber) {
-                case 1:
-                    const barResult = await verticalBarChart(data as barChart_1);
-                    if (!barResult) {
-                      throw new Error("createChart: Failed to generate bar chart.");
-                    }
-                    return barResult;
-                case 2:
-                    throw new Error('Type 2 is still under development.');
-                default:
-                    throw new Error('Invalid chart number for chart type "bar".');
-            }
-        case 'line':
-            switch (chartNumber) {
-                case 1:
-                    // LineChart expects DataPoint[][] where DataPoint has { label: string; y: number }
-                    // Type assertion needed because there are two different DataPoint interfaces
-                    return await lineChart(data as unknown as { data: Array<Array<{ label: string; y: number }>>; lineConfig: LineChartConfig });
-                case 2:
-                    throw new Error('Type 2 is still under development.');
-                default:
-                    throw new Error('Invalid chart number for chart type "line".');
-            }
-        case 'pie':
-            switch (chartNumber) {
-                case 1:
-                    return await pieChart(data as PieChartData);
-                case 2:
-                    throw new Error('Type 2 is still under development.');
-                default:
-                    throw new Error('Invalid chart number for chart type "pie".');
-            }
-        default:
-            throw new Error(`Unsupported chart type "${chartType}".`);
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createChart failed: ${errorMessage}`);
-    }
-  }
 
 
   /**
@@ -1539,8 +621,7 @@ export class ApexPainter {
         return await cropInner(options);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`cropImage failed: ${errorMessage}`);
+      throw new Error(`cropImage failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1776,7 +857,7 @@ export class ApexPainter {
 
       return result;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage = getErrorMessage(error);
       // Re-throw FFmpeg installation errors
       if (errorMessage.includes('FFMPEG NOT FOUND') || errorMessage.includes('FFmpeg')) {
         throw error;
@@ -1922,7 +1003,7 @@ export class ApexPainter {
         throw error;
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage = getErrorMessage(error);
       // Re-throw FFmpeg installation errors so user sees installation guide
       if (errorMessage.includes('FFMPEG NOT FOUND') || errorMessage.includes('FFmpeg')) {
         throw error;
@@ -2071,7 +1152,7 @@ export class ApexPainter {
         throw error;
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage = getErrorMessage(error);
       // Re-throw FFmpeg installation errors so user sees installation guide
       if (errorMessage.includes('FFMPEG NOT FOUND') || errorMessage.includes('FFmpeg')) {
         throw error;
@@ -2085,507 +1166,8 @@ export class ApexPainter {
    * @param options - Video processing options
    * @returns Results based on the operation requested
    */
-  async createVideo(options: {
-    source: string | Buffer;
-    
-    // Get video information
-    getInfo?: boolean;
-    
-    // Extract single frame (creates canvas)
-    extractFrame?: {
-      time?: number; // Time in seconds
-      frame?: number; // Frame number (1-based, will be converted to time using video FPS)
-      width?: number; // Canvas width (default: video width)
-      height?: number; // Canvas height (default: video height)
-      outputFormat?: 'jpg' | 'png'; // Frame extraction format (default: 'png')
-      quality?: number; // JPEG quality 1-31 (lower = better, default: 2)
-    };
-    
-    // Extract multiple frames at specific times
-    extractFrames?: {
-      times?: number[]; // Array of times in seconds
-      interval?: number; // Extract frames at intervals (milliseconds)
-      frameSelection?: { start?: number; end?: number }; // Frame range for interval extraction
-      outputFormat?: 'jpg' | 'png';
-      quality?: number;
-      outputDirectory?: string; // Directory to save frames (for interval extraction)
-    };
-    
-    // Extract ALL frames from video
-    extractAllFrames?: {
-      outputFormat?: 'jpg' | 'png';
-      outputDirectory?: string;
-      quality?: number;
-      prefix?: string; // Filename prefix (default: 'frame')
-      startTime?: number; // Start time in seconds (default: 0)
-      endTime?: number; // End time in seconds (default: video duration)
-    };
-    
-    // Generate video thumbnail (multiple frames in grid)
-    generateThumbnail?: {
-      count?: number; // Number of frames to extract (default: 9)
-      grid?: { cols: number; rows: number }; // Grid layout (default: 3x3)
-      width?: number; // Thumbnail width (default: 320)
-      height?: number; // Thumbnail height (default: 180)
-      outputFormat?: 'jpg' | 'png';
-      quality?: number;
-    };
-    
-    // Convert video format
-    convert?: {
-      outputPath: string; // Output video file path
-      format?: 'mp4' | 'webm' | 'avi' | 'mov' | 'mkv'; // Output format (default: 'mp4')
-      quality?: 'low' | 'medium' | 'high' | 'ultra'; // Quality preset
-      bitrate?: number; // Custom bitrate in kbps
-      fps?: number; // Output FPS (default: source FPS)
-      resolution?: { width: number; height: number }; // Output resolution
-    };
-    
-    // Trim/Cut video
-    trim?: {
-      startTime: number; // Start time in seconds
-      endTime: number; // End time in seconds
-      outputPath: string; // Output video file path
-    };
-    
-    // Extract audio from video
-    extractAudio?: {
-      outputPath: string; // Output audio file path
-      format?: 'mp3' | 'wav' | 'aac' | 'ogg'; // Audio format (default: 'mp3')
-      bitrate?: number; // Audio bitrate in kbps (default: 128)
-    };
-    
-    // Add watermark to video
-    addWatermark?: {
-      watermarkPath: string; // Watermark image path
-      position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
-      opacity?: number; // Watermark opacity 0-1 (default: 0.5)
-      size?: { width: number; height: number }; // Watermark size
-      outputPath: string; // Output video file path
-    };
-    
-    // Adjust video speed
-    changeSpeed?: {
-      speed: number; // Speed multiplier (0.5 = half speed, 2 = double speed)
-      outputPath: string; // Output video file path
-    };
-    
-    // Extract video preview (multiple frames as images)
-    generatePreview?: {
-      count?: number; // Number of preview frames (default: 10)
-      outputDirectory?: string; // Directory to save preview frames
-      outputFormat?: 'jpg' | 'png';
-      quality?: number;
-    };
-    
-    // Apply video effects/filters
-    applyEffects?: {
-      filters: Array<{
-        type: 'blur' | 'brightness' | 'contrast' | 'saturation' | 'grayscale' | 'sepia' | 'invert' | 'sharpen' | 'noise';
-        intensity?: number; // 0-100
-        value?: number; // For brightness, contrast, saturation (-100 to 100)
-      }>;
-      outputPath: string;
-    };
-    
-    // Merge/Concatenate videos
-    merge?: {
-      videos: Array<string | Buffer>; // Array of video sources
-      outputPath: string;
-      mode?: 'sequential' | 'side-by-side' | 'grid'; // Merge mode
-      grid?: { cols: number; rows: number }; // For grid mode
-    };
-    
-    // Rotate/Flip video
-    rotate?: {
-      angle?: 90 | 180 | 270; // Rotation angle
-      flip?: 'horizontal' | 'vertical' | 'both'; // Flip direction
-      outputPath: string;
-    };
-    
-    // Crop video
-    crop?: {
-      x: number; // Start X position
-      y: number; // Start Y position
-      width: number; // Crop width
-      height: number; // Crop height
-      outputPath: string;
-    };
-    
-    // Compress/Optimize video
-    compress?: {
-      outputPath: string;
-      quality?: 'low' | 'medium' | 'high' | 'ultra'; // Quality preset
-      targetSize?: number; // Target file size in MB
-      maxBitrate?: number; // Max bitrate in kbps
-    };
-    
-    // Add text overlay to video
-    addText?: {
-      text: string;
-      position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'top-center' | 'bottom-center';
-      fontSize?: number;
-      fontColor?: string;
-      backgroundColor?: string; // Text background color
-      startTime?: number; // Start time in seconds
-      endTime?: number; // End time in seconds
-      outputPath: string;
-    };
-    
-    // Add fade effects
-    addFade?: {
-      fadeIn?: number; // Fade in duration in seconds
-      fadeOut?: number; // Fade out duration in seconds
-      outputPath: string;
-    };
-    
-    // Reverse video playback
-    reverse?: {
-      outputPath: string;
-    };
-    
-    // Create seamless loop
-    createLoop?: {
-      outputPath: string;
-      smooth?: boolean; // Try to create smooth loop
-    };
-    
-    // Batch process multiple videos
-    batch?: {
-      videos: Array<{ source: string | Buffer; operations: any }>; // Array of videos with their operations
-      outputDirectory: string;
-    };
-    
-    // Detect scene changes
-    detectScenes?: {
-      threshold?: number; // Scene change threshold (0-1)
-      outputPath?: string; // Optional: save scene markers to file
-    };
-    
-    // Stabilize video (reduce shake)
-    stabilize?: {
-      outputPath: string;
-      smoothing?: number; // Smoothing factor (default: 10)
-    };
-    
-    // Color correction
-    colorCorrect?: {
-      brightness?: number; // -100 to 100
-      contrast?: number; // -100 to 100
-      saturation?: number; // -100 to 100
-      hue?: number; // -180 to 180
-      temperature?: number; // Color temperature adjustment
-      outputPath: string;
-    };
-    
-    // Picture-in-picture
-    pictureInPicture?: {
-      overlayVideo: string | Buffer; // Overlay video source
-      position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
-      size?: { width: number; height: number }; // Overlay size
-      opacity?: number; // 0-1
-      outputPath: string;
-    };
-    
-    // Split screen (side-by-side or grid)
-    splitScreen?: {
-      videos: Array<string | Buffer>; // Array of videos
-      layout?: 'side-by-side' | 'top-bottom' | 'grid'; // Layout type
-      grid?: { cols: number; rows: number }; // For grid layout
-      outputPath: string;
-    };
-    
-    // Create time-lapse
-    createTimeLapse?: {
-      speed?: number; // Speed multiplier (default: 10x)
-      outputPath: string;
-    };
-    
-    // Mute/Unmute video
-    mute?: {
-      outputPath: string;
-    };
-    
-    // Adjust audio volume
-    adjustVolume?: {
-      volume: number; // Volume multiplier (0.0 = mute, 1.0 = original, 2.0 = double)
-      outputPath: string;
-    };
-    
-    // Detect video format and codec
-    detectFormat?: boolean; // Returns detailed format information
-  }): Promise<any> {
-    try {
-      const ffmpegAvailable = await this.#checkFFmpegAvailable();
-      if (!ffmpegAvailable) {
-        const errorMessage = 
-          '❌ FFMPEG NOT FOUND\n' +
-          'Video processing features require FFmpeg to be installed on your system.\n' +
-          this.#getFFmpegInstallInstructions();
-        throw new Error(errorMessage);
-      }
-
-      // Get video info if requested or needed
-      let videoInfo: any = null;
-      if (options.getInfo || options.extractFrame?.frame || options.generateThumbnail || options.generatePreview) {
-        videoInfo = await this.getVideoInfo(options.source, true);
-      }
-
-      // Handle getInfo
-      if (options.getInfo) {
-        return videoInfo || await this.getVideoInfo(options.source, true);
-      }
-
-      // Handle extractFrame (creates canvas)
-      if (options.extractFrame) {
-        const frameBuffer = await this.#extractVideoFrame(
-          options.source,
-          options.extractFrame.frame ?? 0,
-          options.extractFrame.time,
-          options.extractFrame.outputFormat || 'png',
-          options.extractFrame.quality || 2
-        );
-
-        if (!frameBuffer || frameBuffer.length === 0) {
-          throw new Error('Failed to extract video frame');
-        }
-
-        const frameImage = await loadImage(frameBuffer);
-        const videoWidth = frameImage.width;
-        const videoHeight = frameImage.height;
-
-        const width = options.extractFrame.width ?? videoWidth;
-        const height = options.extractFrame.height ?? videoHeight;
-
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d') as SKRSContext2D;
-        if (!ctx) {
-          throw new Error('Unable to get 2D context');
-        }
-
-        ctx.drawImage(frameImage, 0, 0, width, height);
-
-        return {
-          buffer: canvas.toBuffer('image/png'),
-          canvas: { width, height }
-        };
-      }
-
-      // Handle extractFrames (multiple frames at specific times or intervals)
-      if (options.extractFrames) {
-        if (options.extractFrames.times) {
-          // Extract frames at specific times
-          const frames: Buffer[] = [];
-          for (const time of options.extractFrames.times) {
-            const frame = await this.#extractVideoFrame(
-              options.source,
-              0,
-              time,
-              options.extractFrames.outputFormat || 'jpg',
-              options.extractFrames.quality || 2
-            );
-            if (frame) {
-              frames.push(frame);
-            }
-          }
-          return frames;
-        } else if (options.extractFrames.interval) {
-          // Extract frames at intervals
-          return await this.extractFrames(options.source, {
-            interval: options.extractFrames.interval,
-            outputFormat: options.extractFrames.outputFormat || 'jpg',
-            frameSelection: options.extractFrames.frameSelection,
-            outputDirectory: options.extractFrames.outputDirectory
-          });
-        }
-      }
-
-      // Handle extractAllFrames
-      if (options.extractAllFrames) {
-        return await this.extractAllFrames(options.source, {
-          outputFormat: options.extractAllFrames.outputFormat,
-          outputDirectory: options.extractAllFrames.outputDirectory,
-          quality: options.extractAllFrames.quality,
-          prefix: options.extractAllFrames.prefix,
-          startTime: options.extractAllFrames.startTime,
-          endTime: options.extractAllFrames.endTime
-        });
-      }
-
-      // Handle generateThumbnail
-      if (options.generateThumbnail) {
-        return await this.#generateVideoThumbnail(options.source, options.generateThumbnail, videoInfo);
-      }
-
-      // Handle convert
-      if (options.convert) {
-        return await this.#convertVideo(options.source, options.convert);
-      }
-
-      // Handle trim
-      if (options.trim) {
-        return await this.#trimVideo(options.source, options.trim);
-      }
-
-      // Handle extractAudio
-      if (options.extractAudio) {
-        return await this.#extractAudio(options.source, options.extractAudio);
-      }
-
-      // Handle addWatermark
-      if (options.addWatermark) {
-        return await this.#addWatermarkToVideo(options.source, options.addWatermark);
-      }
-
-      // Handle changeSpeed
-      if (options.changeSpeed) {
-        return await this.#changeVideoSpeed(options.source, options.changeSpeed);
-      }
-
-      // Handle generatePreview
-      if (options.generatePreview) {
-        return await this.#generateVideoPreview(options.source, options.generatePreview, videoInfo);
-      }
-
-      // Handle applyEffects
-      if (options.applyEffects) {
-        return await this.#applyVideoEffects(options.source, options.applyEffects);
-      }
-
-      // Handle merge
-      if (options.merge) {
-        return await this.#mergeVideos(options.merge);
-      }
-
-      // Handle rotate
-      if (options.rotate) {
-        return await this.#rotateVideo(options.source, options.rotate);
-      }
-
-      // Handle crop
-      if (options.crop) {
-        return await this.#cropVideo(options.source, options.crop);
-      }
-
-      // Handle compress
-      if (options.compress) {
-        return await this.#compressVideo(options.source, options.compress);
-      }
-
-      // Handle addText
-      if (options.addText) {
-        return await this.#addTextToVideo(options.source, options.addText);
-      }
-
-      // Handle addFade
-      if (options.addFade) {
-        return await this.#addFadeToVideo(options.source, options.addFade);
-      }
-
-      // Handle reverse
-      if (options.reverse) {
-        return await this.#reverseVideo(options.source, options.reverse);
-      }
-
-      // Handle createLoop
-      if (options.createLoop) {
-        return await this.#createVideoLoop(options.source, options.createLoop);
-      }
-
-      // Handle batch
-      if (options.batch) {
-        return await this.#batchProcessVideos(options.batch);
-      }
-
-      // Handle detectScenes
-      if (options.detectScenes) {
-        return await this.#detectVideoScenes(options.source, options.detectScenes);
-      }
-
-      // Handle stabilize
-      if (options.stabilize) {
-        return await this.#stabilizeVideo(options.source, options.stabilize);
-      }
-
-      // Handle colorCorrect
-      if (options.colorCorrect) {
-        return await this.#colorCorrectVideo(options.source, options.colorCorrect);
-      }
-
-      // Handle pictureInPicture
-      if (options.pictureInPicture) {
-        return await this.#addPictureInPicture(options.source, options.pictureInPicture);
-      }
-
-      // Handle splitScreen
-      if (options.splitScreen) {
-        return await this.#createSplitScreen(options.splitScreen);
-      }
-
-      // Handle createTimeLapse
-      if (options.createTimeLapse) {
-        return await this.#createTimeLapseVideo(options.source, options.createTimeLapse);
-      }
-
-      // Handle mute
-      if (options.mute) {
-        return await this.#muteVideo(options.source, options.mute);
-      }
-
-      // Handle adjustVolume
-      if (options.adjustVolume) {
-        return await this.#adjustVideoVolume(options.source, options.adjustVolume);
-      }
-
-      // Handle detectFormat
-      if (options.detectFormat) {
-        const info = await this.getVideoInfo(options.source, true);
-        // Try to get codec from ffprobe
-        let codec = 'unknown';
-        try {
-          const frameDir = path.join(process.cwd(), '.temp-frames');
-          let videoPath: string;
-          if (Buffer.isBuffer(options.source)) {
-            const tempPath = path.join(frameDir, `temp-video-${Date.now()}.mp4`);
-            fs.writeFileSync(tempPath, options.source);
-            videoPath = tempPath;
-          } else {
-            let resolvedPath = options.source;
-            if (!/^https?:\/\//i.test(resolvedPath)) {
-              resolvedPath = path.join(process.cwd(), resolvedPath);
-            }
-            videoPath = resolvedPath;
-          }
-          const escapedPath = videoPath.replace(/"/g, '\\"');
-          const { stdout } = await execAsync(
-            `ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "${escapedPath}"`,
-            { timeout: 10000, maxBuffer: 1024 * 1024 }
-          );
-          codec = stdout.toString().trim() || 'unknown';
-        } catch {
-          codec = 'unknown';
-        }
-        
-        return {
-          format: info?.format || 'unknown',
-          codec: codec,
-          container: info?.format || 'unknown',
-          width: info?.width,
-          height: info?.height,
-          fps: info?.fps,
-          bitrate: info?.bitrate,
-          duration: info?.duration
-        };
-      }
-
-      throw new Error('No video operation specified');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      if (errorMessage.includes('FFMPEG NOT FOUND') || errorMessage.includes('FFmpeg')) {
-        throw error;
-      }
-      throw new Error(`createVideo failed: ${errorMessage}`);
-    }
+  async createVideo(options: VideoCreationOptions): Promise<any> {
+    return this.videoCreator.createVideo(options);
   }
 
   /**
@@ -2632,10 +1214,7 @@ export class ApexPainter {
     const thumbnailWidth = frameWidth * grid.cols;
     const thumbnailHeight = frameHeight * grid.rows;
     const canvas = createCanvas(thumbnailWidth, thumbnailHeight);
-    const ctx = canvas.getContext('2d') as SKRSContext2D;
-    if (!ctx) {
-      throw new Error('Unable to get 2D context');
-    }
+    const ctx = getCanvasContext(canvas);
 
     // Draw frames in grid
     for (let i = 0; i < frames.length; i++) {
@@ -3267,6 +1846,205 @@ export class ApexPainter {
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Replace segment in video with segment from another video
+   * @private
+   */
+  async #replaceVideoSegment(
+    mainVideoSource: string | Buffer,
+    options: {
+      replacementVideo?: string | Buffer;
+      replacementStartTime?: number;
+      replacementDuration?: number;
+      replacementFrames?: Array<string | Buffer>;
+      replacementFps?: number;
+      targetStartTime: number;
+      targetEndTime: number;
+      outputPath: string;
+    }
+  ): Promise<{ outputPath: string; success: boolean }> {
+    const frameDir = path.join(process.cwd(), '.temp-frames');
+    if (!fs.existsSync(frameDir)) {
+      fs.mkdirSync(frameDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const tempFiles: string[] = [];
+    let shouldCleanupMain = false;
+    let shouldCleanupReplacement = false;
+
+    // Prepare main video
+    let mainVideoPath: string;
+    if (Buffer.isBuffer(mainVideoSource)) {
+      mainVideoPath = path.join(frameDir, `main-video-${timestamp}.mp4`);
+      fs.writeFileSync(mainVideoPath, mainVideoSource);
+      shouldCleanupMain = true;
+      tempFiles.push(mainVideoPath);
+    } else {
+      let resolvedPath = mainVideoSource;
+      if (!/^https?:\/\//i.test(resolvedPath)) {
+        resolvedPath = path.join(process.cwd(), resolvedPath);
+      }
+      if (!fs.existsSync(resolvedPath)) {
+        throw new Error(`Main video file not found: ${mainVideoSource}`);
+      }
+      mainVideoPath = resolvedPath;
+    }
+
+    // Validate that either replacementVideo or replacementFrames is provided
+    if (!options.replacementVideo && !options.replacementFrames) {
+      throw new Error('Either replacementVideo or replacementFrames must be provided');
+    }
+
+    if (options.replacementVideo && options.replacementFrames) {
+      throw new Error('Cannot specify both replacementVideo and replacementFrames');
+    }
+
+    // Get main video info to validate times
+    const mainVideoInfo = await this.getVideoInfo(mainVideoPath, true);
+    if (!mainVideoInfo) {
+      throw new Error('Failed to get main video information');
+    }
+
+    if (options.targetStartTime < 0 || options.targetEndTime > mainVideoInfo.duration) {
+      throw new Error(`Target time range (${options.targetStartTime}-${options.targetEndTime}s) is outside video duration (${mainVideoInfo.duration}s)`);
+    }
+
+    if (options.targetStartTime >= options.targetEndTime) {
+      throw new Error('targetStartTime must be less than targetEndTime');
+    }
+
+    const targetDuration = options.targetEndTime - options.targetStartTime;
+    const escapedMainPath = mainVideoPath.replace(/"/g, '\\"');
+
+    try {
+      // Step 1: Extract part before the segment to replace
+      const part1Path = path.join(frameDir, `part1-${timestamp}.mp4`);
+      tempFiles.push(part1Path);
+      
+      if (options.targetStartTime > 0) {
+        const escapedPart1 = part1Path.replace(/"/g, '\\"');
+        const part1Command = `ffmpeg -i "${escapedMainPath}" -t ${options.targetStartTime} -c copy -y "${escapedPart1}"`;
+        await execAsync(part1Command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
+      }
+
+      // Step 2: Create replacement segment (from video or frames)
+      const replacementSegmentPath = path.join(frameDir, `replacement-segment-${timestamp}.mp4`);
+      tempFiles.push(replacementSegmentPath);
+      
+      if (options.replacementVideo) {
+        // Extract replacement segment from replacement video
+        let replacementVideoPath: string;
+        if (Buffer.isBuffer(options.replacementVideo)) {
+          replacementVideoPath = path.join(frameDir, `replacement-video-${timestamp}.mp4`);
+          fs.writeFileSync(replacementVideoPath, options.replacementVideo);
+          shouldCleanupReplacement = true;
+          tempFiles.push(replacementVideoPath);
+        } else {
+          let resolvedPath = options.replacementVideo;
+          if (!/^https?:\/\//i.test(resolvedPath)) {
+            resolvedPath = path.join(process.cwd(), resolvedPath);
+          }
+          if (!fs.existsSync(resolvedPath)) {
+            throw new Error(`Replacement video file not found: ${options.replacementVideo}`);
+          }
+          replacementVideoPath = resolvedPath;
+        }
+
+        const replacementStartTime = options.replacementStartTime || 0;
+        const replacementDuration = options.replacementDuration || targetDuration;
+        
+        const escapedReplacementPath = replacementVideoPath.replace(/"/g, '\\"');
+        const escapedSegment = replacementSegmentPath.replace(/"/g, '\\"');
+        const segmentCommand = `ffmpeg -i "${escapedReplacementPath}" -ss ${replacementStartTime} -t ${replacementDuration} -c copy -y "${escapedSegment}"`;
+        await execAsync(segmentCommand, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
+      } else if (options.replacementFrames) {
+        // Create video from frames
+        const replacementFps = options.replacementFps || 30;
+        await this.#createVideoFromFrames({
+          frames: options.replacementFrames,
+          outputPath: replacementSegmentPath,
+          fps: replacementFps,
+          format: 'mp4',
+          quality: 'high'
+        });
+      }
+
+      // Step 3: Extract part after the segment to replace
+      const part3Path = path.join(frameDir, `part3-${timestamp}.mp4`);
+      tempFiles.push(part3Path);
+      
+      const remainingDuration = mainVideoInfo.duration - options.targetEndTime;
+      if (remainingDuration > 0) {
+        const escapedPart3 = part3Path.replace(/"/g, '\\"');
+        const part3Command = `ffmpeg -i "${escapedMainPath}" -ss ${options.targetEndTime} -t ${remainingDuration} -c copy -y "${escapedPart3}"`;
+        await execAsync(part3Command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
+      } else {
+        // If no remaining duration, part3 is empty
+      }
+
+      // Step 4: Create concat file and merge all parts
+      const concatFile = path.join(frameDir, `concat-${timestamp}.txt`);
+      tempFiles.push(concatFile);
+      
+      const concatParts: string[] = [];
+      
+      // Add part 1 if it exists and has content
+      if (options.targetStartTime > 0 && fs.existsSync(part1Path) && fs.statSync(part1Path).size > 0) {
+        concatParts.push(part1Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
+      }
+      
+      // Add replacement segment
+      if (fs.existsSync(replacementSegmentPath) && fs.statSync(replacementSegmentPath).size > 0) {
+        concatParts.push(replacementSegmentPath.replace(/\\/g, '/').replace(/'/g, "\\'"));
+      }
+      
+      // Add part 3 if it exists and has content
+      if (remainingDuration > 0 && fs.existsSync(part3Path) && fs.statSync(part3Path).size > 0) {
+        concatParts.push(part3Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
+      }
+
+      if (concatParts.length === 0) {
+        throw new Error('No valid video segments to concatenate');
+      }
+
+      const concatContent = concatParts.map(p => `file '${p}'`).join('\n');
+      fs.writeFileSync(concatFile, concatContent);
+
+      // Step 5: Concatenate all parts
+      const escapedConcatFile = concatFile.replace(/"/g, '\\"');
+      const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
+      const concatCommand = `ffmpeg -f concat -safe 0 -i "${escapedConcatFile}" -c copy -y "${escapedOutputPath}"`;
+
+      await execAsync(concatCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
+
+      // Cleanup temp files
+      for (const tempFile of tempFiles) {
+        if (fs.existsSync(tempFile)) {
+          try {
+            fs.unlinkSync(tempFile);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+      }
+
+      return { outputPath: options.outputPath, success: true };
+    } catch (error) {
+      // Cleanup temp files on error
+      for (const tempFile of tempFiles) {
+        if (fs.existsSync(tempFile)) {
+          try {
+            fs.unlinkSync(tempFile);
+          } catch {
+            // Ignore cleanup errors
+          }
         }
       }
       throw error;
@@ -4197,12 +2975,12 @@ export class ApexPainter {
   }
 
   /**
-   * Mute video (remove audio)
+   * Mute video (remove audio) - supports full mute or partial mute with time ranges
    * @private
    */
   async #muteVideo(
     videoSource: string | Buffer,
-    options: { outputPath: string }
+    options: { outputPath: string; ranges?: Array<{ start: number; end: number }> }
   ): Promise<{ outputPath: string; success: boolean }> {
     const frameDir = path.join(process.cwd(), '.temp-frames');
     if (!fs.existsSync(frameDir)) {
@@ -4231,7 +3009,38 @@ export class ApexPainter {
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
-    const command = `ffmpeg -i "${escapedVideoPath}" -c copy -an -y "${escapedOutputPath}"`;
+    // If no ranges specified, mute entire video
+    if (!options.ranges || options.ranges.length === 0) {
+      const command = `ffmpeg -i "${escapedVideoPath}" -c copy -an -y "${escapedOutputPath}"`;
+      try {
+        await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
+        if (shouldCleanupVideo && fs.existsSync(videoPath)) {
+          fs.unlinkSync(videoPath);
+        }
+        return { outputPath: options.outputPath, success: true };
+      } catch (error) {
+        if (shouldCleanupVideo && fs.existsSync(videoPath)) {
+          fs.unlinkSync(videoPath);
+        }
+        throw error;
+      }
+    }
+
+    // Partial mute: mute specific time ranges
+    // Get video info to determine duration
+    const videoInfo = await this.getVideoInfo(videoPath, true);
+    if (!videoInfo) {
+      throw new Error('Failed to get video information for partial mute');
+    }
+
+    // Build audio filter for partial muting
+    // Format: volume=enable='between(t,start,end)':volume=0
+    const volumeFilters = options.ranges.map((range, index) => {
+      return `volume=enable='between(t,${range.start},${range.end})':volume=0`;
+    }).join(',');
+
+    // Use complex filter to apply volume changes at specific times
+    const command = `ffmpeg -i "${escapedVideoPath}" -af "${volumeFilters}" -c:v copy -y "${escapedOutputPath}"`;
 
     try {
       await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
@@ -4294,6 +3103,191 @@ export class ApexPainter {
     } catch (error) {
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Create video from frames/images
+   * @private
+   */
+  async #createVideoFromFrames(
+    options: {
+      frames: Array<string | Buffer>;
+      outputPath: string;
+      fps?: number;
+      format?: 'mp4' | 'webm' | 'avi' | 'mov' | 'mkv';
+      quality?: 'low' | 'medium' | 'high' | 'ultra';
+      bitrate?: number;
+      resolution?: { width: number; height: number };
+    }
+  ): Promise<{ outputPath: string; success: boolean }> {
+    if (!options.frames || options.frames.length === 0) {
+      throw new Error('createFromFrames: At least one frame is required');
+    }
+
+    const frameDir = path.join(process.cwd(), '.temp-frames');
+    if (!fs.existsSync(frameDir)) {
+      fs.mkdirSync(frameDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const fps = options.fps || 30;
+    const format = options.format || 'mp4';
+    const qualityPresets: Record<string, string> = {
+      low: '-crf 28',
+      medium: '-crf 23',
+      high: '-crf 18',
+      ultra: '-crf 15'
+    };
+    const qualityFlag = options.bitrate 
+      ? `-b:v ${options.bitrate}k` 
+      : qualityPresets[options.quality || 'medium'];
+
+    // Process frames: save buffers to temp files, resolve paths
+    const framePaths: string[] = [];
+    const tempFiles: string[] = [];
+    const frameSequenceDir = path.join(frameDir, `frames-${timestamp}`);
+
+    try {
+      // Get first frame dimensions if resolution not specified
+      let frameWidth: number | undefined;
+      let frameHeight: number | undefined;
+
+      if (options.resolution) {
+        frameWidth = options.resolution.width;
+        frameHeight = options.resolution.height;
+      } else {
+        // Load first frame to get dimensions
+        const firstFrame = options.frames[0];
+        let firstFramePath: string;
+        
+        if (Buffer.isBuffer(firstFrame)) {
+          firstFramePath = path.join(frameDir, `frame-${timestamp}-0.png`);
+          fs.writeFileSync(firstFramePath, firstFrame);
+          tempFiles.push(firstFramePath);
+        } else {
+          let resolvedPath = firstFrame;
+          if (!/^https?:\/\//i.test(resolvedPath)) {
+            resolvedPath = path.join(process.cwd(), resolvedPath);
+          }
+          if (!fs.existsSync(resolvedPath)) {
+            throw new Error(`Frame file not found: ${firstFrame}`);
+          }
+          firstFramePath = resolvedPath;
+        }
+
+        // Get dimensions using ffprobe or loadImage
+        try {
+          const { loadImage } = require('@napi-rs/canvas');
+          const img = await loadImage(firstFramePath);
+          frameWidth = img.width;
+          frameHeight = img.height;
+        } catch {
+          // Fallback: try to get from ffprobe
+          const escapedPath = firstFramePath.replace(/"/g, '\\"');
+          try {
+            const { stdout } = await execAsync(
+              `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of default=noprint_wrappers=1:nokey=1 "${escapedPath}"`,
+              { timeout: 10000, maxBuffer: 1024 * 1024 }
+            );
+            const [w, h] = stdout.toString().trim().split('\n').map(Number);
+            if (w && h) {
+              frameWidth = w;
+              frameHeight = h;
+            }
+          } catch {
+            throw new Error('Could not determine frame dimensions. Please specify resolution.');
+          }
+        }
+      }
+
+      // Process all frames - save all to temp directory with sequential naming for reliable pattern matching
+      if (!fs.existsSync(frameSequenceDir)) {
+        fs.mkdirSync(frameSequenceDir, { recursive: true });
+      }
+
+      for (let i = 0; i < options.frames.length; i++) {
+        const frame = options.frames[i];
+        let frameBuffer: Buffer;
+
+        if (Buffer.isBuffer(frame)) {
+          frameBuffer = frame;
+        } else {
+          let resolvedPath = frame;
+          if (!/^https?:\/\//i.test(resolvedPath)) {
+            resolvedPath = path.join(process.cwd(), resolvedPath);
+          }
+          if (!fs.existsSync(resolvedPath)) {
+            throw new Error(`Frame file not found: ${frame}`);
+          }
+          frameBuffer = fs.readFileSync(resolvedPath);
+        }
+
+        // Save with sequential naming (frame-000000.png, frame-000001.png, etc.)
+        const frameNumber = i.toString().padStart(6, '0');
+        const framePath = path.join(frameSequenceDir, `frame-${frameNumber}.png`);
+        fs.writeFileSync(framePath, frameBuffer);
+        tempFiles.push(framePath);
+        framePaths.push(framePath);
+      }
+
+      // Use image2 pattern input for reliable frame sequence
+      const patternPath = path.join(frameSequenceDir, 'frame-%06d.png').replace(/\\/g, '/');
+      const escapedPattern = patternPath.replace(/"/g, '\\"');
+      const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
+      
+      const resolutionFlag = frameWidth && frameHeight 
+        ? `-vf scale=${frameWidth}:${frameHeight}:force_original_aspect_ratio=decrease,pad=${frameWidth}:${frameHeight}:(ow-iw)/2:(oh-ih)/2`
+        : '';
+
+      // Use image2 demuxer with pattern for frame sequence
+      const command = `ffmpeg -framerate ${fps} -i "${escapedPattern}" ${resolutionFlag} ${qualityFlag} -pix_fmt yuv420p -y "${escapedOutputPath}"`;
+
+      await execAsync(command, { 
+        timeout: 600000, // 10 minute timeout for large frame sequences
+        maxBuffer: 10 * 1024 * 1024
+      });
+
+      // Cleanup temp files and directory
+      for (const tempFile of tempFiles) {
+        if (fs.existsSync(tempFile)) {
+          try {
+            fs.unlinkSync(tempFile);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+      }
+      // Remove frame sequence directory
+      if (fs.existsSync(frameSequenceDir)) {
+        try {
+          fs.rmSync(frameSequenceDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+
+      return { outputPath: options.outputPath, success: true };
+    } catch (error) {
+      // Cleanup temp files on error
+      for (const tempFile of tempFiles) {
+        if (fs.existsSync(tempFile)) {
+          try {
+            fs.unlinkSync(tempFile);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+      }
+      // Remove frame sequence directory on error
+      if (fs.existsSync(frameSequenceDir)) {
+        try {
+          fs.rmSync(frameSequenceDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
       }
       throw error;
     }
@@ -4495,7 +3489,7 @@ export class ApexPainter {
       console.log(`✅ Extracted ${frames.length} frames from video`);
       return frames;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      const errorMessage = getErrorMessage(error);
       if (errorMessage.includes('FFMPEG NOT FOUND') || errorMessage.includes('FFmpeg')) {
         throw error;
       }
@@ -4588,8 +3582,7 @@ export class ApexPainter {
 
       return canvas.toBuffer("image/png");
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`masking failed: ${errorMessage}`);
+      throw new Error(`masking failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4669,8 +3662,7 @@ export class ApexPainter {
 
       return canvas.toBuffer("image/png");
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`gradientBlend failed: ${errorMessage}`);
+      throw new Error(`gradientBlend failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4845,8 +3837,7 @@ export class ApexPainter {
 
       return options?.gif ? undefined : buffers;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`animate failed: ${errorMessage}`);
+      throw new Error(`animate failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4861,8 +3852,7 @@ export class ApexPainter {
     try {
       return await batchOperations(this, operations);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`batch failed: ${errorMessage}`);
+      throw new Error(`batch failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4875,8 +3865,7 @@ export class ApexPainter {
     try {
       return await chainOperations(this, operations);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`chain failed: ${errorMessage}`);
+      throw new Error(`chain failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4893,8 +3882,7 @@ export class ApexPainter {
       }
       return await stitchImagesUtil(images, options);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`stitchImages failed: ${errorMessage}`);
+      throw new Error(`stitchImages failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4917,8 +3905,7 @@ export class ApexPainter {
       }
       return await createCollage(images, layout);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`createCollage failed: ${errorMessage}`);
+      throw new Error(`createCollage failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4935,8 +3922,7 @@ export class ApexPainter {
       }
       return await compressImage(image, options);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`compress failed: ${errorMessage}`);
+      throw new Error(`compress failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -4953,8 +3939,7 @@ export class ApexPainter {
       }
       return await extractPaletteUtil(image, options);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`extractPalette failed: ${errorMessage}`);
+      throw new Error(`extractPalette failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -5019,8 +4004,7 @@ export class ApexPainter {
           throw new Error(`outPut: Unsupported format '${formatType}'. Supported: buffer, url, dataURL, blob, base64, arraybuffer`);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`outPut failed: ${errorMessage}`);
+      throw new Error(`outPut failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -5176,8 +4160,7 @@ export class ApexPainter {
         format: opts.format
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`save failed: ${errorMessage}`);
+      throw new Error(`save failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -5220,195 +4203,87 @@ export class ApexPainter {
 
       return results;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      throw new Error(`saveMultiple failed: ${errorMessage}`);
+      throw new Error(`saveMultiple failed: ${getErrorMessage(error)}`);
     }
   }
 
   /**
-   * Reset the save counter (useful when using 'counter' naming).
+   * Creates a chart based on the chart type.
+   * 
+   * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line')
+   * @param data - Chart data (varies by chart type)
+   * @param options - Chart options (varies by chart type)
+   * @returns Promise<Buffer> - Chart image buffer
+   * 
+   * @example
+   * ```typescript
+   * // Pie Chart
+   * const pieChart = await painter.createChart('pie', 
+   *   [{ label: 'A', value: 30, color: '#ff0000' }],
+   *   { dimensions: { width: 800, height: 600 } }
+   * );
+   * 
+   * // Bar Chart
+   * const barChart = await painter.createChart('bar',
+   *   [{ label: 'Jan', value: 20, xStart: 1, xEnd: 2, color: '#4A90E2' }],
+   *   { dimensions: { height: 600 } }
+   * );
+   * 
+   * // Horizontal Bar Chart
+   * const hBarChart = await painter.createChart('horizontalBar',
+   *   [{ label: 'Product A', value: 150, color: '#4A90E2' }],
+   *   { dimensions: { width: 800 } }
+   * );
+   * 
+   * // Line Chart
+   * const lineChart = await painter.createChart('line',
+   *   [{ label: 'Series 1', data: [{ x: 1, y: 10 }, { x: 2, y: 20 }], color: '#4A90E2' }],
+   *   { dimensions: { width: 800, height: 600 } }
+   * );
+   * ```
    */
+  async createChart(
+    chartType: 'pie',
+    data: import('./utils/Charts/piechart').PieSlice[],
+    options?: import('./utils/Charts/piechart').PieChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'bar',
+    data: import('./utils/Charts/barchart').BarChartData[],
+    options?: import('./utils/Charts/barchart').BarChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'horizontalBar',
+    data: import('./utils/Charts/horizontalbarchart').HorizontalBarChartData[],
+    options?: import('./utils/Charts/horizontalbarchart').HorizontalBarChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'line',
+    data: import('./utils/Charts/linechart').LineSeries[],
+    options?: import('./utils/Charts/linechart').LineChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'pie' | 'bar' | 'horizontalBar' | 'line',
+    data: any,
+    options: any = {}
+  ): Promise<Buffer> {
+    return await this.chartCreator.createChart(chartType as any, data, options);
+  }
+
+  /**
+   * Creates a comparison chart with two charts side by side or top/bottom.
+   * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
+   * 
+   * @param options - Comparison chart configuration
+   * @returns Promise<Buffer> - Comparison chart image buffer
+   */
+  async createComparisonChart(
+    options: import('./utils/Charts/comparisonchart').ComparisonChartOptions
+  ): Promise<Buffer> {
+    return this.chartCreator.createComparisonChart(options);
+  }
+
   public resetSaveCounter(): void {
     this.saveCounter = 1;
-  }
-
-  /**
-   * Applies stroke style to shape context
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param style - Stroke style type
-   * @param width - Stroke width for calculating dash patterns
-   */
-  #applyShapeStrokeStyle(
-    ctx: SKRSContext2D,
-    style: 'solid' | 'dashed' | 'dotted' | 'groove' | 'ridge' | 'double',
-    width: number
-  ): void {
-    switch (style) {
-      case 'solid':
-        ctx.setLineDash([]);
-        ctx.lineCap = 'butt';
-        ctx.lineJoin = 'miter';
-        break;
-        
-      case 'dashed':
-        ctx.setLineDash([width * 3, width * 2]);
-        ctx.lineCap = 'butt';
-        ctx.lineJoin = 'miter';
-        break;
-        
-      case 'dotted':
-        ctx.setLineDash([width, width]);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        break;
-        
-      case 'groove':
-      case 'ridge':
-      case 'double':
-        ctx.setLineDash([]);
-        ctx.lineCap = 'butt';
-        ctx.lineJoin = 'miter';
-        break;
-        
-      default:
-        ctx.setLineDash([]);
-        ctx.lineCap = 'butt';
-        ctx.lineJoin = 'miter';
-        break;
-    }
-  }
-
-  /**
-   * Applies complex shape stroke styles that require multiple passes
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param style - Complex stroke style type
-   * @param width - Stroke width
-   * @param color - Base stroke color
-   * @param gradient - Optional gradient
-   */
-  #applyComplexShapeStroke(
-    ctx: SKRSContext2D,
-    style: 'groove' | 'ridge' | 'double',
-    width: number,
-    color: string,
-    gradient: any
-  ): void {
-    const halfWidth = width / 2;
-    
-    switch (style) {
-      case 'groove':
-        // Groove: dark outer, light inner
-        ctx.lineWidth = halfWidth;
-        
-        // Outer dark stroke
-        if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
-          ctx.strokeStyle = gstroke as any;
-        } else {
-          ctx.strokeStyle = this.#darkenColor(color, 0.3);
-        }
-        ctx.stroke();
-        
-        // Inner light stroke
-        ctx.lineWidth = halfWidth;
-        if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
-          ctx.strokeStyle = gstroke as any;
-        } else {
-          ctx.strokeStyle = this.#lightenColor(color, 0.3);
-        }
-        ctx.stroke();
-        break;
-        
-      case 'ridge':
-        // Ridge: light outer, dark inner
-        ctx.lineWidth = halfWidth;
-        
-        // Outer light stroke
-        if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
-          ctx.strokeStyle = gstroke as any;
-        } else {
-          ctx.strokeStyle = this.#lightenColor(color, 0.3);
-        }
-        ctx.stroke();
-        
-        // Inner dark stroke
-        ctx.lineWidth = halfWidth;
-        if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
-          ctx.strokeStyle = gstroke as any;
-        } else {
-          ctx.strokeStyle = this.#darkenColor(color, 0.3);
-        }
-        ctx.stroke();
-        break;
-        
-      case 'double':
-        // Double: two parallel strokes
-        ctx.lineWidth = halfWidth;
-        
-        // First stroke (outer)
-        if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
-          ctx.strokeStyle = gstroke as any;
-        } else {
-          ctx.strokeStyle = color;
-        }
-        ctx.stroke();
-        
-        // Second stroke (inner)
-        ctx.lineWidth = halfWidth;
-        if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
-          ctx.strokeStyle = gstroke as any;
-        } else {
-          ctx.strokeStyle = color;
-        }
-        ctx.stroke();
-        break;
-    }
-  }
-
-  /**
-   * Darkens a color by a factor
-   * @private
-   * @param color - Color string
-   * @param factor - Darkening factor (0-1)
-   * @returns Darkened color string
-   */
-  #darkenColor(color: string, factor: number): string {
-    // Simple darkening for hex colors
-    if (color.startsWith('#')) {
-      const hex = color.slice(1);
-      const num = parseInt(hex, 16);
-      const r = Math.max(0, Math.floor((num >> 16) * (1 - factor)));
-      const g = Math.max(0, Math.floor(((num >> 8) & 0x00FF) * (1 - factor)));
-      const b = Math.max(0, Math.floor((num & 0x0000FF) * (1 - factor)));
-      return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-    }
-    return color; // Return original for non-hex colors
-  }
-
-  /**
-   * Lightens a color by a factor
-   * @private
-   * @param color - Color string
-   * @param factor - Lightening factor (0-1)
-   * @returns Lightened color string
-   */
-  #lightenColor(color: string, factor: number): string {
-    // Simple lightening for hex colors
-    if (color.startsWith('#')) {
-      const hex = color.slice(1);
-      const num = parseInt(hex, 16);
-      const r = Math.min(255, Math.floor((num >> 16) + (255 - (num >> 16)) * factor));
-      const g = Math.min(255, Math.floor(((num >> 8) & 0x00FF) + (255 - ((num >> 8) & 0x00FF)) * factor));
-      const b = Math.min(255, Math.floor((num & 0x0000FF) + (255 - (num & 0x0000FF)) * factor));
-      return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-    }
-    return color; // Return original for non-hex colors
   }
 }

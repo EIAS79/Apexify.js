@@ -20,6 +20,6 @@
             "moduleResolution": "node"
         }
     },
-    "include": ["./lib/**/*", "./types/**/*", "./test-collage.ts"],
+    "include": ["lib/**/*", "./types/**/*", "./test-collage.ts"],
     "exclude": ["node_modules"]
 }

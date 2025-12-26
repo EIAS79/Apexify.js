@@ -1,6 +1,7 @@
 import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
+import { getCanvasContext } from '../errorUtils';
 
 /**
  * Applies a mask to an image
@@ -37,8 +38,7 @@ export async function applyImageMask(
 
     // Create temporary canvas for mask processing
     const maskCanvas = createCanvas(width, height);
-    const maskCtx = maskCanvas.getContext('2d') as SKRSContext2D;
-    if (!maskCtx) throw new Error("Unable to get 2D context for mask");
+    const maskCtx = getCanvasContext(maskCanvas);
 
     // Draw mask image scaled to target size
     maskCtx.drawImage(maskImage, 0, 0, width, height);
@@ -49,8 +49,7 @@ export async function applyImageMask(
 
     // Get source image data
     const sourceCanvas = createCanvas(width, height);
-    const sourceCtx = sourceCanvas.getContext('2d') as SKRSContext2D;
-    if (!sourceCtx) throw new Error("Unable to get 2D context for source");
+    const sourceCtx = getCanvasContext(sourceCanvas);
     sourceCtx.drawImage(image, 0, 0, width, height);
     const sourceData = sourceCtx.getImageData(0, 0, width, height);
     const sourcePixels = sourceData.data;
@@ -212,8 +211,7 @@ export function applyBulgeDistortion(
 ): void {
   // Create temporary canvas for distortion
   const tempCanvas = createCanvas(width, height);
-  const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-  if (!tempCtx) throw new Error("Unable to get 2D context");
+  const tempCtx = getCanvasContext(tempCanvas);
 
   tempCtx.drawImage(image, 0, 0, width, height);
   const imageData = tempCtx.getImageData(0, 0, width, height);
@@ -284,8 +282,7 @@ export function applyMeshWarp(
 ): void {
   // Create temporary canvas
   const tempCanvas = createCanvas(width, height);
-  const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-  if (!tempCtx) throw new Error("Unable to get 2D context");
+  const tempCtx = getCanvasContext(tempCanvas);
 
   tempCtx.drawImage(image, 0, 0, width, height);
   const imageData = tempCtx.getImageData(0, 0, width, height);
