@@ -216,9 +216,7 @@
   ],
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
-    "apexify.js": "^5.2.0",
     "axios": "^1.7.7",
-    "chart.js": "^4.5.1",
     "fs-extra": "^11.3.1",
     "gifencoder": "^2.0.1",
     "imgur": "^2.5.0",
