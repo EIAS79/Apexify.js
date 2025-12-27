@@ -1,5 +1,5 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageProperties, ShapeType } from "../utils/utils";
+import type { ImageProperties, ShapeType, CreateImageOptions } from "../utils/utils";
 import type { CanvasResults } from "./CanvasCreator";
 import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
 import {
@@ -156,7 +156,7 @@ export class ImageCreator {
     gradient: any
   ): void {
     const halfWidth = width / 2;
-    
+
     switch (style) {
       case 'groove':
         ctx.lineWidth = halfWidth;
@@ -293,7 +293,7 @@ export class ImageCreator {
     this.applyShapeStrokeStyle(ctx, style, strokeWidth);
 
     createShapePath(ctx, shapeType, x, y, width, height, shapeProps);
-    
+
     if (style === 'groove' || style === 'ridge' || style === 'double') {
       this.applyComplexShapeStroke(ctx, style, strokeWidth, color, gradient);
     } else {
@@ -310,11 +310,11 @@ export class ImageCreator {
    * @private
    */
   private async drawShape(
-    ctx: SKRSContext2D, 
-    shapeType: ShapeType, 
-    x: number, 
-    y: number, 
-    width: number, 
+    ctx: SKRSContext2D,
+    shapeType: ShapeType,
+    x: number,
+    y: number,
+    width: number,
     height: number,
     options: {
       rotation?: number;
@@ -333,6 +333,11 @@ export class ImageCreator {
       innerRadius?: number;
       outerRadius?: number;
       filters?: any[];
+points?: Array<{ x: number; y: number }>;
+startAngle?: number;
+endAngle?: number;
+centerX?: number;
+centerY?: number;
     }
   ): Promise<void> {
     const box = { x, y, w: width, h: height };
@@ -376,6 +381,7 @@ export class ImageCreator {
       await applySimpleProfessionalFilters(ctx, options.filters, width, height);
     }
 
+    // Pass ALL shape properties including points, angles, centers
     drawShape(ctx, shapeType, x, y, width, height, {
       fill: options.fill,
       color: options.color,
@@ -383,7 +389,12 @@ export class ImageCreator {
       radius: options.radius,
       sides: options.sides,
       innerRadius: options.innerRadius,
-      outerRadius: options.outerRadius
+      outerRadius: options.outerRadius,
+points: options.points,
+startAngle: options.startAngle,
+endAngle: options.endAngle,
+centerX: options.centerX,
+centerY: options.centerY
     });
 
     ctx.restore();
@@ -592,21 +603,23 @@ export class ImageCreator {
 
   /**
    * Draws one or more images (or shapes) on an existing canvas buffer.
-   * 
+   *
    * @param images - Single ImageProperties object or array of ImageProperties
    * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
+   * @param options - Optional options for grouped drawing
    * @returns Promise<Buffer> - Updated canvas buffer in PNG format
    */
   async createImage(
     images: ImageProperties | ImageProperties[],
-    canvasBuffer: CanvasResults | Buffer
+    canvasBuffer: CanvasResults | Buffer,
+    options?: CreateImageOptions
   ): Promise<Buffer> {
     try {
       if (!canvasBuffer) {
         throw new Error("createImage: canvasBuffer is required.");
       }
       this.validateImageArray(images);
-      
+
       const list = Array.isArray(images) ? images : [images];
 
       const base: Image = Buffer.isBuffer(canvasBuffer)
@@ -618,8 +631,51 @@ export class ImageCreator {
 
       ctx.drawImage(base, 0, 0);
 
-      for (const ip of list) {
-        await this.drawImageBitmap(ctx, ip);
+      const isGrouped = options?.isGrouped && list.length > 1;
+      const groupTransform = options?.groupTransform;
+
+      if (isGrouped && groupTransform) {
+        // GROUPED MODE: Apply transformations to all elements together
+        const pivotX = groupTransform.pivotX ?? base.width / 2;
+        const pivotY = groupTransform.pivotY ?? base.height / 2;
+
+        // Save context state
+        ctx.save();
+
+
+        // 1. Translate to pivot
+        ctx.translate(pivotX, pivotY);
+
+        // 2. Apply rotation (if specified)
+        if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
+          ctx.rotate((groupTransform.rotation * Math.PI) / 180);
+        }
+
+        // 3. Apply scale (if specified)
+        if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
+          ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
+        }
+
+        // 4. Apply translation (relative to pivot, after rotation/scale)
+        if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
+          ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
+        }
+
+        // 5. Translate back to origin
+        ctx.translate(-pivotX, -pivotY);
+
+        for (const ip of list) {
+
+          const ipWithoutRotation = { ...ip, rotation: 0 };
+          await this.drawImageBitmap(ctx, ipWithoutRotation);
+        }
+
+        ctx.restore();
+      } else {
+
+        for (const ip of list) {
+          await this.drawImageBitmap(ctx, ip);
+        }
       }
 
       return cv.toBuffer("image/png");

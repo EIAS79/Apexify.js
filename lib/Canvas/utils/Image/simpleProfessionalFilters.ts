@@ -18,12 +18,11 @@ export async function applySimpleProfessionalFilters(
   if (!filters || filters.length === 0) return;
 
   try {
-    // Get current canvas data
+
     const imageData = ctx.getImageData(0, 0, width, height);
-    // Convert Uint8ClampedArray to Buffer for Sharp
+
     const buffer = Buffer.from(new Uint8Array(imageData.data.buffer));
 
-    // Convert to Sharp-compatible format
     let sharpImage = sharp(buffer, {
       raw: {
         width: width,
@@ -32,7 +31,6 @@ export async function applySimpleProfessionalFilters(
       }
     });
 
-    // Apply each filter using Sharp
     for (const filter of filters) {
       switch (filter.type) {
         case 'gaussianBlur':
@@ -100,13 +98,12 @@ export async function applySimpleProfessionalFilters(
         case 'grain':
         case 'edgeDetection':
         case 'emboss':
-          // Use basic canvas filters for complex effects
+
           applyBasicCanvasFilter(ctx, filter, width, height);
-          return; // Skip Sharp processing for these
+return;
       }
     }
 
-    // Convert back to canvas format
     const { data } = await sharpImage.raw().toBuffer({ resolveWithObject: true });
     const newImageData = ctx.createImageData(width, height);
     newImageData.data.set(new Uint8ClampedArray(data));
@@ -114,15 +111,14 @@ export async function applySimpleProfessionalFilters(
 
   } catch (error) {
     console.error('Error applying professional filters:', error);
-    // Fallback to basic filters if Sharp fails
+
     applyBasicCanvasFilters(ctx, filters, width, height);
   }
 }
 
-// Basic canvas filter implementations for complex effects
 function applyBasicCanvasFilter(ctx: SKRSContext2D, filter: ImageFilter, width: number, height: number): void {
   ctx.save();
-  
+
   switch (filter.type) {
     case 'motionBlur':
       if (filter.intensity && filter.intensity > 0) {
@@ -141,14 +137,14 @@ function applyBasicCanvasFilter(ctx: SKRSContext2D, filter: ImageFilter, width: 
       if (filter.intensity && filter.intensity > 0) {
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
-        
+
         for (let i = 0; i < data.length; i += 4) {
           const noise = (Math.random() - 0.5) * filter.intensity * 255;
-          data[i] = Math.max(0, Math.min(255, data[i] + noise));     // R
-          data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise)); // G
-          data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise)); // B
+data[i] = Math.max(0, Math.min(255, data[i] + noise));
+data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise));
+data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
         }
-        
+
         ctx.putImageData(imageData, 0, 0);
       }
       break;
@@ -156,14 +152,14 @@ function applyBasicCanvasFilter(ctx: SKRSContext2D, filter: ImageFilter, width: 
       if (filter.intensity && filter.intensity > 0) {
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
-        
+
         for (let i = 0; i < data.length; i += 4) {
           const grain = (Math.random() - 0.5) * filter.intensity * 100;
-          data[i] = Math.max(0, Math.min(255, data[i] + grain));     // R
-          data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + grain)); // G
-          data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + grain)); // B
+data[i] = Math.max(0, Math.min(255, data[i] + grain));
+data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + grain));
+data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + grain));
         }
-        
+
         ctx.putImageData(imageData, 0, 0);
       }
       break;
@@ -178,14 +174,13 @@ function applyBasicCanvasFilter(ctx: SKRSContext2D, filter: ImageFilter, width: 
       }
       break;
   }
-  
+
   ctx.restore();
 }
 
-// Fallback basic filters
 function applyBasicCanvasFilters(ctx: SKRSContext2D, filters: ImageFilter[], width: number, height: number): void {
   ctx.save();
-  
+
   for (const filter of filters) {
     switch (filter.type) {
       case 'gaussianBlur':
@@ -224,6 +219,6 @@ function applyBasicCanvasFilters(ctx: SKRSContext2D, filters: ImageFilter[], wid
         break;
     }
   }
-  
+
   ctx.restore();
 }

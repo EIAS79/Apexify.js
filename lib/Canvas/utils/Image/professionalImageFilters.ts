@@ -19,11 +19,10 @@ export async function applyProfessionalImageFilters(
   if (!filters || filters.length === 0) return;
 
   try {
-    // Get current canvas data
+
     const imageData = ctx.getImageData(0, 0, width, height);
     const buffer = Buffer.from(new Uint8Array(imageData.data.buffer));
 
-    // Convert to Sharp-compatible format
     let sharpImage = sharp(buffer, {
       raw: {
         width: width,
@@ -32,7 +31,6 @@ export async function applyProfessionalImageFilters(
       }
     });
 
-    // Apply each filter using Sharp
     for (const filter of filters) {
       switch (filter.type) {
         case 'gaussianBlur':
@@ -89,19 +87,17 @@ export async function applyProfessionalImageFilters(
       }
     }
 
-    // Convert back to canvas format
     const { data } = await sharpImage.raw().toBuffer({ resolveWithObject: true });
     const newImageData = new ImageData(new Uint8ClampedArray(data), width, height);
     ctx.putImageData(newImageData, 0, 0);
 
   } catch (error) {
     console.error('Error applying professional filters:', error);
-    // Fallback to basic filters if Sharp fails
+
     applyBasicFilters(ctx, filters, width, height);
   }
 }
 
-// Sharp-based filter implementations
 async function applyGaussianBlurSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
     return image.blur(intensity);
@@ -111,7 +107,7 @@ async function applyGaussianBlurSharp(image: sharp.Sharp, intensity: number): Pr
 
 async function applyMotionBlurSharp(image: sharp.Sharp, intensity: number, angle: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
-    // Motion blur using convolution
+
     const kernel = createMotionBlurKernel(intensity, angle);
     return image.convolve(kernel);
   }
@@ -120,7 +116,7 @@ async function applyMotionBlurSharp(image: sharp.Sharp, intensity: number, angle
 
 async function applyRadialBlurSharp(image: sharp.Sharp, intensity: number, centerX: number, centerY: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
-    // Radial blur using custom kernel
+
     const kernel = createRadialBlurKernel(intensity, centerX, centerY);
     return image.convolve(kernel);
   }
@@ -201,17 +197,17 @@ async function applyPixelateSharp(image: sharp.Sharp, size: number): Promise<sha
 
 async function applyNoiseSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
-    // Add noise using Jimp for better control
+
     const buffer = await image.png().toBuffer();
     const jimpImage = await Jimp.read(buffer);
-    
+
     jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
       const noise = (Math.random() - 0.5) * intensity * 255;
-      this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + noise));     // R
-      this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + noise)); // G
-      this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + noise)); // B
+this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + noise));
+this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + noise));
+this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + noise));
     });
-    
+
     const jimpBuffer = await jimpImage.getBuffer('image/png');
     return sharp(jimpBuffer);
   }
@@ -220,17 +216,17 @@ async function applyNoiseSharp(image: sharp.Sharp, intensity: number): Promise<s
 
 async function applyGrainSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
-    // Add grain using Jimp
+
     const buffer = await image.png().toBuffer();
     const jimpImage = await Jimp.read(buffer);
-    
+
     jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
       const grain = (Math.random() - 0.5) * intensity * 100;
-      this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + grain));     // R
-      this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + grain)); // G
-      this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + grain)); // B
+this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + grain));
+this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + grain));
+this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + grain));
     });
-    
+
     const jimpBuffer = await jimpImage.getBuffer('image/png');
     return sharp(jimpBuffer);
   }
@@ -239,7 +235,7 @@ async function applyGrainSharp(image: sharp.Sharp, intensity: number): Promise<s
 
 async function applyEdgeDetectionSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
-    // Edge detection using Sobel kernel
+
     const kernel = createSobelKernel(intensity);
     return image.convolve(kernel).grayscale();
   }
@@ -248,24 +244,22 @@ async function applyEdgeDetectionSharp(image: sharp.Sharp, intensity: number): P
 
 async function applyEmbossSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
   if (intensity > 0) {
-    // Emboss using custom kernel
+
     const kernel = createEmbossKernel(intensity);
     return image.convolve(kernel);
   }
   return image;
 }
 
-// Kernel creation functions
 function createMotionBlurKernel(intensity: number, angle: number): any {
   const size = Math.max(3, Math.floor(intensity));
   const kernel = Array(size * size).fill(0);
   const center = Math.floor(size / 2);
-  
-  // Create motion blur kernel based on angle
+
   const radians = (angle * Math.PI) / 180;
   const dx = Math.cos(radians);
   const dy = Math.sin(radians);
-  
+
   for (let i = 0; i < size; i++) {
     const x = Math.round(center + dx * (i - center));
     const y = Math.round(center + dy * (i - center));
@@ -273,7 +267,7 @@ function createMotionBlurKernel(intensity: number, angle: number): any {
       kernel[y * size + x] = 1 / size;
     }
   }
-  
+
   return {
     width: size,
     height: size,
@@ -287,7 +281,7 @@ function createRadialBlurKernel(intensity: number, centerX: number, centerY: num
   const size = Math.max(3, Math.floor(intensity));
   const kernel = Array(size * size).fill(0);
   const center = Math.floor(size / 2);
-  
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const distance = Math.sqrt((x - center) ** 2 + (y - center) ** 2);
@@ -295,13 +289,12 @@ function createRadialBlurKernel(intensity: number, centerX: number, centerY: num
       kernel[y * size + x] = weight;
     }
   }
-  
-  // Normalize kernel
+
   const sum = kernel.reduce((a, b) => a + b, 0);
   for (let i = 0; i < kernel.length; i++) {
     kernel[i] /= sum;
   }
-  
+
   return {
     width: size,
     height: size,
@@ -312,13 +305,13 @@ function createRadialBlurKernel(intensity: number, centerX: number, centerY: num
 }
 
 function createSobelKernel(intensity: number): any {
-  // Sobel X kernel for edge detection
+
   const kernel = [
     -1, 0, 1,
     -2, 0, 2,
     -1, 0, 1
   ].map(v => v * intensity);
-  
+
   return {
     width: 3,
     height: 3,
@@ -334,7 +327,7 @@ function createEmbossKernel(intensity: number): any {
     -1, 1, 1,
     0, 1, 2
   ].map(v => v * intensity);
-  
+
   return {
     width: 3,
     height: 3,
@@ -344,10 +337,9 @@ function createEmbossKernel(intensity: number): any {
   };
 }
 
-// Fallback basic filters
 function applyBasicFilters(ctx: SKRSContext2D, filters: ImageFilter[], width: number, height: number): void {
   ctx.save();
-  
+
   for (const filter of filters) {
     switch (filter.type) {
       case 'gaussianBlur':
@@ -386,6 +378,6 @@ function applyBasicFilters(ctx: SKRSContext2D, filters: ImageFilter[], width: nu
         break;
     }
   }
-  
+
   ctx.restore();
 }

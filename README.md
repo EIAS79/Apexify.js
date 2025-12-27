@@ -14,6 +14,8 @@
 
 **The most powerful, all-in-one canvas rendering and image processing library for Node.js**
 
+**🚀 Now Even More Advanced: Full Canvas API Compatibility + Advanced Extensions**
+
 </div>
 
 ---
@@ -34,6 +36,10 @@ While other libraries force you to install multiple packages for different tasks
 | **Text Rendering** | ✅ Advanced (gradients, paths, effects) | ❌ Basic only |
 | **Shape Drawing** | ✅ Complex shapes (heart, star, custom) | ❌ Basic shapes only |
 | **Batch Processing** | ✅ Built-in | ❌ Manual implementation |
+| **Text Metrics API** | ✅ Advanced (Canvas API + extensions) | ❌ Not available |
+| **Pixel Data API** | ✅ Advanced (get/set/manipulate) | ❌ Not available |
+| **Path2D API** | ✅ Advanced (full Canvas compatibility) | ⚠️ Basic only |
+| **Hit Detection** | ✅ Advanced (multi-region, custom) | ❌ Not available |
 | **TypeScript Support** | ✅ Full type safety | ⚠️ Partial or none |
 | **Performance** | ✅ Rust-powered (@napi-rs) | ⚠️ JavaScript-only |
 
@@ -44,6 +50,8 @@ While other libraries force you to install multiple packages for different tasks
 ✅ **Rust-Powered Performance** - Built on @napi-rs/canvas for blazing speed  
 ✅ **Modular Architecture** - Clean, maintainable codebase  
 ✅ **Comprehensive Features** - 200+ methods covering every use case  
+✅ **Canvas API Compatible** - Full Canvas API support with advanced extensions  
+✅ **Advanced APIs** - Text Metrics, Pixel Data, Path2D, Hit Detection  
 ✅ **Active Development** - Regular updates with new features  
 ✅ **Production Ready** - Used in production by thousands of projects  
 
@@ -118,6 +126,9 @@ While other libraries force you to install multiple packages for different tasks
 | **Text Wrapping** | Automatic text wrapping with custom widths |
 | **Text Rotation** | Rotate text at any angle |
 | **Text Spacing** | Letter spacing and line height control |
+| **Text Metrics API** | Advanced text measurement (Canvas API + extensions) |
+| **Character Metrics** | Per-character width and position metrics |
+| **Multi-line Metrics** | Line-by-line text metrics for wrapped text |
 
 ### 🔷 **Shape Drawing**
 
@@ -131,6 +142,9 @@ While other libraries force you to install multiple packages for different tasks
 | **Shape Rotation** | Rotate shapes with custom angles |
 | **Shape Scaling** | Scale shapes with custom factors |
 | **Advanced Strokes** | Groove, ridge, double, inset, outset styles |
+| **Arc & PieSlice** | Draw arcs and pie slice sectors with custom angles |
+| **Path2D API** | Advanced path creation and manipulation |
+| **Hit Detection** | Point-in-shape detection with custom regions |
 
 ### 📊 **Chart Generation**
 
@@ -195,6 +209,21 @@ While other libraries force you to install multiple packages for different tasks
 | **Output Formats** | File, buffer, base64, attachment output |
 | **Quality Control** | Adjust GIF quality and optimization |
 
+### 🔬 **Advanced APIs** ⭐ NEW!
+
+| Feature | Description |
+|---------|-------------|
+| **Text Metrics API** | Complete text measurement matching Canvas API + extensions |
+| **Pixel Data API** | Direct pixel manipulation (get/set/manipulate pixels) |
+| **Pixel Filters** | Built-in filters (grayscale, invert, sepia, brightness, contrast) |
+| **Custom Pixel Processors** | Custom functions for pixel-level processing |
+| **Path2D API** | Advanced path creation with commands (moveTo, lineTo, arc, bezier, etc.) |
+| **Path Drawing** | Draw paths with stroke, fill, and transform options |
+| **Hit Detection** | Point-in-path and point-in-region detection |
+| **Custom Regions** | Rectangle, circle, ellipse, polygon, path, and custom function regions |
+| **Multi-Region Detection** | Test points against multiple regions simultaneously |
+| **Distance Calculation** | Calculate distances from points to region edges |
+
 ### 🛠️ **Utilities & Tools**
 
 | Feature | Description |
@@ -222,25 +251,25 @@ import { ApexPainter } from 'apexify.js';
 const painter = new ApexPainter();
 
 // Create a canvas
-const canvas = await painter.createCanvas({
-  width: 1200,
-  height: 630,
-  gradientBg: {
-    type: 'linear',
-    colors: [
-      { stop: 0, color: '#667EEA' },
-      { stop: 1, color: '#764BA2' }
-    ]
-  }
-});
-
+  const canvas = await painter.createCanvas({
+    width: 1200,
+    height: 630,
+    gradientBg: {
+      type: 'linear',
+      colors: [
+        { stop: 0, color: '#667EEA' },
+        { stop: 1, color: '#764BA2' }
+      ]
+    }
+  });
+  
 // Add text
 const text = await painter.createText({
   text: 'Hello, World!',
-  x: 600,
-  y: 315,
+    x: 600,
+    y: 315,
   fontSize: 48,
-  color: '#FFFFFF',
+    color: '#FFFFFF',
   fontFamily: 'Arial'
 }, canvas);
 
@@ -251,8 +280,44 @@ const image = await painter.createImage({
   y: 100,
   width: 200,
   height: 200
-}, canvas);
+  }, canvas);
 
+// Advanced: Text Metrics API
+const metrics = await painter.measureText({
+  text: 'Hello, World!',
+  fontSize: 48,
+  fontFamily: 'Arial',
+  includeCharMetrics: true
+});
+console.log(`Text width: ${metrics.width}px`);
+
+// Advanced: Pixel Data API
+const pixelData = await painter.getPixelData(image.buffer, {
+  x: 0, y: 0, width: 100, height: 100
+});
+const processed = await painter.manipulatePixels(image.buffer, {
+  filter: 'grayscale',
+  intensity: 1.0
+});
+
+// Advanced: Path2D API
+const path = painter.createPath2D([
+  { type: 'moveTo', x: 0, y: 0 },
+  { type: 'lineTo', x: 100, y: 100 },
+  { type: 'arc', x: 150, y: 150, radius: 50, startAngle: 0, endAngle: Math.PI }
+]);
+await painter.drawPath(canvas.buffer, path, {
+  stroke: { color: '#ff0000', width: 2 },
+  fill: { color: '#00ff00', opacity: 0.5 }
+});
+
+// Advanced: Hit Detection API
+const hitResult = await painter.isPointInRegion({
+  type: 'circle',
+  x: 100, y: 100, radius: 50
+}, 120, 120);
+console.log(`Point hit: ${hitResult.hit}`);
+  
 // Save result
 await painter.save(image, { 
   path: './output.png',
@@ -309,6 +374,7 @@ Create thumbnails, previews, apply effects, transitions, and process videos at s
 - **Optimized Algorithms**: Efficient image processing and rendering
 - **Batch Processing**: Process multiple operations in parallel
 - **Memory Efficient**: Smart resource management and cleanup
+- **Canvas API Native**: Direct access to Canvas APIs for maximum performance
 
 ---
 

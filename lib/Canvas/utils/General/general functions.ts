@@ -29,7 +29,6 @@ export async function loadImages(imagePath: string) {
   }
 }
 
-
 /**
  * Resizes an image using Sharp with additional options for quality, kernel, and withoutEnlargement.
  * @param resizeOptions - The options for resizing.
@@ -41,7 +40,6 @@ export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer>
       throw new Error("Image path is required for resizing.");
     }
 
-    // ✅ Use `loadImages()` instead of handling the fetch manually
     const image = await loadImages(resizeOptions.imagePath);
 
     const resizeOptionsForSharp: sharp.ResizeOptions = {
@@ -127,7 +125,7 @@ export async function applyColorFilters(imagePath: string, gradientOptions?: str
     const outputBuffer = await image
       .composite([{ input: gradientImage, blend: 'over' }])
       .toBuffer();
-      
+
     return outputBuffer;
   } catch (error) {
     console.error("Error applying color filter:", error);
@@ -173,7 +171,6 @@ function createGradientImage(width: number | undefined, height: number | undefin
       grad.addColorStop(stop, color);
     });
 
-    // Handle repeat mode for linear gradients
     if (repeat !== 'no-repeat') {
       gradient = createRepeatingGradientPattern(ctx, grad, repeat, width, height);
     } else {
@@ -193,7 +190,6 @@ function createGradientImage(width: number | undefined, height: number | undefin
       grad.addColorStop(stop, color);
     });
 
-    // Handle repeat mode for radial gradients
     if (repeat !== 'no-repeat') {
       gradient = createRepeatingGradientPattern(ctx, grad, repeat, width, height);
     } else {
@@ -204,12 +200,12 @@ function createGradientImage(width: number | undefined, height: number | undefin
     const centerY = options.centerY ?? height / 2;
     const startAngle = options.startAngle ?? 0;
     const angleRad = (startAngle * Math.PI) / 180;
-    
+
     const grad = ctx.createConicGradient(angleRad, centerX, centerY);
     colors.forEach(({ stop, color }: { stop: number; color: string }) => {
       grad.addColorStop(stop, color);
     });
-    
+
     gradient = grad;
   } else {
     throw new Error(`Unsupported gradient type: ${type}`);
@@ -235,24 +231,18 @@ function createRepeatingGradientPattern(
 ): CanvasPattern {
   const patternCanvas = createCanvas(width, height);
   const patternCtx = getCanvasContext(patternCanvas);
-  
-  // Draw the gradient on the pattern canvas
+
   patternCtx.fillStyle = gradient;
   patternCtx.fillRect(0, 0, width, height);
-  
-  // Create pattern from the canvas
+
   const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
   if (!pattern) {
     throw new Error('Failed to create repeating gradient pattern');
   }
-  
+
   return pattern;
 }
 
-
-
-// Legacy filter type for imgEffects (different from ImageFilter)
-// This supports both legacy filter types and standard ImageFilter types
 type LegacyImageFilter = {
   type: 'flip' | 'rotate' | 'brightness' | 'contrast' | 'invert' | 'greyscale' | 'sepia' | 'blur' | 'posterize' | 'pixelate';
   horizontal?: boolean;
@@ -323,10 +313,10 @@ export async function imgEffects(imagePath: string, filters: LegacyImageFilter[]
           break;
         case "pixelate":
           if ('x' in filter && 'y' in filter && 'w' in filter && 'h' in filter) {
-            // Legacy filter with x, y, w, h properties
+
             pixelate(ctx, filter.size ?? 10, filter.x ?? 0, filter.y ?? 0, filter.w ?? image.width, filter.h ?? image.height);
           } else {
-            // Standard ImageFilter - use default values
+
             pixelate(ctx, filter.size ?? 10, 0, 0, image.width, image.height);
           }
           break;
@@ -341,14 +331,13 @@ export async function imgEffects(imagePath: string, filters: LegacyImageFilter[]
   }
 }
 
-
 /**
  * Crops the inner portion of the image based on the bounding box of the provided coordinates.
  * Optionally applies a clipping mask with a specified radius.
  */
 export async function cropInner(options: cropOptions): Promise<Buffer> {
   try {
-    // Load the image (from HTTP or local path)
+
     let image: Image;
     if (options.imageSource.startsWith("http")) {
       image = await loadImage(options.imageSource);
@@ -356,7 +345,6 @@ export async function cropInner(options: cropOptions): Promise<Buffer> {
       image = await loadImage(path.join(process.cwd(), options.imageSource));
     }
 
-    // Compute the bounding box from all coordinate points.
     const xs: number[] = [];
     const ys: number[] = [];
     for (const coord of options.coordinates) {
@@ -370,11 +358,9 @@ export async function cropInner(options: cropOptions): Promise<Buffer> {
     const cropWidth = maxX - minX;
     const cropHeight = maxY - minY;
 
-    // Create a canvas with the crop dimensions.
     const canvas = createCanvas(cropWidth, cropHeight);
     const ctx = getCanvasContext(canvas);
 
-    // Optionally, apply a clipping mask if a radius is provided.
     if (options.radius !== undefined && options.radius !== null) {
       if (options.radius === "circular") {
         const radius = Math.min(cropWidth, cropHeight) / 2;
@@ -400,8 +386,6 @@ export async function cropInner(options: cropOptions): Promise<Buffer> {
       }
     }
 
-    // Draw the region from the original image corresponding to the bounding box.
-    // drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
     ctx.drawImage(image, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
 
     return canvas.toBuffer('image/png');
@@ -424,16 +408,13 @@ export async function cropOuter(options: cropOptions): Promise<Buffer> {
       image = await loadImage(path.join(process.cwd(), options.imageSource));
     }
 
-    // Create a canvas matching the full image dimensions.
     const canvas = createCanvas(image.width, image.height);
     const ctx = getCanvasContext(canvas);
 
-    // Draw the full image.
     ctx.drawImage(image, 0, 0);
 
-    // Build the polygon path from the provided coordinates.
     ctx.beginPath();
-    // Start at the first coordinate's "from" point.
+
     ctx.moveTo(options.coordinates[0].from.x, options.coordinates[0].from.y);
     for (let i = 0; i < options.coordinates.length; i++) {
       const coord = options.coordinates[i];
@@ -447,10 +428,8 @@ export async function cropOuter(options: cropOptions): Promise<Buffer> {
     }
     ctx.closePath();
 
-    // Set the clipping region to the polygon.
     ctx.clip();
 
-    // Clear the inner region defined by the clipping path.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     return canvas.toBuffer('image/png');
@@ -460,10 +439,9 @@ export async function cropOuter(options: cropOptions): Promise<Buffer> {
   }
 }
 
-
 /**
  * Detects dominant colors from an image.
- * 
+ *
  * @param imagePath - Local path or URL of the image.
  * @returns A sorted array of dominant colors with their frequency.
  */
@@ -586,7 +564,6 @@ export async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer
   }
 }
 
-
 function flipCanvas(ctx: SKRSContext2D, width: number, height: number, horizontal = false, vertical = false): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
@@ -681,19 +658,18 @@ function applySepia(ctx: SKRSContext2D): void {
   ctx.putImageData(imageData, 0, 0);
 }
 
-
 function applyBlur(ctx: SKRSContext2D, radius: number): void {
   if (radius <= 0) return;
   const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
   const pixels = imageData.data;
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
-  
+
   const blurSize = Math.floor(radius);
   for (let y = blurSize; y < height - blurSize; y++) {
     for (let x = blurSize; x < width - blurSize; x++) {
       let r = 0, g = 0, b = 0, count = 0;
-      
+
       for (let dy = -blurSize; dy <= blurSize; dy++) {
         for (let dx = -blurSize; dx <= blurSize; dx++) {
           const index = ((y + dy) * width + (x + dx)) * 4;
@@ -737,7 +713,7 @@ function pixelate(ctx: SKRSContext2D, size: number, startX = 0, startY = 0, widt
   for (let y = 0; y < height; y += size) {
     for (let x = 0; x < width; x += size) {
       let r = 0, g = 0, b = 0, count = 0;
-      
+
       for (let dy = 0; dy < size; dy++) {
         for (let dx = 0; dx < size; dx++) {
           if (x + dx < width && y + dy < height) {

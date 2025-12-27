@@ -11,7 +11,7 @@ function checkUpdates() {
   try {
     const packageJsonPath = path.resolve(process.cwd(), "package.json");
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-    
+
     const dependencies = packageJson.dependencies || {};
     const devDependencies = packageJson.devDependencies || {};
     const installedVersion = (dependencies["apexify.js"] || devDependencies["apexify.js"])?.replace(/^(\^|~)/, "");

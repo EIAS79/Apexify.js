@@ -42,7 +42,7 @@ export class TextCreator {
    * @param textProps - Text properties
    */
   private async renderEnhancedText(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
-    // Check if text should be rendered on a path
+
     if (textProps.path && textProps.textOnPath) {
       renderTextOnPath(ctx, textProps.text, textProps.path, textProps.path.offset ?? 0);
     } else {
@@ -52,25 +52,23 @@ export class TextCreator {
 
   /**
    * Creates text on an existing canvas buffer with enhanced styling options.
-   * 
+   *
    * @param textArray - Single TextProperties object or array of TextProperties
    * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
    * @returns Promise<Buffer> - Updated canvas buffer in PNG format
    */
   async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
     try {
-      // Validate inputs
+
       if (!canvasBuffer) {
         throw new Error("createText: canvasBuffer is required.");
       }
       this.validateTextArray(textArray);
-      
-      // Ensure textArray is an array
+
       const textList = Array.isArray(textArray) ? textArray : [textArray];
 
-      // Load existing canvas buffer
       let existingImage: Image;
-      
+
       if (Buffer.isBuffer(canvasBuffer)) {
         existingImage = await loadImage(canvasBuffer);
       } else if (canvasBuffer && canvasBuffer.buffer) {
@@ -83,14 +81,11 @@ export class TextCreator {
         throw new Error('Unable to load image from buffer');
       }
 
-      // Create new canvas with same dimensions
       const canvas = createCanvas(existingImage.width, existingImage.height);
       const ctx = getCanvasContext(canvas);
 
-      // Draw existing image as background
       ctx.drawImage(existingImage, 0, 0);
 
-      // Render each text object with enhanced features
       for (const textProps of textList) {
         await this.renderEnhancedText(ctx, textProps);
       }

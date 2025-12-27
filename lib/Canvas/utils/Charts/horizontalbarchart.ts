@@ -12,28 +12,28 @@ export type HorizontalBarChartType = 'standard' | 'grouped' | 'stacked' | 'lolli
  * Enhanced text styling for chart labels
  */
 export interface EnhancedTextStyle {
-  fontPath?: string; // Path to custom font file
-  fontName?: string; // Custom font name
-  fontFamily?: string; // Font family (e.g., 'Arial', 'Helvetica')
-  fontSize?: number; // Font size (can override default)
-  bold?: boolean; // Make text bold
-  italic?: boolean; // Make text italic
+fontPath?: string;
+fontName?: string;
+fontFamily?: string;
+fontSize?: number;
+bold?: boolean;
+italic?: boolean;
   shadow?: {
-    color?: string; // Shadow color
-    offsetX?: number; // Shadow X offset
-    offsetY?: number; // Shadow Y offset
-    blur?: number; // Shadow blur radius
-    opacity?: number; // Shadow opacity (0-1)
+color?: string;
+offsetX?: number;
+offsetY?: number;
+blur?: number;
+opacity?: number;
   };
   stroke?: {
-    color?: string; // Stroke color
-    width?: number; // Stroke width
-    gradient?: gradient; // Stroke gradient (overrides color)
+color?: string;
+width?: number;
+gradient?: gradient;
   };
   glow?: {
-    color?: string; // Glow color
-    intensity?: number; // Glow intensity
-    opacity?: number; // Glow opacity (0-1)
+color?: string;
+intensity?: number;
+opacity?: number;
   };
 }
 
@@ -41,41 +41,41 @@ export interface EnhancedTextStyle {
  * Interface for a single bar segment (used in grouped/stacked charts)
  */
 export interface HorizontalBarSegment {
-  value: number; // Bar value (determines bar length on X-axis)
-  color?: string; // Bar color (overridden by gradient if provided)
-  gradient?: gradient; // Gradient fill for bar segment (overrides color)
-  label?: string; // Optional label for this segment
-  valueColor?: string; // Individual bar value text color
-  showValue?: boolean; // Show/hide value for this specific segment
+value: number;
+color?: string;
+gradient?: gradient;
+label?: string;
+valueColor?: string;
+showValue?: boolean;
 }
 
 /**
  * Interface for horizontal bar chart data
  */
 export interface HorizontalBarChartData {
-  label: string; // Category label (displayed on Y-axis)
-  // Standard chart: use value
-  value?: number; // Bar value (for standard charts)
-  // Grouped/stacked charts: use values array
-  values?: HorizontalBarSegment[]; // Array of values for grouped/stacked charts
-  xStart?: number; // X-axis start position (optional, for value range on X-axis - like xStart in standard chart)
-  xEnd?: number; // X-axis end position (optional, for value range on X-axis - like xEnd in standard chart)
-  yStart?: number; // Y-axis start position (optional, for custom positioning)
-  yEnd?: number; // Y-axis end position (optional, for custom positioning)
-  color?: string; // Bar color (for standard charts, or default for grouped/stacked) (overridden by gradient if provided)
-  gradient?: gradient; // Gradient fill for bar (overrides color)
-  labelColor?: string; // Label text color
-  labelPosition?: 'top' | 'left' | 'right' | 'inside' | 'bottom'; // Individual bar label position
-  valueColor?: string; // Individual bar value text color (for standard charts)
-  showValue?: boolean; // Show/hide value for this specific bar (for standard charts)
+label: string;
+
+value?: number;
+
+values?: HorizontalBarSegment[];
+xStart?: number;
+xEnd?: number;
+yStart?: number;
+yEnd?: number;
+color?: string;
+gradient?: gradient;
+labelColor?: string;
+labelPosition?: 'top' | 'left' | 'right' | 'inside' | 'bottom';
+valueColor?: string;
+showValue?: boolean;
 }
 
 /**
  * Interface for legend entry
  */
 export interface LegendEntry {
-  color?: string; // Legend box color (overridden by gradient if provided)
-  gradient?: gradient; // Gradient fill for legend box (overrides color)
+color?: string;
+gradient?: gradient;
   label: string;
 }
 
@@ -83,31 +83,31 @@ export interface LegendEntry {
  * Axis configuration for horizontal bar chart
  */
 export interface HorizontalAxisConfig {
-  label?: string; // Axis name/label
-  labelColor?: string; // Color of axis label
+label?: string;
+labelColor?: string;
   range?: {
     min?: number;
     max?: number;
     step?: number;
   };
-  values?: number[]; // Custom tick values array
-  color?: string; // Axis line color
-  width?: number; // Axis line width
-  tickFontSize?: number; // Font size for tick labels
-  valueSpacing?: number; // Pixel spacing between each tick value
+values?: number[];
+color?: string;
+width?: number;
+tickFontSize?: number;
+tickColor?: string;
+valueSpacing?: number;
 }
 
 /**
  * Horizontal bar chart configuration - organized by category
  */
 export interface HorizontalBarChartOptions {
-  // Chart type
-  type?: HorizontalBarChartType; // 'standard' | 'grouped' | 'stacked' (default: 'standard')
-  
-  // Dimensions
+
+type?: HorizontalBarChartType;
+
   dimensions?: {
-    width?: number; // Fixed width (default: 800)
-    height?: number; // Calculated responsively based on number of bars
+width?: number;
+height?: number;
     padding?: {
       top?: number;
       right?: number;
@@ -115,84 +115,81 @@ export interface HorizontalBarChartOptions {
       left?: number;
     };
   };
-  
-  // Appearance
+
   appearance?: {
-    backgroundColor?: string; // Background color (overridden by gradient/image if provided)
-    backgroundGradient?: gradient; // Background gradient (overrides backgroundColor)
-    backgroundImage?: string; // Path to local image file (overrides gradient/color)
-    axisColor?: string; // Default axis color
-    axisWidth?: number; // Default axis width
-    arrowSize?: number; // Size of axis arrows
+backgroundColor?: string;
+backgroundGradient?: gradient;
+backgroundImage?: string;
+axisColor?: string;
+axisWidth?: number;
+arrowSize?: number;
   };
-  
-  // Axes Configuration
+
   axes?: {
     x?: HorizontalAxisConfig & {
-      baseline?: number; // Custom baseline value (default: 0). Bars extend left/right of this value
-    }; // X-axis (value axis - horizontal)
-    y?: HorizontalAxisConfig; // Y-axis (category axis - vertical)
+baseline?: number;
+};
+y?: HorizontalAxisConfig;
   };
-  
-  // Labels & Text
+
   labels?: {
     title?: {
       text?: string;
-      fontSize?: number; // Default: 24
-      color?: string; // Text color (overridden by gradient if provided)
-      gradient?: gradient; // Text gradient (overrides color)
-      textStyle?: EnhancedTextStyle; // Enhanced text styling
+fontSize?: number;
+color?: string;
+gradient?: gradient;
+textStyle?: EnhancedTextStyle;
     };
     barLabelDefaults?: {
-      show?: boolean; // Show/hide all bar labels globally (default: true)
-      defaultPosition?: 'top' | 'left' | 'right' | 'inside' | 'bottom'; // Default position
-      fontSize?: number; // Font size for all bar labels (default: 14)
-      defaultColor?: string; // Default text color
-      gradient?: gradient; // Text gradient (overrides defaultColor)
-      textStyle?: EnhancedTextStyle; // Enhanced text styling
+show?: boolean;
+defaultPosition?: 'top' | 'left' | 'right' | 'inside' | 'bottom';
+fontSize?: number;
+defaultColor?: string;
+gradient?: gradient;
+textStyle?: EnhancedTextStyle;
     };
     valueLabelDefaults?: {
-      show?: boolean; // Show/hide all value labels globally (default: true)
-      fontSize?: number; // Font size for all value labels (default: 12)
-      defaultColor?: string; // Default text color
-      gradient?: gradient; // Text gradient (overrides defaultColor)
-      textStyle?: EnhancedTextStyle; // Enhanced text styling
+show?: boolean;
+fontSize?: number;
+defaultColor?: string;
+gradient?: gradient;
+textStyle?: EnhancedTextStyle;
     };
   };
-  
-  // Legend
+
   legend?: {
-    show?: boolean; // Show/hide legend (default: false)
-    entries?: LegendEntry[]; // Legend entries
-    position?: 'top' | 'bottom' | 'left' | 'right'; // Legend position (default: 'right')
-    spacing?: number; // Extra spacing/margin from chart edges (default: 20)
-    fontSize?: number; // Font size for legend text (default: 16)
-    backgroundColor?: string; // Background color of legend container (default: 'rgba(255, 255, 255, 0.9)') (overridden by gradient if provided)
-    backgroundGradient?: gradient; // Background gradient (overrides backgroundColor)
-    borderColor?: string; // Border color of legend container (default: '#000000')
-    textColor?: string; // Text color (default: '#000000') (overridden by gradient if provided)
-    textGradient?: gradient; // Text gradient (overrides textColor)
-    textStyle?: EnhancedTextStyle; // Enhanced text styling
-    padding?: number; // Padding inside legend container (default: 8)
-    maxWidth?: number; // Maximum width of legend container (default: undefined, auto-calculated)
-    wrapText?: boolean; // Enable text wrapping (default: true)
+show?: boolean;
+entries?: LegendEntry[];
+position?: 'top' | 'bottom' | 'left' | 'right';
+spacing?: number;
+fontSize?: number;
+backgroundColor?: string;
+backgroundGradient?: gradient;
+borderColor?: string;
+textColor?: string;
+textGradient?: gradient;
+textStyle?: EnhancedTextStyle;
+padding?: number;
+maxWidth?: number;
+wrapText?: boolean;
   };
-  
-  // Grid
+
   grid?: {
-    show?: boolean; // Show/hide grid lines (default: false)
-    color?: string; // Grid line color (default: '#E0E0E0')
-    width?: number; // Grid line width (default: 1)
+show?: boolean;
+color?: string;
+width?: number;
+lineWidth?: number;
+style?: 'solid' | 'dashed' | 'dotted';
   };
-  
-  // Bar styling
+
   bars?: {
-    spacing?: number; // Spacing between bars (default: calculated automatically)
-    minHeight?: number; // Minimum bar height (default: 30)
-    groupSpacing?: number; // Spacing between groups in grouped charts (default: 10)
-    segmentSpacing?: number; // Spacing between segments in grouped charts (default: 2)
-    lineWidth?: number; // Line width for lollipop charts (default: 2)
-    dotSize?: number; // Dot/circle size for lollipop charts (default: 8)
+spacing?: number;
+minHeight?: number;
+groupSpacing?: number;
+segmentSpacing?: number;
+lineWidth?: number;
+dotSize?: number;
+borderRadius?: number;
   };
 }
 
@@ -210,39 +207,40 @@ async function renderEnhancedText(
   textGradient?: gradient
 ): Promise<void> {
   ctx.save();
-  
-  // Preserve text alignment settings
+
   const savedTextAlign = ctx.textAlign;
   const savedTextBaseline = ctx.textBaseline;
-  
+
   const effectiveFontSize = fontSize || style?.fontSize || 16;
   const fontFamily = style?.fontFamily || style?.fontName || 'Arial';
   let fontString = '';
-  
+
   if (style?.bold) fontString += 'bold ';
   if (style?.italic) fontString += 'italic ';
-  fontString += `${effectiveFontSize}px "${fontFamily}"`;
-  
+
+  fontString += `${effectiveFontSize}px ${fontFamily}`;
+
   ctx.font = fontString;
-  
-  // Restore text alignment to ensure correct positioning
+
+  ctx.letterSpacing = '0px';
+  ctx.wordSpacing = '0px';
+
   ctx.textAlign = savedTextAlign;
   ctx.textBaseline = savedTextBaseline;
-  
-  // Register custom font if provided
+
   if (style?.fontPath && style?.fontName) {
     try {
       const { GlobalFonts } = await import('@napi-rs/canvas');
       const path = await import('path');
       const fullPath = path.join(process.cwd(), style.fontPath);
       GlobalFonts.registerFromPath(fullPath, style.fontName);
-      ctx.font = fontString.replace(`"${fontFamily}"`, `"${style.fontName}"`);
+
+      ctx.font = fontString.replace(fontFamily, style.fontName);
     } catch (error) {
       console.warn(`Failed to register font: ${style.fontPath}`, error);
     }
   }
-  
-  // Apply shadow
+
   if (style?.shadow) {
     ctx.shadowColor = style.shadow.color || 'rgba(0,0,0,0.5)';
     ctx.shadowOffsetX = style.shadow.offsetX || 2;
@@ -252,8 +250,7 @@ async function renderEnhancedText(
       ctx.globalAlpha = style.shadow.opacity;
     }
   }
-  
-  // Set fill style (gradient or color)
+
   if (textGradient) {
     const metrics = ctx.measureText(text);
     ctx.fillStyle = createGradientFill(ctx, textGradient, {
@@ -262,11 +259,9 @@ async function renderEnhancedText(
   } else if (color) {
     ctx.fillStyle = color;
   }
-  
-  // Draw text
+
   ctx.fillText(text, x, y);
-  
-  // Apply stroke
+
   if (style?.stroke) {
     ctx.strokeStyle = style.stroke.color || '#000000';
     ctx.lineWidth = style.stroke.width || 1;
@@ -278,14 +273,13 @@ async function renderEnhancedText(
     }
     ctx.strokeText(text, x, y);
   }
-  
-  // Reset shadow and alpha
+
   ctx.shadowColor = 'transparent';
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
-  
+
   ctx.restore();
 }
 
@@ -313,14 +307,14 @@ function drawArrow(ctx: SKRSContext2D, x: number, y: number, angle: number, size
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  
+
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(-size, -size / 2);
   ctx.lineTo(-size, size / 2);
   ctx.closePath();
   ctx.fill();
-  
+
   ctx.restore();
 }
 
@@ -337,89 +331,87 @@ function drawXAxisTicks(
   step: number,
   tickFontSize: number,
   customValues?: number[],
-  valueSpacing?: number
+  valueSpacing?: number,
+  tickColor: string = '#000000'
 ): void {
   ctx.save();
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = tickColor;
   ctx.font = `${tickFontSize}px Arial`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  
+
   const chartWidth = axisEndX - originX;
-  
+
   if (customValues && customValues.length > 0) {
-    // Position labels based on their actual values, not pixel spacing
+
     const actualMin = Math.min(...customValues);
     const actualMax = Math.max(...customValues);
-    const range = actualMax - actualMin || 1; // Avoid division by zero
-    
+const range = actualMax - actualMin || 1;
+
     let lastLabelX = -Infinity;
-    const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 40; // Use valueSpacing as min spacing if provided
-    
+const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 40;
+
     customValues.forEach((value) => {
       const x = originX + ((value - actualMin) / range) * chartWidth;
       const labelText = value.toString();
-      
-      // Check if this label would overlap with the previous one
+
       if (x - lastLabelX < minLabelSpacing && value > actualMin) {
-        // Skip this label to prevent overlap (but still draw tick mark)
+
         ctx.beginPath();
         ctx.moveTo(x, originY);
         ctx.lineTo(x, originY + 5);
         ctx.stroke();
         return;
       }
-      
+
       ctx.beginPath();
       ctx.moveTo(x, originY);
       ctx.lineTo(x, originY + 5);
       ctx.stroke();
-      ctx.fillText(labelText, x, originY + 10);
-      
-      lastLabelX = x; // Update last label center position
+
+      const labelMetrics = ctx.measureText(labelText);
+const labelY = originY + 10;
+      ctx.fillText(labelText, x, labelY);
+
+lastLabelX = x;
     });
   } else {
-    // Range-based positioning - always position based on values, use valueSpacing only for label density
-    const range = maxValue - minValue || 1; // Avoid division by zero
-      
-      // Calculate all tick positions first
+
+const range = maxValue - minValue || 1;
+
       const tickValues: number[] = [];
       for (let value = minValue; value <= maxValue; value += step) {
         tickValues.push(value);
       }
-      
-      // Draw ticks, but skip labels if they're too close together
+
       let lastLabelX = -Infinity;
-      const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 40; // Use valueSpacing as min spacing if provided
-      
+const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 40;
+
       for (const value of tickValues) {
         const x = originX + ((value - minValue) / range) * chartWidth;
         const labelText = value.toString();
-        
-        // Check if this label center is too close to the previous label center
+
         if (x - lastLabelX < minLabelSpacing && value > minValue) {
-          // Skip this label to prevent overlap - but still draw the tick mark
+
           ctx.beginPath();
           ctx.moveTo(x, originY);
           ctx.lineTo(x, originY + 5);
           ctx.stroke();
           continue;
         }
-        
-        // Draw tick mark
+
         ctx.beginPath();
         ctx.moveTo(x, originY);
         ctx.lineTo(x, originY + 5);
         ctx.stroke();
-        
-        // Draw label
-        ctx.fillText(labelText, x, originY + 10);
-        
-        // Update last label position (center of the label)
+
+const labelY = originY + 10;
+        ctx.fillText(labelText, x, labelY);
+
         lastLabelX = x;
       }
   }
-  
+
   ctx.restore();
 }
 
@@ -436,20 +428,21 @@ function drawYAxisTicks(
   step: number,
   tickFontSize: number,
   customValues?: number[],
-  valueSpacing?: number
+  valueSpacing?: number,
+  tickColor: string = '#000000'
 ): void {
   ctx.save();
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = tickColor;
   ctx.font = `${tickFontSize}px Arial`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  
+
   const chartHeight = originY - axisEndY;
-  
+
   if (customValues && customValues.length > 0) {
     const totalValues = customValues.length;
     const divisor = totalValues > 1 ? totalValues - 1 : 1;
-    
+
     if (valueSpacing && valueSpacing > 0) {
       let currentY = originY;
       customValues.forEach((value, index) => {
@@ -458,7 +451,7 @@ function drawYAxisTicks(
         } else {
           currentY -= valueSpacing;
         }
-        
+
         if (currentY >= axisEndY && currentY <= originY) {
           ctx.beginPath();
           ctx.moveTo(originX - 5, currentY);
@@ -468,7 +461,7 @@ function drawYAxisTicks(
         }
       });
     } else {
-      // Position based on value range
+
       const range = maxValue - minValue || 1;
       customValues.forEach((value) => {
         const y = originY - ((value - minValue) / range) * chartHeight;
@@ -480,35 +473,34 @@ function drawYAxisTicks(
       });
     }
   } else {
-    // Range-based positioning
+
     const range = maxValue - minValue || 1;
     let lastLabelY = Infinity;
-    const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 30; // Vertical spacing
-    
+const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 30;
+
     for (let value = minValue; value <= maxValue; value += step) {
       const y = originY - ((value - minValue) / range) * chartHeight;
       const labelText = value.toString();
-      
-      // Check if this label would overlap with the previous one
+
       if (lastLabelY - y < minLabelSpacing && value > minValue) {
-        // Skip this label to prevent overlap - but still draw the tick mark
+
         ctx.beginPath();
         ctx.moveTo(originX - 5, y);
         ctx.lineTo(originX, y);
         ctx.stroke();
         continue;
       }
-      
+
       ctx.beginPath();
       ctx.moveTo(originX - 5, y);
       ctx.lineTo(originX, y);
       ctx.stroke();
       ctx.fillText(labelText, originX - 10, y);
-      
-      lastLabelY = y; // Update last label position
+
+lastLabelY = y;
     }
   }
-  
+
   ctx.restore();
 }
 
@@ -536,16 +528,15 @@ function drawGrid(
   ctx.strokeStyle = gridColor;
   ctx.lineWidth = gridWidth;
   ctx.setLineDash([2, 2]);
-  
+
   const chartWidth = axisEndX - originX;
   const chartHeight = originY - axisEndY;
-  
-  // Draw vertical grid lines (based on X-axis values)
+
   if (xAxisCustomValues && xAxisCustomValues.length > 0) {
     const actualMin = Math.min(...xAxisCustomValues);
     const actualMax = Math.max(...xAxisCustomValues);
     const xRange = actualMax - actualMin || 1;
-    
+
     xAxisCustomValues.forEach((value) => {
       const x = originX + ((value - actualMin) / xRange) * chartWidth;
       ctx.beginPath();
@@ -563,13 +554,12 @@ function drawGrid(
       ctx.stroke();
     }
   }
-  
-  // Draw horizontal grid lines (based on Y-axis values/range)
+
   if (yAxisCustomValues && yAxisCustomValues.length > 0) {
     const actualMin = Math.min(...yAxisCustomValues);
     const actualMax = Math.max(...yAxisCustomValues);
     const yRange = actualMax - actualMin || 1;
-    
+
     yAxisCustomValues.forEach((value) => {
       const y = originY - ((value - actualMin) / yRange) * chartHeight;
       ctx.beginPath();
@@ -587,7 +577,7 @@ function drawGrid(
       ctx.stroke();
     }
   }
-  
+
   ctx.restore();
 }
 
@@ -598,7 +588,7 @@ function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] 
   const words = text.split(' ');
   const lines: string[] = [];
   let currentLine = words[0];
-  
+
   for (let i = 1; i < words.length; i++) {
     const word = words[i];
     const width = ctx.measureText(currentLine + ' ' + word).width;
@@ -624,26 +614,25 @@ function calculateLegendDimensions(
   paddingBox: number = 8
 ): { width: number; height: number } {
   if (!legend || legend.length === 0) return { width: 0, height: 0 };
-  
+
   const boxSize = 15;
   const spacing = 10;
   const padding = paddingBox;
-  
-  // Create a temporary canvas to measure text
+
   const tempCanvas = createCanvas(1, 1);
   const tempCtx = tempCanvas.getContext('2d');
   tempCtx.font = `${fontSize}px Arial`;
-  
+
   const textSpacing = 10;
   const effectiveMaxWidth = maxWidth ? maxWidth - padding * 2 - boxSize - textSpacing : undefined;
-  
+
   let maxEntryWidth = 0;
   const entryHeights: number[] = [];
-  
+
   legend.forEach(entry => {
     let textWidth: number;
     let textHeight: number;
-    
+
     if (wrapTextEnabled && effectiveMaxWidth) {
       const wrappedLines = wrapText(tempCtx, entry.label, effectiveMaxWidth);
       textWidth = Math.max(...wrappedLines.map(line => tempCtx.measureText(line).width));
@@ -652,15 +641,15 @@ function calculateLegendDimensions(
       textWidth = tempCtx.measureText(entry.label).width;
       textHeight = fontSize;
     }
-    
+
     const entryWidth = boxSize + textSpacing + textWidth;
     maxEntryWidth = Math.max(maxEntryWidth, entryWidth);
     entryHeights.push(Math.max(boxSize, textHeight));
   });
-  
+
   const legendWidth = maxWidth ? maxWidth : maxEntryWidth + padding * 2;
   const legendHeight = entryHeights.reduce((sum, h, i) => sum + h + (i < entryHeights.length - 1 ? spacing : 0), 0) + padding * 2;
-  
+
   return { width: legendWidth, height: legendHeight };
 }
 
@@ -686,30 +675,28 @@ async function drawLegendAtPosition(
   if (!legend || legend.length === 0) return;
 
   ctx.save();
-  
+
   const boxSize = 15;
   const spacing = 10;
   const padding = paddingBox ?? 8;
-  
+
   ctx.font = `${fontSize}px Arial`;
-  
-  // Determine colors
+
   const isDarkBackground = backgroundColor === '#000000' || backgroundColor.toLowerCase() === 'black';
   const effectiveTextColor = textColor ?? (isDarkBackground ? '#FFFFFF' : '#000000');
   const effectiveBgColor = isDarkBackground ? 'rgba(0, 0, 0, 0.8)' : (backgroundColor.startsWith('rgba') || backgroundColor.startsWith('rgb') ? backgroundColor : 'rgba(255, 255, 255, 0.9)');
   const effectiveBorderColor = borderColor ?? (isDarkBackground ? '#FFFFFF' : '#000000');
-  
-  // Calculate dimensions with text wrapping support
+
   const textSpacing = 10;
   const effectiveMaxWidth = maxWidth ? maxWidth - padding * 2 - boxSize - textSpacing : undefined;
-  
+
   let maxEntryWidth = 0;
   const entryHeights: number[] = [];
-  
+
   legend.forEach(entry => {
     let textWidth: number;
     let textHeight: number;
-    
+
     if (wrapTextEnabled && effectiveMaxWidth) {
       const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
       textWidth = Math.max(...wrappedLines.map(line => ctx.measureText(line).width));
@@ -718,16 +705,15 @@ async function drawLegendAtPosition(
       textWidth = ctx.measureText(entry.label).width;
       textHeight = fontSize;
     }
-    
+
     const entryWidth = boxSize + textSpacing + textWidth;
     maxEntryWidth = Math.max(maxEntryWidth, entryWidth);
     entryHeights.push(Math.max(boxSize, textHeight));
   });
-  
+
   const legendWidth = maxWidth ? maxWidth : maxEntryWidth + padding * 2;
   const legendHeight = entryHeights.reduce((sum, h, i) => sum + h + (i < entryHeights.length - 1 ? spacing : 0), 0) + padding * 2;
-  
-  // Draw legend background (gradient or color)
+
   ctx.beginPath();
   ctx.rect(legendX, legendY, legendWidth, legendHeight);
   fillWithGradientOrColor(
@@ -738,22 +724,21 @@ async function drawLegendAtPosition(
     { x: legendX, y: legendY, w: legendWidth, h: legendHeight }
   );
   ctx.fill();
-  
+
   ctx.strokeStyle = effectiveBorderColor;
   ctx.lineWidth = 1;
   ctx.strokeRect(legendX, legendY, legendWidth, legendHeight);
-  
+
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  
+
   let currentY = legendY + padding;
-  
+
   for (let index = 0; index < legend.length; index++) {
     const entry = legend[index];
     const entryHeight = entryHeights[index];
     const centerY = currentY + entryHeight / 2;
-    
-    // Draw color box (gradient or color)
+
     ctx.beginPath();
     ctx.rect(legendX + padding, centerY - boxSize / 2, boxSize, boxSize);
     fillWithGradientOrColor(
@@ -764,18 +749,18 @@ async function drawLegendAtPosition(
       { x: legendX + padding, y: centerY - boxSize / 2, w: boxSize, h: boxSize }
     );
     ctx.fill();
-    
+
     ctx.strokeStyle = effectiveBorderColor;
     ctx.lineWidth = 1;
     ctx.strokeRect(legendX + padding, centerY - boxSize / 2, boxSize, boxSize);
-    
+
     const textX = legendX + padding + boxSize + textSpacing;
-    
+
     if (wrapTextEnabled && effectiveMaxWidth) {
       const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
       const lineHeight = fontSize * 1.2;
       const startY = centerY - (wrappedLines.length - 1) * lineHeight / 2;
-      
+
       for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
         await renderEnhancedText(
           ctx,
@@ -800,10 +785,10 @@ async function drawLegendAtPosition(
         textGradient
       );
     }
-    
+
     currentY += entryHeight + spacing;
   }
-  
+
   ctx.restore();
 }
 
@@ -824,18 +809,18 @@ function drawLegend(
   if (!legend || legend.length === 0) return;
 
   ctx.save();
-  
+
   const boxSize = 15;
   const spacing = 10;
   const paddingBox = 8;
-  
+
   ctx.font = `${fontSize}px Arial`;
   const maxLabelWidth = Math.max(...legend.map(e => ctx.measureText(e.label).width));
   const legendWidth = boxSize + spacing + maxLabelWidth + paddingBox * 2;
   const legendHeight = legend.length * (boxSize + spacing) + paddingBox * 2;
-  
+
   let legendX: number, legendY: number;
-  
+
   switch (position) {
     case 'top':
       legendX = width - padding.right - legendWidth - legendSpacing;
@@ -857,27 +842,27 @@ function drawLegend(
       legendX = width - padding.right - legendWidth - legendSpacing;
       legendY = padding.top + legendSpacing;
   }
-  
+
   const isDarkBackground = backgroundColor === '#000000' || backgroundColor.toLowerCase() === 'black';
   const textColor = isDarkBackground ? '#FFFFFF' : '#000000';
   const bgColor = isDarkBackground ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.9)';
   const borderColor = isDarkBackground ? '#FFFFFF' : '#000000';
-  
+
   ctx.fillStyle = bgColor;
   ctx.fillRect(legendX, legendY, legendWidth, legendHeight);
-  
+
   ctx.strokeStyle = borderColor;
   ctx.lineWidth = 1;
   ctx.strokeRect(legendX, legendY, legendWidth, legendHeight);
-  
+
   ctx.font = `${fontSize}px Arial`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  
+
   legend.forEach((entry, index) => {
     const y = legendY + paddingBox + index * (boxSize + spacing) + boxSize / 2;
     const x = legendX + paddingBox;
-    
+
     ctx.beginPath();
     ctx.rect(x, y - boxSize / 2, boxSize, boxSize);
     fillWithGradientOrColor(
@@ -888,15 +873,15 @@ function drawLegend(
       { x, y: y - boxSize / 2, w: boxSize, h: boxSize }
     );
     ctx.fill();
-    
+
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y - boxSize / 2, boxSize, boxSize);
-    
+
     ctx.fillStyle = textColor;
     ctx.fillText(entry.label, x + boxSize + spacing, y);
   });
-  
+
   ctx.restore();
 }
 
@@ -910,19 +895,29 @@ function calculateResponsiveHeight(
   const padding = options.dimensions?.padding || {};
   const paddingTop = padding.top ?? 60;
   const paddingBottom = padding.bottom ?? 80;
-  
+
   const minBarHeight = options.bars?.minHeight ?? 40;
-  const barSpacing = options.bars?.spacing ?? 15; // Use same default spacing
-  
-  // Calculate minimum height needed: (number of bars * bar height) + (spacing between bars)
-  // Each bar needs minBarHeight, and between each pair of bars we need barSpacing
+const barSpacing = options.bars?.spacing ?? 15;
+
   const chartAreaHeight = dataLength * minBarHeight + (dataLength - 1) * barSpacing;
-  
-  // Add title height if needed
-  const titleHeight = options.labels?.title?.text ? (options.labels.title.fontSize ?? 24) + 30 : 0;
-  const axisLabelHeight = ((options.axes?.x?.label || options.axes?.y?.label) ? (options.labels?.barLabelDefaults?.fontSize ?? 14) + 20 : 0);
-  
-  return paddingTop + titleHeight + chartAreaHeight + axisLabelHeight + paddingBottom;
+
+  const titleHeight = options.labels?.title?.text ? (options.labels.title.fontSize ?? 24) + 20 : 0;
+const titleMargin = options.labels?.title?.text ? 20 : 0;
+
+  const tickFontSize = options.axes?.x?.tickFontSize ?? options.axes?.y?.tickFontSize ?? 12;
+  const axisLabelFontSize = options.labels?.barLabelDefaults?.fontSize ?? 14;
+  let xAxisLabelAreaHeight = 0;
+  if (options.axes?.x?.label || options.axes?.x?.values || options.axes?.x?.range) {
+const tickLabelHeight = tickFontSize + 10;
+const xAxisLabelTextHeight = options.axes?.x?.label ? axisLabelFontSize + 2 : 0;
+xAxisLabelAreaHeight = tickLabelHeight + (options.axes?.x?.label ? 8 : 0) + xAxisLabelTextHeight;
+  }
+
+  const yAxisLabelHeight = options.axes?.y?.label ? axisLabelFontSize + 20 : 0;
+  const axisLabelHeight = Math.max(xAxisLabelAreaHeight, yAxisLabelHeight);
+const minBottomGap = 2;
+
+  return paddingTop + titleHeight + titleMargin + chartAreaHeight + axisLabelHeight + minBottomGap + paddingBottom;
 }
 
 /**
@@ -935,19 +930,17 @@ export async function createHorizontalBarChart(
   data: HorizontalBarChartData[],
   options: HorizontalBarChartOptions = {}
 ): Promise<Buffer> {
-  // Extract and map organized config to internal variables
+
   let width = options.dimensions?.width ?? 800;
   const padding = options.dimensions?.padding || {};
-  
-  // Appearance
+
   const backgroundColor = options.appearance?.backgroundColor ?? '#FFFFFF';
   const backgroundGradient = options.appearance?.backgroundGradient;
   const backgroundImage = options.appearance?.backgroundImage;
   const axisColor = options.appearance?.axisColor ?? options.axes?.x?.color ?? options.axes?.y?.color ?? '#000000';
   const axisWidth = options.appearance?.axisWidth ?? options.axes?.x?.width ?? options.axes?.y?.width ?? 2;
   const arrowSize = options.appearance?.arrowSize ?? 10;
-  
-  // Labels
+
   const chartTitle = options.labels?.title?.text;
   const chartTitleFontSize = options.labels?.title?.fontSize ?? 24;
   const showBarLabels = options.labels?.barLabelDefaults?.show ?? true;
@@ -956,54 +949,49 @@ export async function createHorizontalBarChart(
   const showValues = options.labels?.valueLabelDefaults?.show ?? true;
   const valueFontSize = options.labels?.valueLabelDefaults?.fontSize ?? 12;
   const valueColor = options.labels?.valueLabelDefaults?.defaultColor ?? '#000000';
-  
-  // Axes
+
   const xAxisLabel = options.axes?.x?.label;
   const yAxisLabel = options.axes?.y?.label;
   const axisLabelColor = options.axes?.x?.labelColor ?? options.axes?.y?.labelColor ?? '#000000';
   const xAxisRange = options.axes?.x?.range;
   const xAxisValues = options.axes?.x?.values;
-  const baseline = options.axes?.x?.baseline ?? 0; // Custom baseline value (default: 0)
+const baseline = options.axes?.x?.baseline ?? 0;
   const yAxisValues = options.axes?.y?.values;
   const tickFontSize = options.axes?.x?.tickFontSize ?? options.axes?.y?.tickFontSize ?? 12;
+  const xAxisTickColor = options.axes?.x?.tickColor ?? '#000000';
+  const yAxisTickColor = options.axes?.y?.tickColor ?? '#000000';
   const xAxisValueSpacing = options.axes?.x?.valueSpacing;
   const yAxisValueSpacing = options.axes?.y?.valueSpacing;
-  
-  // Legend
+
   const showLegend = options.legend?.show ?? false;
   const legend = options.legend?.entries;
-  const legendPosition = options.legend?.position ?? 'right'; // Default: right
-  
-  // Grid
+const legendPosition = options.legend?.position ?? 'right';
+
   const showGrid = options.grid?.show ?? false;
   const gridColor = options.grid?.color ?? '#E0E0E0';
   const gridWidth = options.grid?.width ?? 1;
-  
-  // Chart type
+
   const chartType = options.type ?? 'standard';
-  
-  // Bars
+
   const minBarHeight = options.bars?.minHeight ?? 30;
   const barSpacing = options.bars?.spacing;
   const groupSpacing = options.bars?.groupSpacing ?? 10;
   const segmentSpacing = options.bars?.segmentSpacing ?? 2;
-  const lollipopLineWidth = options.bars?.lineWidth ?? 2; // Line width for lollipop charts (default: 2)
-  const lollipopDotSize = options.bars?.dotSize ?? 8; // Dot/circle size for lollipop charts (default: 8)
-  
+const lollipopLineWidth = options.bars?.lineWidth ?? 2;
+const lollipopDotSize = options.bars?.dotSize ?? 8;
+
   const paddingTop = padding.top ?? 60;
   const paddingRight = padding.right ?? 80;
   const paddingBottom = padding.bottom ?? 80;
   const paddingLeft = padding.left ?? 100;
-  
-  // Calculate responsive height based on number of bars
+
   let baseHeight = calculateResponsiveHeight(data.length, options);
-  
-  // Calculate legend dimensions and adjust canvas size based on legend position
+
   let legendWidth = 0;
   let legendHeight = 0;
   let extraWidth = 0;
   let extraHeight = 0;
-  const minLegendSpacing = 10; // Minimum spacing from chart area
+const minLegendSpacing = 10;
   if (showLegend && legend && legend.length > 0) {
     const legendMaxWidth = options.legend?.maxWidth;
     const legendWrapText = options.legend?.wrapText !== false;
@@ -1011,40 +999,38 @@ export async function createHorizontalBarChart(
     const legendDims = calculateLegendDimensions(legend, axisLabelFontSize, legendMaxWidth, legendWrapText, legendPadding);
     legendWidth = legendDims.width;
     legendHeight = legendDims.height;
-    
+
     const legendSpacing = options.legend?.spacing ?? 20;
-    
-    // Adjust canvas dimensions based on legend position
-    // For left position, add extra space for Y-axis labels and bar labels
+
     if (legendPosition === 'left') {
-      // Estimate Y-axis label width: measure potential category labels or numeric values
+
       const tempCanvas = createCanvas(1, 1);
       const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-      let estimatedYAxisLabelWidth = 80; // Default estimate (category labels can be longer)
+let estimatedYAxisLabelWidth = 80;
       if (tempCtx) {
-        // Check if bar labels are on the left (they act as Y-axis labels)
+
         const barLabelFontSize = options.labels?.barLabelDefaults?.fontSize ?? 14;
         const showBarLabels = options.labels?.barLabelDefaults?.show ?? true;
         const barLabelPosition = options.labels?.barLabelDefaults?.defaultPosition ?? 'left';
-        
-        const hasLeftLabels = showBarLabels && (barLabelPosition === 'left' || 
+
+        const hasLeftLabels = showBarLabels && (barLabelPosition === 'left' ||
           data.some(item => (item.labelPosition ?? barLabelPosition) === 'left'));
-        
+
         if (hasLeftLabels) {
-          // Measure category labels (bar labels) which are typically longer
+
           tempCtx.font = `${barLabelFontSize}px Arial`;
           data.forEach(d => {
             const labelWidth = tempCtx.measureText(d.label).width;
             estimatedYAxisLabelWidth = Math.max(estimatedYAxisLabelWidth, labelWidth);
           });
-          // Add padding: 5px (label offset from originX) + 10px (spacing) = 15px total
+
           estimatedYAxisLabelWidth += 15;
         } else {
-          // No left labels, but might have Y-axis numeric ticks
+
           tempCtx.font = `${tickFontSize}px Arial`;
-          // Estimate for numeric Y-axis values if custom values are provided
-          estimatedYAxisLabelWidth = 60; // Default for numeric values
-          // Add padding: 10px (label offset) + 5px (tick) + 15px (spacing) = 30px total
+
+estimatedYAxisLabelWidth = 60;
+
           estimatedYAxisLabelWidth += 30;
         }
       }
@@ -1055,17 +1041,11 @@ export async function createHorizontalBarChart(
       extraHeight = legendHeight + legendSpacing + minLegendSpacing;
     }
   }
-  
-  // adjustedWidth and adjustedHeight are already calculated above
-  
-  // Determine X-axis (value axis) range
-  // For grouped charts: find max value across all segments
-  // For stacked charts: find max sum of values per category
-  // For lollipop charts: same as standard (single value per bar)
+
   let allValues: number[] = [];
   if (chartType === 'grouped' || chartType === 'stacked' || chartType === 'lollipop') {
     if (chartType === 'grouped') {
-      // For grouped: find max value across all segments
+
       data.forEach(d => {
         if (d.values && d.values.length > 0) {
           d.values.forEach(seg => allValues.push(seg.value));
@@ -1074,7 +1054,7 @@ export async function createHorizontalBarChart(
         }
       });
     } else {
-      // For stacked: find max sum per category
+
       data.forEach(d => {
         if (d.values && d.values.length > 0) {
           const sum = d.values.reduce((acc, seg) => acc + seg.value, 0);
@@ -1085,22 +1065,21 @@ export async function createHorizontalBarChart(
       });
     }
   } else {
-    // Standard chart: use value directly
+
     allValues = data.map(d => d.value ?? 0).filter(v => v !== undefined && v !== null);
   }
-  
+
   let xMin: number, xMax: number;
   let xAxisCustomValues: number[] | undefined = xAxisValues;
   const hasExplicitXRange = xAxisRange && xAxisRange.min !== undefined && xAxisRange.max !== undefined;
-  
-  // Check if any bars have xStart/xEnd (value ranges)
+
   const hasValueRanges = data.some(d => d.xStart !== undefined || d.xEnd !== undefined);
   if (hasValueRanges) {
     const allXStarts = data.map(d => d.xStart ?? d.value ?? 0).filter(v => v !== undefined);
     const allXEnds = data.map(d => d.xEnd ?? d.value ?? 0).filter(v => v !== undefined);
     xMin = Math.min(...allXStarts, ...allXEnds);
     xMax = Math.max(...allXStarts, ...allXEnds);
-    // Add some padding
+
     const xPadding = (xMax - xMin) * 0.1;
     xMin = Math.max(0, xMin - xPadding);
     xMax = xMax + xPadding;
@@ -1110,7 +1089,7 @@ export async function createHorizontalBarChart(
   } else if (hasExplicitXRange) {
     xMin = xAxisRange!.min!;
     xMax = xAxisRange!.max!;
-    // Ensure baseline is within range
+
     const effectiveBaseline = baseline !== undefined ? baseline : 0;
     xMin = Math.min(xMin, effectiveBaseline);
     xMax = Math.max(xMax, effectiveBaseline);
@@ -1119,17 +1098,16 @@ export async function createHorizontalBarChart(
     xMax = Math.max(...allValues, 1);
     const xPadding = (xMax - xMin) * 0.1;
     const effectiveBaseline = baseline !== undefined ? baseline : 0;
-    // Ensure baseline is always included in the range
+
     xMin = Math.min(Math.max(0, xMin - xPadding), effectiveBaseline);
     xMax = xMax + xPadding;
   }
-  
-  // Determine Y-axis (category axis) range - similar to X-axis in standard chart
+
   const yAxisRange = options.axes?.y?.range;
   let yMin: number, yMax: number;
   let yAxisCustomValues: number[] | undefined = yAxisValues;
   const hasExplicitYRange = yAxisRange && yAxisRange.min !== undefined && yAxisRange.max !== undefined;
-  
+
   if (yAxisCustomValues && yAxisCustomValues.length > 0) {
     yMin = Math.min(...yAxisCustomValues);
     yMax = Math.max(...yAxisCustomValues);
@@ -1137,18 +1115,17 @@ export async function createHorizontalBarChart(
     yMin = yAxisRange!.min!;
     yMax = yAxisRange!.max!;
   } else {
-    // Auto-calculate from data indices (0 to data.length - 1)
+
     yMin = 0;
     yMax = data.length - 1;
   }
-  
-  // Validate data values against explicit axis ranges
+
   if (hasExplicitXRange || xAxisCustomValues) {
     const effectiveXMin = xAxisCustomValues ? Math.min(...xAxisCustomValues) : xAxisRange!.min!;
     const effectiveXMax = xAxisCustomValues ? Math.max(...xAxisCustomValues) : xAxisRange!.max!;
-    
+
     data.forEach((item, itemIndex) => {
-      // Check value (X-axis for horizontal bars)
+
       if (item.value !== undefined && (item.value < effectiveXMin || item.value > effectiveXMax)) {
         throw new Error(
           `Horizontal Bar Chart Error: Data value out of X-axis bounds.\n` +
@@ -1156,7 +1133,7 @@ export async function createHorizontalBarChart(
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
         );
       }
-      // Check xStart and xEnd if they exist
+
       if (item.xStart !== undefined && (item.xStart < effectiveXMin || item.xStart > effectiveXMax)) {
         throw new Error(
           `Horizontal Bar Chart Error: Data value out of X-axis bounds.\n` +
@@ -1171,7 +1148,7 @@ export async function createHorizontalBarChart(
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
         );
       }
-      // Check grouped/stacked values
+
       if (item.values && item.values.length > 0) {
         item.values.forEach((seg, segIndex) => {
           if (seg.value < effectiveXMin || seg.value > effectiveXMax) {
@@ -1185,13 +1162,13 @@ export async function createHorizontalBarChart(
       }
     });
   }
-  
+
   if (hasExplicitYRange || yAxisCustomValues) {
     const effectiveYMin = yAxisCustomValues ? Math.min(...yAxisCustomValues) : yAxisRange!.min!;
     const effectiveYMax = yAxisCustomValues ? Math.max(...yAxisCustomValues) : yAxisRange!.max!;
-    
+
     data.forEach((item, itemIndex) => {
-      // Check yStart and yEnd (Y-axis for horizontal bars)
+
       if (item.yStart !== undefined && (item.yStart < effectiveYMin || item.yStart > effectiveYMax)) {
         throw new Error(
           `Horizontal Bar Chart Error: Data value out of Y-axis bounds.\n` +
@@ -1208,25 +1185,20 @@ export async function createHorizontalBarChart(
       }
     });
   }
-  
-  // Legend dimensions already calculated above, no need to recalculate
-  
-  // Calculate adjusted dimensions (needed before creating canvas)
+
   const adjustedWidth = width + extraWidth;
   const adjustedHeight = baseHeight + extraHeight;
-  
-  // Create canvas
+
   const canvas = createCanvas(adjustedWidth, adjustedHeight);
   const ctx: SKRSContext2D = canvas.getContext('2d');
-  
-  // Fill background (gradient, image, or color)
+
   if (backgroundImage) {
     try {
       const bgImage = await loadImage(backgroundImage);
       ctx.drawImage(bgImage, 0, 0, adjustedWidth, adjustedHeight);
     } catch (error) {
       console.warn(`Failed to load background image: ${backgroundImage}`, error);
-      // Fallback to gradient or color if image fails to load
+
       fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
         x: 0, y: 0, w: adjustedWidth, h: adjustedHeight
       });
@@ -1238,78 +1210,91 @@ export async function createHorizontalBarChart(
     });
     ctx.fillRect(0, 0, adjustedWidth, adjustedHeight);
   }
-  
-  // Calculate axis positions
-  const titleHeight = chartTitle ? chartTitleFontSize + 30 : 0;
-  const axisLabelHeight = (xAxisLabel || yAxisLabel) ? axisLabelFontSize + 20 : 0;
-  
-  // Adjust chart area based on legend position
-  // Note: adjustedWidth and adjustedHeight are already calculated above (before canvas creation)
+
+  const titleHeight = chartTitle ? chartTitleFontSize + 20 : 0;
+
+  let xAxisLabelAreaHeight = 0;
+  if (xAxisLabel || (xAxisCustomValues && xAxisCustomValues.length > 0) || xAxisRange) {
+
+const tickLabelHeight = tickFontSize + 10;
+
+const xAxisLabelTextHeight = xAxisLabel ? axisLabelFontSize + 2 : 0;
+
+xAxisLabelAreaHeight = tickLabelHeight + (xAxisLabel ? 8 : 0) + xAxisLabelTextHeight;
+  }
+
+  const yAxisLabelHeight = yAxisLabel ? axisLabelFontSize + 20 : 0;
+  const axisLabelHeight = Math.max(xAxisLabelAreaHeight, yAxisLabelHeight);
+
   let chartAreaLeft = paddingLeft;
-  let chartAreaRight = width - paddingRight;
-  let chartAreaTop = paddingTop + titleHeight;
-  let chartAreaBottom = adjustedHeight - paddingBottom;
-  
+let chartAreaRight = width - paddingRight;
+
+const titleMargin = chartTitle ? 20 : 0;
+  let chartAreaTop = paddingTop + titleHeight + titleMargin;
+let chartAreaBottom = baseHeight - paddingBottom;
+
   if (showLegend && legend && legend.length > 0) {
     const legendSpacing = options.legend?.spacing ?? 20;
     if (legendPosition === 'left') {
-      // Calculate actual Y-axis label width (category labels or numeric values)
-      let actualYAxisLabelWidth = 80; // Default estimate
+
+let actualYAxisLabelWidth = 80;
       const tempCanvas = createCanvas(1, 1);
       const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
       if (tempCtx) {
-        // Check if bar labels are positioned on the left (they act as Y-axis labels)
+
         const barLabelFontSize = options.labels?.barLabelDefaults?.fontSize ?? 14;
         tempCtx.font = `${barLabelFontSize}px Arial`;
-        
-        // Check if bar labels are on the left side
-        const hasLeftLabels = barLabelPosition === 'left' || 
+
+        const hasLeftLabels = barLabelPosition === 'left' ||
           data.some(item => (item.labelPosition ?? barLabelPosition) === 'left');
-        
+
         if (hasLeftLabels && showBarLabels) {
-          // Measure category labels (bar labels) - these are the Y-axis labels
+
           data.forEach(d => {
             const labelWidth = tempCtx.measureText(d.label).width;
             actualYAxisLabelWidth = Math.max(actualYAxisLabelWidth, labelWidth);
           });
-          // Add padding: 5px (label offset from originX) + 10px (spacing) = 15px total
+
           actualYAxisLabelWidth += 15;
         } else {
-          // No left labels, but might have Y-axis numeric ticks
+
           tempCtx.font = `${tickFontSize}px Arial`;
-          // Estimate for numeric Y-axis values if custom values are provided
-          actualYAxisLabelWidth = 60; // Default for numeric values
-          // Add padding: 10px (label offset) + 5px (tick) + 15px (spacing) = 30px total
+
+actualYAxisLabelWidth = 60;
+
           actualYAxisLabelWidth += 30;
         }
       }
-      // Position chart area to leave room for legend + Y-axis labels
+
       chartAreaLeft = paddingLeft + legendWidth + legendSpacing + actualYAxisLabelWidth;
-      chartAreaRight = width - paddingRight;
+chartAreaRight = width - paddingRight;
     } else if (legendPosition === 'right') {
+
       chartAreaLeft = paddingLeft;
-      chartAreaRight = width - paddingRight;
+chartAreaRight = width - paddingRight;
     } else if (legendPosition === 'top') {
+
       chartAreaTop = paddingTop + titleHeight + legendHeight + legendSpacing + minLegendSpacing;
-      chartAreaBottom = adjustedHeight - paddingBottom;
+chartAreaBottom = baseHeight - paddingBottom;
     } else if (legendPosition === 'bottom') {
+
       chartAreaTop = paddingTop + titleHeight;
-      chartAreaBottom = adjustedHeight - paddingBottom;
+chartAreaBottom = baseHeight - paddingBottom;
     }
   }
-  
+
   const originX = chartAreaLeft;
-  // Use adjustedHeight for originY calculation to account for legend space
-  const originY = adjustedHeight - paddingBottom - axisLabelHeight;
+
+  const minBottomGap = 2;
+  const originY = baseHeight - paddingBottom - xAxisLabelAreaHeight - minBottomGap;
   const axisEndY = chartAreaTop;
   const axisEndX = chartAreaRight;
-  
-  // Draw chart title
+
   if (chartTitle) {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    // Title positioned with proper spacing from top
+
     const titleY = paddingTop + 10;
     const titleX = adjustedWidth / 2;
     await renderEnhancedText(
@@ -1324,72 +1309,64 @@ export async function createHorizontalBarChart(
     );
     ctx.restore();
   }
-  
-  // Set axis style
+
   ctx.strokeStyle = axisColor;
   ctx.fillStyle = axisColor;
   ctx.lineWidth = axisWidth;
   ctx.lineCap = 'round';
-  
-  // X-axis will be drawn after calculating zero line
-  
-  // Draw Y-axis (vertical - category axis)
+
   ctx.beginPath();
   ctx.moveTo(originX, originY);
   ctx.lineTo(originX, axisEndY);
   ctx.stroke();
 
-  // Draw Y-axis arrow
-  drawArrow(ctx, originX, axisEndY, -Math.PI / 2, arrowSize); // Y-axis arrow (up)
-  
-  // Calculate X-axis step
+drawArrow(ctx, originX, axisEndY, -Math.PI / 2, arrowSize);
+
   const xStep = xAxisRange?.step ?? Math.ceil((xMax - xMin) / 10);
-  
-  // Calculate Y-axis step
+
   const yStep = yAxisRange?.step ?? 1;
-  
-  // Calculate chart area dimensions (needed for baseline calculation)
+
   const chartAreaWidth = axisEndX - originX;
-  
-  // Calculate baseline position for X-axis (custom baseline value, default is 0)
+
   const baselineX = originX + ((baseline - xMin) / (xMax - xMin)) * chartAreaWidth;
-  
-  // Draw X-axis at baseline position (horizontal line at originY)
+
   ctx.beginPath();
   ctx.moveTo(originX, originY);
   ctx.lineTo(axisEndX, originY);
   ctx.stroke();
-  
-  // Draw X-axis arrow
+
   drawArrow(ctx, axisEndX, originY, 0, arrowSize);
-  
-  // Draw X-axis ticks and labels at baseline position
-  drawXAxisTicks(ctx, originX, originY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing);
-  
-  // Draw Y-axis ticks and labels (with values/range support)
-  drawYAxisTicks(ctx, originX, originY, axisEndY, yMin, yMax, yStep, tickFontSize, yAxisCustomValues, yAxisValueSpacing);
-  
-  // Draw axis labels
+
+  drawXAxisTicks(ctx, originX, originY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, xAxisTickColor);
+
+  const shouldDrawYAxisTicks = (yAxisValues && yAxisValues.length > 0) || (options.axes?.y?.range && options.axes.y.range.min !== undefined && options.axes.y.range.max !== undefined);
+  if (shouldDrawYAxisTicks) {
+    drawYAxisTicks(ctx, originX, originY, axisEndY, yMin, yMax, yStep, tickFontSize, yAxisCustomValues, yAxisValueSpacing, yAxisTickColor);
+  }
+
   if (xAxisLabel) {
     ctx.save();
     ctx.fillStyle = axisLabelColor;
     ctx.font = `${axisLabelFontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(xAxisLabel, (originX + axisEndX) / 2, originY + 25);
+
+    const tickLabelBottom = originY + tickFontSize + 10;
+const xAxisLabelY = tickLabelBottom + 8;
+    ctx.fillText(xAxisLabel, (originX + axisEndX) / 2, xAxisLabelY);
     ctx.restore();
   }
-  
+
   if (yAxisLabel) {
-    // Check if bar labels are on the left side - if so, position Y-axis label further left
+
     let maxBarLabelWidth = 0;
     if (showBarLabels) {
-      // Check if default position or any bar has labels on the left
-      const hasLeftLabels = barLabelPosition === 'left' || 
+
+      const hasLeftLabels = barLabelPosition === 'left' ||
         data.some(item => (item.labelPosition ?? barLabelPosition) === 'left');
-      
+
       if (hasLeftLabels) {
-        // Calculate maximum width of bar labels
+
         ctx.save();
         ctx.font = `${axisLabelFontSize}px Arial`;
         data.forEach(item => {
@@ -1402,14 +1379,13 @@ export async function createHorizontalBarChart(
         ctx.restore();
       }
     }
-    
+
     ctx.save();
     ctx.fillStyle = axisLabelColor;
     ctx.font = `${axisLabelFontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    // Position Y-axis label further left if bar labels are on the left
-    // Add extra spacing (20px) after the bar labels
+
     const labelX = originX - maxBarLabelWidth - 20 - 30;
     const labelY = (originY + axisEndY) / 2;
     ctx.translate(labelX, labelY);
@@ -1417,13 +1393,11 @@ export async function createHorizontalBarChart(
     ctx.fillText(yAxisLabel, 0, 0);
     ctx.restore();
   }
-  
-  // Draw grid lines if enabled
+
   if (showGrid) {
     drawGrid(ctx, originX, originY, axisEndX, axisEndY, xMin, xMax, xStep, yMin, yMax, yStep, yAxisCustomValues, xAxisCustomValues, gridColor, gridWidth);
   }
-  
-  // Draw legend if provided - positioned based on legendPosition option
+
   if (showLegend && legend && legend.length > 0) {
     const legendSpacing = options.legend?.spacing ?? 20;
     const legendFontSize = options.legend?.fontSize ?? 16;
@@ -1433,40 +1407,38 @@ export async function createHorizontalBarChart(
     const legendPadding = options.legend?.padding;
     const legendMaxWidth = options.legend?.maxWidth;
     const legendWrapText = options.legend?.wrapText !== false;
-    
-    // Calculate legend position based on legendPosition option
+
     let legendX: number, legendY: number;
     const chartAreaHeight = originY - axisEndY;
     const chartAreaWidth = axisEndX - originX;
-    
+
     switch (legendPosition) {
       case 'top':
-        legendX = (adjustedWidth - legendWidth) / 2; // Centered horizontally
+legendX = (adjustedWidth - legendWidth) / 2;
         legendY = paddingTop + titleHeight + minLegendSpacing;
         break;
       case 'bottom':
-        legendX = (adjustedWidth - legendWidth) / 2; // Centered horizontally
+legendX = (adjustedWidth - legendWidth) / 2;
         legendY = adjustedHeight - paddingBottom - legendHeight - minLegendSpacing;
         break;
       case 'left':
-        // Position legend at the very left edge to make maximum room for Y-axis labels
-        // The chart area already accounts for legend width + label width, so position legend at leftmost
+
         legendX = paddingLeft;
-        legendY = axisEndY + (chartAreaHeight - legendHeight) / 2; // Vertically centered in chart area
+legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
       case 'right':
       default:
         legendX = axisEndX + minLegendSpacing;
-        legendY = axisEndY + (chartAreaHeight - legendHeight) / 2; // Vertically centered in chart area
+legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
     }
-    
+
     await drawLegendAtPosition(
-      ctx, 
-      legend, 
-      legendX, 
-      legendY, 
-      legendFontSize, 
+      ctx,
+      legend,
+      legendX,
+      legendY,
+      legendFontSize,
       legendBgColor || backgroundColor,
       legendTextColor,
       legendBorderColor,
@@ -1478,18 +1450,24 @@ export async function createHorizontalBarChart(
       options.legend?.textStyle
     );
   }
-  
-  // Calculate chart area dimensions (Y-axis area for bars)
-  // chartAreaWidth and baselineX already calculated above when drawing X-axis
+
   const chartAreaHeight = originY - axisEndY;
-  
-  // Calculate bar dimensions to fit within Y-axis bounds (between axisEndY and originY)
+
   const calculatedBarSpacing = barSpacing ?? 15;
-  const totalSpacing = (data.length - 1) * calculatedBarSpacing;
+
+const totalSpacing = data.length * calculatedBarSpacing;
   const availableHeight = chartAreaHeight - totalSpacing;
   const calculatedBarHeight = Math.max(minBarHeight, availableHeight / data.length);
-  
-  // Store label information for drawing after bars
+
+  const totalBarsHeight = data.length * calculatedBarHeight + totalSpacing;
+  if (totalBarsHeight > chartAreaHeight) {
+
+    const adjustedBarHeight = Math.max(minBarHeight, (chartAreaHeight - totalSpacing) / data.length);
+    if (adjustedBarHeight < calculatedBarHeight) {
+      console.warn(`Bar height adjusted from ${calculatedBarHeight} to ${adjustedBarHeight} to fit all ${data.length} bars`);
+    }
+  }
+
   interface LabelInfo {
     type: 'value' | 'bar';
     text: string;
@@ -1503,43 +1481,31 @@ export async function createHorizontalBarChart(
     fontSize: number;
   }
   const labelsToDraw: LabelInfo[] = [];
-  
-  // Track value label positions per bar (for adjusting bar label positions)
+
   const valueLabelPositions: Map<number, { x: number; fontSize: number; align: CanvasTextAlign }> = new Map();
 
-  // First pass: Draw all bars (no labels)
   data.forEach((item, index) => {
-    // Calculate bar Y position - start from axisEndY (top) and space bars downward
-    // First bar starts after spacing, each subsequent bar: previous position + bar height + spacing
-    const barY = axisEndY + (index * (calculatedBarHeight + calculatedBarSpacing)) + calculatedBarSpacing;
+
+    const barY = axisEndY + (index * (calculatedBarHeight + calculatedBarSpacing));
     const barCenterY = barY + calculatedBarHeight / 2;
-    
-    // Ensure bar stays within Y-axis bounds (between axisEndY and originY)
+
     if (barY + calculatedBarHeight > originY) {
-      // Bar would exceed Y-axis bottom - skip it to prevent overflow
+
+      console.warn(`Bar at index ${index} (${item.label}) would exceed chart bounds. Skipping.`);
       return;
     }
-    
-    // Ensure bar doesn't exceed Y-axis bounds
-    if (barY + calculatedBarHeight > originY) {
-      // Adjust if bar would go below originY (Y-axis bottom)
-      return; // Skip this bar if it doesn't fit
-    }
-    
-    // Calculate bar position and dimensions for label positioning (used for all chart types)
+
     let barX: number, barEndX: number, barLength: number;
-    
-    // Handle grouped/stacked/lollipop vs standard charts
+
     if ((chartType === 'grouped' || chartType === 'stacked' || chartType === 'lollipop') && item.values && item.values.length > 0) {
-      // Grouped or stacked chart
+
       const segments = item.values;
       const numSegments = segments.length;
-      
+
       if (chartType === 'grouped') {
-        // Grouped: bars side-by-side (vertically stacked in horizontal chart)
+
         const segmentHeight = (calculatedBarHeight - (groupSpacing * (numSegments - 1))) / numSegments;
-        
-        // Calculate overall bar bounds for label positioning (use max segment)
+
         const maxSegment = segments.reduce((max, seg) => seg.value > max.value ? seg : max, segments[0]);
         if (item.xStart !== undefined || item.xEnd !== undefined) {
           const startValue = item.xStart ?? xMin;
@@ -1549,7 +1515,7 @@ export async function createHorizontalBarChart(
           barX = originX + startRatio * chartAreaWidth;
           barEndX = originX + endRatio * chartAreaWidth;
         } else {
-          // Calculate based on positive/negative
+
           if (maxSegment.value >= 0) {
             const positiveRatio = (maxSegment.value - 0) / (xMax - xMin);
             barX = baselineX;
@@ -1561,12 +1527,11 @@ export async function createHorizontalBarChart(
           }
         }
         barLength = Math.abs(barEndX - barX);
-        
+
         segments.forEach((segment, segIndex) => {
           const segY = barY + (segIndex * (segmentHeight + groupSpacing));
           const segCenterY = segY + segmentHeight / 2;
-          
-          // Calculate segment bar position and length
+
           let segBarX: number, segBarEndX: number;
           if (item.xStart !== undefined || item.xEnd !== undefined) {
             const startValue = item.xStart ?? xMin;
@@ -1576,7 +1541,7 @@ export async function createHorizontalBarChart(
             segBarX = originX + startRatio * chartAreaWidth;
             segBarEndX = originX + endRatio * chartAreaWidth;
           } else {
-            // Calculate bar position based on positive/negative value
+
             if (segment.value >= baseline) {
               const positiveRatio = (segment.value - baseline) / (xMax - xMin);
               segBarX = baselineX;
@@ -1588,8 +1553,7 @@ export async function createHorizontalBarChart(
             }
           }
           const segBarLength = Math.abs(segBarEndX - segBarX);
-          
-          // Draw segment bar with gradient or color
+
           ctx.beginPath();
           ctx.rect(segBarX, segY, segBarLength, segmentHeight);
           fillWithGradientOrColor(
@@ -1600,8 +1564,7 @@ export async function createHorizontalBarChart(
             { x: segBarX, y: segY, w: segBarLength, h: segmentHeight }
           );
           ctx.fill();
-          
-          // Store value label for later drawing
+
           const shouldShowValue = segment.showValue !== undefined ? segment.showValue : showValues;
           if (shouldShowValue) {
             labelsToDraw.push({
@@ -1617,14 +1580,14 @@ export async function createHorizontalBarChart(
           }
         });
       } else {
-        // Stacked: bars on top of each other (horizontally stacked in horizontal chart)
+
         let accumulatedLength = 0;
-        
+
         segments.forEach((segment, segIndex) => {
-          // For stacked, separate positive and negative segments
+
           let segmentLength: number;
           let segBarX: number;
-          
+
           if (segment.value >= baseline) {
             const positiveRatio = (segment.value - baseline) / (xMax - xMin);
             segmentLength = positiveRatio * chartAreaWidth;
@@ -1634,12 +1597,10 @@ export async function createHorizontalBarChart(
             segmentLength = negativeRatio * chartAreaWidth;
             segBarX = baselineX - accumulatedLength - segmentLength;
           }
-          
-          // Draw segment bar
+
           ctx.fillStyle = segment.color || item.color || '#4A90E2';
           ctx.fillRect(segBarX, barY, segmentLength, calculatedBarHeight);
-          
-          // Store value label for later drawing
+
           const shouldShowValue = segment.showValue !== undefined ? segment.showValue : showValues;
           if (shouldShowValue && segmentLength > valueFontSize + 10) {
             labelsToDraw.push({
@@ -1653,25 +1614,23 @@ export async function createHorizontalBarChart(
               fontSize: valueFontSize
             });
           }
-          
+
           accumulatedLength += segmentLength;
         });
-        
-        // Calculate overall bar bounds for label positioning
+
         barX = originX;
         barEndX = originX + accumulatedLength;
         barLength = accumulatedLength;
-        
-        // Store total value label for later drawing
+
         const totalValue = segments.reduce((sum, seg) => sum + seg.value, 0);
         const shouldShowValue = item.showValue !== undefined ? item.showValue : showValues;
         if (shouldShowValue) {
-          // Calculate total position
+
           const totalPositive = segments.filter(s => s.value >= 0).reduce((sum, s) => sum + s.value, 0);
           const totalNegative = segments.filter(s => s.value < 0).reduce((sum, s) => sum + Math.abs(s.value), 0);
           const totalPositiveLength = (totalPositive / (xMax - xMin)) * chartAreaWidth;
           const totalNegativeLength = (totalNegative / (xMax - xMin)) * chartAreaWidth;
-          const totalX = totalValue >= 0 
+          const totalX = totalValue >= 0
             ? baselineX + totalPositiveLength + 5
             : baselineX - totalNegativeLength - 5;
           labelsToDraw.push({
@@ -1687,22 +1646,20 @@ export async function createHorizontalBarChart(
         }
       }
     } else if (chartType === 'lollipop') {
-      // Lollipop chart: line with dot at end (horizontal)
+
       const value = item.value ?? baseline;
-      
-      // Calculate value X position
+
       let valueX: number;
       if (value >= baseline) {
-        // Value to the right of baseline
+
         const positiveRatio = (value - baseline) / (xMax - xMin);
         valueX = baselineX + positiveRatio * chartAreaWidth;
       } else {
-        // Value to the left of baseline
+
         const negativeRatio = (baseline - value) / (xMax - xMin);
         valueX = baselineX - negativeRatio * chartAreaWidth;
       }
 
-      // Draw horizontal line from baseline to value position
       ctx.save();
       ctx.strokeStyle = item.color || '#4A90E2';
       ctx.lineWidth = lollipopLineWidth;
@@ -1710,27 +1667,24 @@ export async function createHorizontalBarChart(
       ctx.moveTo(baselineX, barCenterY);
       ctx.lineTo(valueX, barCenterY);
       ctx.stroke();
-      
-      // Draw dot/circle at value position
+
       ctx.fillStyle = item.color || '#4A90E2';
       ctx.beginPath();
       ctx.arc(valueX, barCenterY, lollipopDotSize / 2, 0, Math.PI * 2);
       ctx.fill();
-      
-      // Draw dot border for better visibility
+
       ctx.strokeStyle = item.color || '#4A90E2';
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.restore();
 
-      // Store value label for later drawing
       const shouldShowValue = item.showValue !== undefined ? item.showValue : showValues;
       if (shouldShowValue) {
-        // Store value label position for this bar (for adjusting bar label position)
+
         if (value >= baseline) {
           valueLabelPositions.set(index, { x: valueX + lollipopDotSize / 2 + 5, fontSize: valueFontSize, align: 'left' });
         }
-        
+
         labelsToDraw.push({
           type: 'value',
           text: value.toString(),
@@ -1742,15 +1696,12 @@ export async function createHorizontalBarChart(
           fontSize: valueFontSize
         });
       }
-      
-      // Set bar bounds for label positioning
+
       barX = baselineX;
       barEndX = valueX;
       barLength = Math.abs(barEndX - barX);
     } else {
-      // Standard chart: single bar
-      // Calculate bar position and length
-      // If xStart/xEnd are provided, use them for bar range; otherwise use value
+
       if (item.xStart !== undefined || item.xEnd !== undefined) {
         const startValue = item.xStart ?? xMin;
         const endValue = item.xEnd ?? (item.value ?? 0);
@@ -1759,7 +1710,7 @@ export async function createHorizontalBarChart(
         barX = originX + startRatio * chartAreaWidth;
         barEndX = originX + endRatio * chartAreaWidth;
       } else {
-        // Use value as end position, handle relative to baseline
+
         const value = item.value ?? baseline;
         if (value >= baseline) {
           const positiveRatio = (value - baseline) / (xMax - xMin);
@@ -1772,8 +1723,7 @@ export async function createHorizontalBarChart(
         }
       }
       barLength = barEndX - barX;
-      
-      // Draw horizontal bar
+
       ctx.beginPath();
       ctx.rect(barX, barY, barLength, calculatedBarHeight);
       fillWithGradientOrColor(
@@ -1784,19 +1734,17 @@ export async function createHorizontalBarChart(
         { x: barX, y: barY, w: barLength, h: calculatedBarHeight }
       );
       ctx.fill();
-      
-      // Store value label for later drawing
+
       const shouldShowValue = item.showValue !== undefined ? item.showValue : showValues;
       if (shouldShowValue) {
         const value = item.value ?? baseline;
         const valueLabelX = value >= baseline ? barEndX + 5 : barX - 5;
         const valueLabelAlign = value >= baseline ? 'left' : 'right';
-        
-        // Store value label position for this bar (for adjusting bar label position)
+
         if (value >= baseline) {
           valueLabelPositions.set(index, { x: valueLabelX, fontSize: valueFontSize, align: valueLabelAlign });
         }
-        
+
         labelsToDraw.push({
           type: 'value',
           text: value.toString(),
@@ -1809,15 +1757,14 @@ export async function createHorizontalBarChart(
         });
       }
     }
-    
-    // Store bar label information for later drawing
+
     if (showBarLabels) {
       let labelX: number, labelY: number;
       let textAlign: CanvasTextAlign = 'right';
       let textBaseline: CanvasTextBaseline = 'middle';
-      
+
       const currentLabelPosition = item.labelPosition ?? barLabelPosition;
-      
+
       switch (currentLabelPosition) {
         case 'left':
           labelX = originX - 5;
@@ -1828,16 +1775,15 @@ export async function createHorizontalBarChart(
         case 'right':
           labelX = barEndX + 5;
           labelY = barCenterY;
-          // Check if there's a value label at the right - if so, position bar label to the right of it
+
           const valueLabelInfo = valueLabelPositions.get(index);
           if (valueLabelInfo && valueLabelInfo.align === 'left') {
-            // Value label is at right, so position bar label to the right of it
-            // Calculate spacing: value label width + gap
+
             ctx.save();
             ctx.font = `${valueLabelInfo.fontSize}px Arial`;
             const valueLabelWidth = ctx.measureText((item.value ?? baseline).toString()).width;
             ctx.restore();
-            const spacing = 5; // Gap between value and bar label
+const spacing = 5;
             labelX = valueLabelInfo.x + valueLabelWidth + spacing;
           } else {
             labelX = barEndX + 5;
@@ -1847,11 +1793,7 @@ export async function createHorizontalBarChart(
           break;
         case 'top':
           labelX = barX + barLength / 2;
-          // Check if there's a value label - for horizontal charts, value labels are at the end (right side)
-          // So 'top' bar label won't conflict with value labels (they're on different axes)
-          // But we still need to check if value is shown and adjust if needed
-          // For horizontal charts, 'top' means above the bar, value labels are at the end
-          // So no conflict, but if we want to be safe, we can check
+
           labelY = barY - 5;
           textAlign = 'center';
           textBaseline = 'bottom';
@@ -1874,16 +1816,16 @@ export async function createHorizontalBarChart(
           textAlign = 'right';
           textBaseline = 'middle';
       }
-      
-      // Calculate label color (for 'inside' position, check if bar is dark)
-      let labelColor = item.labelColor || '#000000';
+
+      const defaultBarLabelColor = options.labels?.barLabelDefaults?.defaultColor ?? '#000000';
+      let labelColor = item.labelColor || defaultBarLabelColor;
       if (currentLabelPosition === 'inside') {
         const barColor = item.color || '#4A90E2';
-        const isDark = barColor === '#000000' || barColor.toLowerCase().includes('dark') || 
+        const isDark = barColor === '#000000' || barColor.toLowerCase().includes('dark') ||
                        (barColor.startsWith('#') && parseInt(barColor.slice(1, 3), 16) < 128);
-        labelColor = isDark ? '#FFFFFF' : (item.labelColor || '#000000');
+        labelColor = isDark ? '#FFFFFF' : (item.labelColor || defaultBarLabelColor);
       }
-      
+
       labelsToDraw.push({
         type: 'bar',
         text: item.label,
@@ -1897,16 +1839,14 @@ export async function createHorizontalBarChart(
     }
   });
 
-  // Second pass: Draw all labels (values and bar labels) on top of everything
   for (const label of labelsToDraw) {
     ctx.save();
     ctx.textAlign = label.align;
     ctx.textBaseline = label.baseline;
-    
-    // Determine text style and gradient based on label type
+
     let textStyle: EnhancedTextStyle | undefined;
     let textGradient: gradient | undefined;
-    
+
     if (label.type === 'bar') {
       textStyle = options.labels?.barLabelDefaults?.textStyle || label.textStyle;
       textGradient = options.labels?.barLabelDefaults?.gradient || label.gradient;
@@ -1914,7 +1854,7 @@ export async function createHorizontalBarChart(
       textStyle = options.labels?.valueLabelDefaults?.textStyle || label.textStyle;
       textGradient = options.labels?.valueLabelDefaults?.gradient || label.gradient;
     }
-    
+
     await renderEnhancedText(
       ctx,
       label.text,
@@ -1927,6 +1867,6 @@ export async function createHorizontalBarChart(
     );
     ctx.restore();
   }
-  
+
   return canvas.toBuffer('image/png');
 }

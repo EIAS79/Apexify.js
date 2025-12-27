@@ -11,7 +11,7 @@ import { getErrorMessage } from '../utils/errorUtils';
 export class ChartCreator {
   /**
    * Creates a chart based on the specified type.
-   * 
+   *
    * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line')
    * @param data - Chart data (type depends on chartType)
    * @param options - Chart options (type depends on chartType)
@@ -40,22 +40,22 @@ export class ChartCreator {
   async createChart(
     chartType: 'pie' | 'bar' | 'horizontalBar' | 'line',
     data: any,
-    options: any = {}
+    options?: any
   ): Promise<Buffer> {
     try {
       switch (chartType) {
         case 'pie':
           return await createPieChart(data, options);
-        
+
         case 'bar':
           return await createBarChart(data, options);
-        
+
         case 'horizontalBar':
           return await createHorizontalBarChart(data, options);
-        
+
         case 'line':
           return await createLineChart(data, options);
-        
+
         default:
           throw new Error(`Unsupported chart type: ${chartType}`);
       }
@@ -67,7 +67,7 @@ export class ChartCreator {
   /**
    * Creates a comparison chart with two charts side by side or top/bottom.
    * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
-   * 
+   *
    * @param options - Comparison chart configuration
    * @returns Promise<Buffer> - Comparison chart image buffer
    */

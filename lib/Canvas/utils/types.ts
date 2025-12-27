@@ -18,9 +18,9 @@ export type FitMode = 'fill' | 'contain' | 'cover';
 export interface StrokeOptions {
   color?: string;
   gradient?: gradient;
-  width?: number;        // px
-  position?: number;     // px (+out/-in)
-  blur?: number;         // px
+width?: number;
+position?: number;
+blur?: number;
   opacity?: number;      // 0..1
   borderRadius?: number | 'circular';
   borderPosition?: borderPosition;
@@ -30,9 +30,9 @@ export interface StrokeOptions {
 export interface ShadowOptions {
   color?: string;          // e.g. 'rgba(0,0,0,1)'
   gradient?: gradient;     // <— gradient-capable shadow
-  offsetX?: number;        // px
-  offsetY?: number;        // px
-  blur?: number;           // px
+offsetX?: number;
+offsetY?: number;
+blur?: number;
   opacity?: number;        // 0..1
   borderRadius?: number | "circular";
   borderPosition?: borderPosition;
@@ -51,14 +51,14 @@ export type gradient =
       startX?: number; startY?: number;
       endX?: number;   endY?: number;
       rotate?: number;           // degrees, rotation around pivot (default: canvas center)
-      pivotX?: number; pivotY?: number; // optional pivot for rotation
+pivotX?: number; pivotY?: number;
       repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for gradient (default: 'no-repeat')
       colors: GradientStop[];
     }
   | {
       type: 'radial';
       // two circles (default to center-based radial if not supplied)
-      startX?: number; startY?: number; startRadius?: number; // inner circle
+startX?: number; startY?: number; startRadius?: number;
       endX?: number;   endY?: number;   endRadius?: number;   // outer circle
       // rotation is NOP for perfectly concentric radial, but supported if centers aren't equal
       rotate?: number; pivotX?: number; pivotY?: number;
@@ -71,7 +71,7 @@ export type gradient =
       centerX?: number; centerY?: number; // Center point (default: canvas center)
       startAngle?: number; // Starting angle in degrees (default: 0)
       rotate?: number; // Rotation around center in degrees (default: 0)
-      pivotX?: number; pivotY?: number; // Optional pivot for rotation
+pivotX?: number; pivotY?: number;
       colors: GradientStop[];
     };
 
@@ -98,22 +98,22 @@ export interface CanvasConfig {
       fit?: 'fill' | 'contain' | 'cover';
       align?: 'center' | 'top' | 'bottom' | 'left' | 'right'
       | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-      filters?: ImageFilter[]; // NEW: Apply filters to background image
-      opacity?: number; // NEW: Background image opacity
+filters?: ImageFilter[];
+opacity?: number;
     };
     videoBg?: {
       source: string | Buffer; // Video file path, URL, or Buffer
       frame?: number; // Extract specific frame number (default: 0)
       time?: number; // Extract frame at specific time in seconds (overrides frame if provided)
       loop?: boolean; // Loop video (default: false)
-      autoplay?: boolean; // Autoplay (default: false)
+autoplay?: boolean;
       opacity?: number; // Video opacity (default: 1)
       format?: 'jpg' | 'png'; // Output format (default: 'jpg')
       quality?: number; // JPEG quality 1-31, lower = better (default: 2)
     };
 
     colorBg?: string;
-    gradientBg?: gradient; 
+    gradientBg?: gradient;
     patternBg?: PatternOptions;
     noiseBg?: { intensity?: number };
     bgLayers?: Array<
@@ -131,20 +131,20 @@ export interface CanvasConfig {
     rotation?: number;
     borderRadius?: number | "circular";
     borderPosition?: borderPosition;
-  
+
     zoom?: {
-      scale?: number;          // optional, defaults to 1
+scale?: number;
       centerX?: number;
       centerY?: number;
    };
 
-  
+
     stroke?: {
         color?: string;
         blur?: number;
-        width?: number; 
+        width?: number;
         position?: number;
-        borderRadius?: number | "circular"; 
+        borderRadius?: number | "circular";
         borderPosition?: borderPosition;
         gradient?: gradient;
         style?: 'solid' | 'dashed' | 'dotted' | 'groove' | 'ridge' | 'double';
@@ -185,21 +185,26 @@ export interface CanvasConfig {
  * @param {number} shadow.opacity - The opacity of the shadow.
  * @param {number | string} shadow.borderRadius - The border radius of the shadow.
  */
-export type ShapeType = 'rectangle' | 'square' | 'circle' | 'triangle' | 'trapezium' | 'star' | 'heart' | 'polygon';
+export type ShapeType = 'rectangle' | 'square' | 'circle' | 'triangle' | 'trapezium' | 'star' | 'heart' | 'polygon' | 'arc' | 'pieSlice';
 
 export interface ShapeProperties {
   fill?: boolean;
   color?: string;
   gradient?: gradient;
-  points?: { x: number; y: number }[]; // for polygon
-  radius?: number; // for circle
-  sides?: number; // for polygon
-  innerRadius?: number; // for star
-  outerRadius?: number; // for star
+points?: { x: number; y: number }[];
+radius?: number;
+sides?: number;
+innerRadius?: number;
+outerRadius?: number;
+
+  startAngle?: number; // Start angle in radians (default: 0, for arc/pieSlice)
+  endAngle?: number; // End angle in radians (default: 2*PI, for arc/pieSlice)
+  centerX?: number; // Center X for arc/pieSlice (default: shape center)
+  centerY?: number; // Center Y for arc/pieSlice (default: shape center)
 }
 
 export interface ImageProperties {
-  // required
+
   source: string | Buffer | ShapeType;
   x: number;
   y: number;
@@ -210,8 +215,8 @@ export interface ImageProperties {
   inherit?: boolean;
 
   // fitting
-  fit?: FitMode;           // default 'fill'
-  align?: AlignMode;       // default 'center'
+fit?: FitMode;
+align?: AlignMode;
 
   // visuals
   rotation?: number;       // deg around box center
@@ -223,20 +228,20 @@ export interface ImageProperties {
   // image filters
   filters?: ImageFilter[];
   filterIntensity?: number; // Global filter intensity multiplier (default: 1)
-  filterOrder?: 'pre' | 'post'; // Apply before or after transformations (default: 'post')
+filterOrder?: 'pre' | 'post';
 
   // image masking
   mask?: {
     source: string | Buffer; // Mask image
     mode?: 'alpha' | 'luminance' | 'inverse'; // Mask mode (default: 'alpha')
   };
-  clipPath?: Array<{ x: number; y: number }>; // Custom clipping path polygon
+clipPath?: Array<{ x: number; y: number }>;
 
   // image distortion/transform
   distortion?: {
     type: 'perspective' | 'warp' | 'bulge' | 'pinch';
     points?: Array<{ x: number; y: number }>; // Control points for perspective/warp
-    intensity?: number; // Intensity for bulge/pinch (default: 0.5)
+intensity?: number;
   };
   meshWarp?: {
     gridX?: number; // Grid divisions X (default: 10)
@@ -255,27 +260,126 @@ export interface ImageProperties {
   // shape properties (when source is a shape)
   shape?: ShapeProperties;
 
-  // independent passes
   shadow?: ShadowOptions;
   stroke?: StrokeOptions;
   boxBackground?: BoxBackground; // under bitmap, inside clip
 }
 
+/**
+ * Group transform options for grouped drawing operations
+ */
+export interface GroupTransformOptions {
+  /** Rotation in degrees - applies to all elements together */
+  rotation?: number;
+  /** Translation X - applies to all elements together */
+  translateX?: number;
+  /** Translation Y - applies to all elements together */
+  translateY?: number;
+  /** Scale X - applies to all elements together */
+  scaleX?: number;
+  /** Scale Y - applies to all elements together */
+  scaleY?: number;
+  /** Pivot point X for rotation/scale (default: group center) */
+  pivotX?: number;
+  /** Pivot point Y for rotation/scale (default: group center) */
+  pivotY?: number;
+}
+
+/**
+ * Options for createImage method when drawing multiple elements
+ */
+export interface CreateImageOptions {
+  /** If true, apply transformations to all elements as a group */
+  isGrouped?: boolean;
+  /** Group transform options (only used when isGrouped is true) */
+  groupTransform?: GroupTransformOptions;
+}
+
+/**
+ * Comprehensive text metrics interface matching Canvas API + extensions
+ */
+export interface TextMetrics {
+  // Standard Canvas API metrics
+  width: number;
+  actualBoundingBoxAscent: number;
+  actualBoundingBoxDescent: number;
+  actualBoundingBoxLeft: number;
+  actualBoundingBoxRight: number;
+  fontBoundingBoxAscent: number;
+  fontBoundingBoxDescent: number;
+
+  alphabeticBaseline?: number;
+  emHeightAscent?: number;
+  emHeightDescent?: number;
+  hangingBaseline?: number;
+  ideographicBaseline?: number;
+
+  // Enhanced metrics (Apexify.js extensions)
+  height: number;
+  lineHeight: number;
+  baseline: number;
+  top: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+
+  // Multi-line metrics (if maxWidth provided)
+  lines?: Array<{
+    text: string;
+    width: number;
+    height: number;
+    metrics: Omit<TextMetrics, 'lines' | 'totalHeight' | 'lineCount'>;
+  }>;
+  totalHeight?: number;
+  lineCount?: number;
+
+  // Character-level metrics (optional)
+  charWidths?: number[];
+  charPositions?: Array<{ x: number; width: number }>;
+}
+
+/**
+ * Pixel data interface
+ */
+export interface PixelData {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+  colorSpace?: 'srgb' | 'display-p3' | 'rec2020';
+}
+
+/**
+ * Pixel manipulation options
+ */
+export interface PixelManipulationOptions {
+  /** Custom pixel processing function: (r, g, b, a, x, y) => [r, g, b, a] */
+  processor?: (r: number, g: number, b: number, a: number, x: number, y: number) => [number, number, number, number];
+  /** Apply to specific region */
+  region?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  /** Apply filter */
+  filter?: 'grayscale' | 'invert' | 'sepia' | 'brightness' | 'contrast' | 'saturate';
+  /** Filter intensity (0-1) */
+  intensity?: number;
+}
+
 export interface ImageFilter {
-  type: 'gaussianBlur' | 'motionBlur' | 'radialBlur' | 'sharpen' | 'noise' | 'grain' | 
-        'edgeDetection' | 'emboss' | 'invert' | 'grayscale' | 'sepia' | 'pixelate' | 
+  type: 'gaussianBlur' | 'motionBlur' | 'radialBlur' | 'sharpen' | 'noise' | 'grain' |
+        'edgeDetection' | 'emboss' | 'invert' | 'grayscale' | 'sepia' | 'pixelate' |
         'brightness' | 'contrast' | 'saturation' | 'hueShift' | 'posterize';
   intensity?: number;
   radius?: number;
-  angle?: number;        // for motion blur
-  centerX?: number;      // for radial blur
-  centerY?: number;      // for radial blur
-  value?: number;        // for brightness, contrast, saturation, hue shift
-  levels?: number;       // for posterize
-  size?: number;         // for pixelate
+angle?: number;
+centerX?: number;
+centerY?: number;
+value?: number;
+levels?: number;
+size?: number;
 }
-
-
 
 /**
  * Enhanced text properties interface with comprehensive styling options
@@ -301,7 +405,7 @@ export interface TextProperties {
     /** Path to custom font file (.ttf, .otf, .woff, etc.) */
     path?: string;
   };
-  
+
   // === LEGACY FONT PROPERTIES (for backward compatibility) ===
   /** @deprecated Use font.size instead */
   fontSize?: number;
@@ -432,6 +536,13 @@ export interface TextProperties {
   };
   /** Render text along path */
   textOnPath?: boolean;
+  /** Include character-level metrics in measureText (optional) */
+  includeCharMetrics?: boolean;
+  /** Optional: Canvas size for text measurement (default: auto-calculated based on text size) */
+  measurementCanvas?: {
+    width?: number;
+    height?: number;
+  };
 }
 
 /**
@@ -457,6 +568,8 @@ export interface TextObject extends TextProperties {
  * @param watermark The watermark settings.
  * @param textOverlay The text overlay settings.
  * @param basDir The base directory for files.
+ * @param onStart Frame generation callback - generates frames using Apexify.js APIs (returns Buffer array)
+ * @param onEnd Callback after GIF creation - receives final frame buffer and can return static image buffer
  */
 export interface GIFOptions {
     outputFormat: 'file' | 'base64' | 'attachment' | 'buffer' | string;
@@ -480,6 +593,39 @@ export interface GIFOptions {
         y?: number;
     };
     basDir?: any;
+    /**
+     * Frame generation callback - called before GIF creation
+     * Receives frame count and painter instance, returns array of frame buffers
+     * If provided, overrides gifFrames parameter
+     * @param frameCount - Estimated frame count (based on duration/delay or default 30)
+     * @param painter - ApexPainter instance for using Apexify.js APIs
+     * @returns Array of frame objects with buffer and duration
+     */
+    onStart?: (
+        frameCount: number,
+painter: any
+    ) => Promise<Array<{ buffer: Buffer; duration: number }>>;
+    /**
+     * Frame count for animation (used when onStart is provided)
+     * If not provided, defaults to 30 frames
+     */
+    frameCount?: number;
+    /**
+     * Animation duration in milliseconds (used to calculate frame count if frameCount not provided)
+     * Defaults to 3000ms (3 seconds)
+     */
+    duration?: number;
+    /**
+     * Callback after GIF creation - receives final frame buffer
+     * Can return a static image buffer (e.g., final frame) that will be included in result
+     * @param finalFrameBuffer - Buffer of the last frame
+     * @param painter - ApexPainter instance
+     * @returns Optional static image buffer (will be added to result if provided)
+     */
+    onEnd?: (
+        finalFrameBuffer: Buffer,
+painter: any
+    ) => Promise<Buffer | undefined>;
 }
 
 /**
@@ -509,21 +655,21 @@ export interface CustomOptions {
         x: number;
         y: number;
     };
-    // Advanced path options
+
     path?: {
         type: 'smooth' | 'bezier' | 'catmull-rom';
-        tension?: number; // For smooth/catmull-rom (default: 0.5)
+tension?: number;
         closed?: boolean; // Close the path (default: false)
     };
-    // Arrow markers
+
     arrow?: {
-        start?: boolean; // Arrow at start (default: false)
-        end?: boolean; // Arrow at end (default: false)
-        size?: number; // Arrow size (default: 10)
-        style?: 'filled' | 'outline'; // Arrow style (default: 'filled')
-        color?: string; // Arrow color (default: line color)
+start?: boolean;
+end?: boolean;
+size?: number;
+style?: 'filled' | 'outline';
+color?: string;
     };
-    // Path markers
+
     markers?: Array<{
         position: number; // 0-1 along path
         shape: 'circle' | 'square' | 'diamond' | 'arrow';
@@ -545,7 +691,7 @@ export interface CustomOptions {
         // Line patterns
         pattern?: {
             type: 'dots' | 'dashes' | 'custom';
-            segments?: number[]; // For custom pattern
+segments?: number[];
             offset?: number; // Pattern offset
         };
         texture?: string | Buffer; // Texture image for line
@@ -567,9 +713,6 @@ export interface CustomOptions {
     };
 }
 
-
-
-
 export interface cropCoordinate {
     from: { x: number; y: number };
     to: { x: number; y: number };
@@ -583,7 +726,6 @@ export interface cropOptions {
     radius: number | "circular"
 }
 
-
 export interface GradientConfig{
     type: 'linear' | 'radial' | 'conic';
     startX?: number;
@@ -593,21 +735,21 @@ export interface GradientConfig{
     startRadius?: number;
     endRadius?: number;
     angle?: number;
-    centerX?: number; // For conic gradients
-    centerY?: number; // For conic gradients
-    startAngle?: number; // For conic gradients (in degrees)
+centerX?: number;
+centerY?: number;
+startAngle?: number;
     repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for linear and radial gradients
     colors: {
       stop: number;
       color: string;
     }[];
   };
-  
+
   export interface Frame{
     backgroundColor?: string;
     gradient?: GradientConfig;
     pattern?: {
-        source: string; 
+        source: string;
         repeat?: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat';
     };
     source?: string;
@@ -624,17 +766,17 @@ export interface GradientConfig{
     height?: number;
     onDrawCustom?: (ctx: SKRSContext2D, canvas: Canvas) => void;
   };
-  
-  
+
+
   /**
    * Enhanced pattern options supporting all pattern types
    */
   export interface PatternOptions {
     // === PATTERN TYPE ===
     /** Pattern type: built-in patterns or custom image */
-    type: 'grid' | 'dots' | 'diagonal' | 'stripes' | 'waves' | 'crosses' | 
+    type: 'grid' | 'dots' | 'diagonal' | 'stripes' | 'waves' | 'crosses' |
           'hexagons' | 'checkerboard' | 'diamonds' | 'triangles' | 'stars' | 'polka' | 'custom';
-    
+
     // === PATTERN COLORS ===
     /** Primary pattern color (default: '#ffffff') */
     color?: string;
@@ -642,7 +784,7 @@ export interface GradientConfig{
     secondaryColor?: string;
     /** Pattern opacity (0-1, default: 0.3) */
     opacity?: number;
-    
+
     // === PATTERN SIZING ===
     /** Pattern element size in pixels (default: 20) */
     size?: number;
@@ -650,7 +792,7 @@ export interface GradientConfig{
     spacing?: number;
     /** Pattern rotation angle in degrees (default: 0) */
     rotation?: number;
-    
+
     // === CUSTOM PATTERN ===
     /** Custom pattern image path/URL (for type: 'custom') */
     customPatternImage?: string;
@@ -658,21 +800,21 @@ export interface GradientConfig{
     repeat?: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat';
     /** Custom pattern scale multiplier (default: 1) */
     scale?: number;
-    
+
     // === PATTERN POSITIONING ===
     /** Pattern offset X position (default: 0) */
     offsetX?: number;
     /** Pattern offset Y position (default: 0) */
     offsetY?: number;
-    
+
     // === ADVANCED OPTIONS ===
     /** Pattern blend mode (default: 'overlay') */
     blendMode?: GlobalCompositeOperation;
     /** Pattern gradient (overrides color) */
     gradient?: GradientConfig;
   }
-    
-    
+
+
 // Batch operation types
 export interface BatchOperation {
   type: 'canvas' | 'image' | 'text';
@@ -708,18 +850,17 @@ export interface CompressionOptions {
   format?: 'jpeg' | 'webp' | 'avif';
   maxWidth?: number;
   maxHeight?: number;
-  progressive?: boolean; // For JPEG (default: false)
+progressive?: boolean;
 }
 
-// Color palette extraction options
 export interface PaletteOptions {
-  count?: number; // Number of colors (default: 10)
+count?: number;
   method?: 'kmeans' | 'median-cut' | 'octree';
   format?: 'hex' | 'rgb' | 'hsl';
 }
 
   export interface ExtractFramesOptions {
-  outputDirectory?: string; // Directory to save frames
+outputDirectory?: string;
     interval: number;
     outputFormat?: 'jpg' | 'png';
     frameSelection?: {
@@ -728,7 +869,7 @@ export interface PaletteOptions {
     };
     watermark?: string;
   }
-  
+
   /**
    * Options for resizing an image.
    */
@@ -742,18 +883,18 @@ export interface PaletteOptions {
     quality?: number;
     outputFormat?: 'png' | 'jpeg';
   }
-  
+
   export interface Point {
     x: number;
     y: number;
   }
-  
+
   export interface Coordinate {
     from: Point;
     to: Point;
     tension?: number;
   }
-  
+
   export interface CropOptions {
     imageSource: string;
     coordinates: Coordinate[];
@@ -771,12 +912,11 @@ export interface PaletteOptions {
   export interface BlendOptions {
     type?: "linear" | "radial" | "conic";
     angle?: number;
-    colors: { stop: number; color: string }[]; 
+    colors: { stop: number; color: string }[];
     blendMode?: "multiply" | "overlay" | "screen" | "darken" | "lighten" | "difference";
     maskSource?: string | Buffer | PathLike | Uint8Array;
   }
 
-  // Advanced Save Options
   export interface SaveOptions {
     /** Output directory path (default: './output') */
     directory?: string;

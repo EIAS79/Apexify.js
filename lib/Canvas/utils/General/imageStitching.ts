@@ -25,7 +25,6 @@ export async function stitchImages(
     spacing = 0
   } = options;
 
-  // Load all images
   const loadedImages: Image[] = [];
   for (const imgSource of images) {
     let img: Image;
@@ -44,7 +43,6 @@ export async function stitchImages(
     throw new Error('stitchImages: No valid images loaded');
   }
 
-  // Calculate canvas dimensions
   let canvasWidth = 0;
   let canvasHeight = 0;
   let maxWidth = 0;
@@ -72,17 +70,15 @@ export async function stitchImages(
     canvasHeight = maxHeight * rows + spacing * (rows - 1);
   }
 
-  // Create canvas
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = getCanvasContext(canvas);
 
-  // Draw images
   let currentX = 0;
   let currentY = 0;
 
   for (let i = 0; i < loadedImages.length; i++) {
     const img = loadedImages[i];
-    
+
     if (direction === 'horizontal') {
       if (i > 0) {
         currentX -= overlap;
@@ -106,7 +102,6 @@ export async function stitchImages(
       ctx.drawImage(img, x, y, img.width, img.height);
     }
 
-    // Apply blending if enabled and not first image
     if (blend && i > 0 && overlap > 0) {
       ctx.globalCompositeOperation = 'multiply';
       ctx.globalAlpha = 0.5;
@@ -146,7 +141,6 @@ export async function createCollage(
     borderRadius = 0
   } = layout;
 
-  // Load all images
   const loadedImages: Array<{ image: Image; width: number; height: number }> = [];
   for (const imgConfig of images) {
     let img: Image;
@@ -158,7 +152,7 @@ export async function createCollage(
       const imgPath = path.join(process.cwd(), imgConfig.source as string);
       img = await loadImage(fs.readFileSync(imgPath));
     }
-    
+
     loadedImages.push({
       image: img,
       width: imgConfig.width || img.width,
@@ -166,7 +160,6 @@ export async function createCollage(
     });
   }
 
-  // Calculate canvas dimensions
   let canvasWidth = 0;
   let canvasHeight = 0;
 
@@ -176,44 +169,41 @@ export async function createCollage(
     canvasWidth = cellWidth * columns + spacing * (columns - 1);
     canvasHeight = cellHeight * rows + spacing * (rows - 1);
   } else if (type === 'masonry') {
-    // Masonry layout - columns with varying heights
+
     const colWidths: number[] = new Array(columns).fill(0);
     const colHeights: number[] = new Array(columns).fill(0);
-    
+
     for (let i = 0; i < loadedImages.length; i++) {
       const col = i % columns;
       colWidths[col] = Math.max(colWidths[col], loadedImages[i].width);
       colHeights[col] += loadedImages[i].height + (i >= columns ? spacing : 0);
     }
-    
+
     canvasWidth = Math.max(...colWidths) * columns + spacing * (columns - 1);
     canvasHeight = Math.max(...colHeights);
   } else if (type === 'carousel') {
-    // Horizontal carousel
+
     canvasWidth = loadedImages.reduce((sum, img) => sum + img.width, 0) + spacing * (loadedImages.length - 1);
     canvasHeight = Math.max(...loadedImages.map(img => img.height));
   } else {
-    // Custom - use provided dimensions or calculate
+
     canvasWidth = 800;
     canvasHeight = 600;
   }
 
-  // Create canvas
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = getCanvasContext(canvas);
 
-  // Draw background
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Draw images
   let currentX = 0;
   let currentY = 0;
   const colHeights: number[] = new Array(columns).fill(0);
 
   for (let i = 0; i < loadedImages.length; i++) {
     const imgData = loadedImages[i];
-    
+
     if (type === 'grid') {
       const col = i % columns;
       const row = Math.floor(i / columns);
@@ -231,7 +221,6 @@ export async function createCollage(
       currentY = (canvasHeight - imgData.height) / 2;
     }
 
-    // Apply border radius if specified
     if (borderRadius > 0) {
       ctx.save();
       ctx.beginPath();

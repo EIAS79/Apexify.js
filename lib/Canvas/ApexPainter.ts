@@ -7,11 +7,10 @@ import axios from 'axios';
 import fs, { PathLike } from "fs";
 import path from "path";
 
-
 const execAsync = promisify(exec);
 import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions, GIFResults, CustomOptions, cropOptions,
     customLines,
-    converter, resizingImg, applyColorFilters, imgEffects, cropInner, cropOuter, bgRemoval, detectColors, removeColor, dataURL, 
+    converter, resizingImg, applyColorFilters, imgEffects, cropInner, cropOuter, bgRemoval, detectColors, removeColor, dataURL,
     base64, arrayBuffer, blob, url, GradientConfig, Frame,
     ExtractFramesOptions, ResizeOptions, MaskOptions, BlendOptions,
     ImageFilter,
@@ -20,7 +19,10 @@ import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions
     compressImage, extractPalette as extractPaletteUtil,
     BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions,
     SaveOptions, SaveResult,
-    // Error utilities
+    CreateImageOptions, GroupTransformOptions,
+    TextMetrics, PixelData, PixelManipulationOptions,
+
+    PathCommand, Path2DDrawOptions, HitRegion, HitDetectionOptions, HitDetectionResult,
     getErrorMessage, getCanvasContext
     } from "./utils/utils";
     import { CanvasCreator, type CanvasResults } from "./extended/CanvasCreator";
@@ -29,13 +31,20 @@ import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions
     import { GIFCreator } from "./extended/GIFCreator";
     import { ChartCreator } from "./extended/ChartCreator";
     import { VideoCreator, VideoCreationOptions } from "./extended/VideoCreator";
-import { VideoHelpers } from "./utils/Video/videoHelpers";
-
+    import { TextMetricsCreator } from "./extended/TextMetricsCreator";
+    import { PixelDataCreator } from "./extended/PixelDataCreator";
+    import { Path2DCreator } from "./extended/Path2DCreator";
+    import { HitDetectionCreator } from "./extended/HitDetectionCreator";
+    import { VideoHelpers } from "./utils/Video/videoHelpers";
+import type { PieSlice, PieChartOptions } from "./utils/Charts/piechart";
+import type { BarChartData, BarChartOptions } from "./utils/Charts/barchart";
+import type { HorizontalBarChartData, HorizontalBarChartOptions } from "./utils/Charts/horizontalbarchart";
+import type { LineSeries, LineChartOptions } from "./utils/Charts/linechart";
 
 export class ApexPainter {
   private format?: OutputFormat;
   private saveCounter: number = 1;
-  
+
   // Extended handlers
   private canvasCreator: CanvasCreator;
   private imageCreator: ImageCreator;
@@ -44,25 +53,34 @@ export class ApexPainter {
   private chartCreator: ChartCreator;
   private videoCreator: VideoCreator;
   private videoHelpers: VideoHelpers;
+  private textMetricsCreator: TextMetricsCreator;
+  private pixelDataCreator: PixelDataCreator;
+  private path2DCreator: Path2DCreator;
+  private hitDetectionCreator: HitDetectionCreator;
 
   constructor({ type }: OutputFormat = { type: 'buffer' }) {
     this.format = { type: type || 'buffer' };
-    
-    // Initialize extended handlers
+
+
     this.canvasCreator = new CanvasCreator();
     this.imageCreator = new ImageCreator();
     this.textCreator = new TextCreator();
     this.gifCreator = new GIFCreator();
+this.gifCreator.setPainter(this);
     this.chartCreator = new ChartCreator();
     this.videoCreator = new VideoCreator();
-    
-    // Set up dependencies for CanvasCreator
+    this.textMetricsCreator = new TextMetricsCreator();
+    this.pixelDataCreator = new PixelDataCreator();
+    this.path2DCreator = new Path2DCreator();
+    this.hitDetectionCreator = new HitDetectionCreator();
+
+
     this.canvasCreator.setExtractVideoFrame(
       (videoSource, frameNumber, timeSeconds, outputFormat, quality) =>
         this.#extractVideoFrame(videoSource, frameNumber ?? 0, timeSeconds, outputFormat ?? 'jpg', quality ?? 2)
     );
-    
-    // Set up dependencies for VideoCreator
+
+
     this.videoCreator.setDependencies({
       checkFFmpegAvailable: () => this.#checkFFmpegAvailable(),
       getFFmpegInstallInstructions: () => this.#getFFmpegInstallInstructions(),
@@ -72,8 +90,8 @@ export class ApexPainter {
       extractFrames: (videoSource, options) => this.extractFrames(videoSource, options),
       extractAllFrames: (videoSource, options) => this.extractAllFrames(videoSource, options)
     });
-    
-    // Initialize VideoHelpers
+
+
     this.videoHelpers = new VideoHelpers({
       checkFFmpegAvailable: () => this.#checkFFmpegAvailable(),
       getFFmpegInstallInstructions: () => this.#getFFmpegInstallInstructions(),
@@ -82,8 +100,8 @@ export class ApexPainter {
         this.#extractVideoFrame(videoSource, frameNumber ?? 0, timeSeconds, outputFormat ?? 'jpg', quality ?? 2),
       createVideo: (options) => this.createVideo(options)
     });
-    
-    // Set up helper methods for VideoCreator - use VideoHelpers for last 6 methods
+
+
     this.videoCreator.setHelperMethods({
       generateVideoThumbnail: (videoSource, options, videoInfo) =>
         this.#generateVideoThumbnail(videoSource, options, videoInfo),
@@ -154,11 +172,10 @@ export class ApexPainter {
     });
   }
 
-
   /**
    * Creates a canvas with the given configuration.
    * Applies rotation, shadow, border effects, background, and stroke.
-   * 
+   *
    * @param canvas - Canvas configuration object containing:
    *   - width: Canvas width in pixels
    *   - height: Canvas height in pixels
@@ -170,11 +187,11 @@ export class ApexPainter {
    *   - zoom: Canvas zoom level (default: 1)
    *   - pattern: Pattern background configuration
    *   - noise: Noise effect configuration
-   * 
+   *
    * @returns Promise<CanvasResults> - Object containing canvas buffer and configuration
-   * 
+   *
    * @throws Error if canvas configuration is invalid or conflicting
-   * 
+   *
    * @example
    * ```typescript
    * const result = await painter.createCanvas({
@@ -191,11 +208,9 @@ export class ApexPainter {
     return this.canvasCreator.createCanvas(canvas);
   }
 
-
-
   /**
    * Draws one or more images (or shapes) on an existing canvas buffer.
-   * 
+   *
    * @param images - Single ImageProperties object or array of ImageProperties containing:
    *   - source: Image path/URL/Buffer or ShapeType ('rectangle', 'circle', etc.)
    *   - x: X position on canvas
@@ -215,13 +230,13 @@ export class ApexPainter {
    *   - shadow: Shadow configuration
    *   - stroke: Stroke configuration
    *   - boxBackground: Background behind image/shape
-   * 
+   *
    * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
-   * 
+   *
    * @returns Promise<Buffer> - Updated canvas buffer in PNG format
-   * 
+   *
    * @throws Error if source, x, or y are missing
-   * 
+   *
    * @example
    * ```typescript
    * const result = await painter.createImage([
@@ -238,14 +253,15 @@ export class ApexPainter {
 
   async createImage(
     images: ImageProperties | ImageProperties[],
-    canvasBuffer: CanvasResults | Buffer
+    canvasBuffer: CanvasResults | Buffer,
+    options?: CreateImageOptions
   ): Promise<Buffer> {
-    return this.imageCreator.createImage(images, canvasBuffer);
+    return this.imageCreator.createImage(images, canvasBuffer, options);
   }
 
   /**
    * Creates text on an existing canvas buffer with enhanced styling options.
-   * 
+   *
    * @param textArray - Single TextProperties object or array of TextProperties containing:
    *   - text: Text content to render (required)
    *   - x: X position on canvas (required)
@@ -274,13 +290,13 @@ export class ApexPainter {
    *   - shadow: Text shadow effect with color, offset, blur, and opacity
    *   - stroke: Text stroke/outline with color, width, gradient, and opacity
    *   - rotation: Text rotation in degrees
-   * 
+   *
    * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
-   * 
+   *
    * @returns Promise<Buffer> - Updated canvas buffer in PNG format
-   * 
+   *
    * @throws Error if text, x, or y are missing, or if canvas buffer is invalid
-   * 
+   *
    * @example
    * ```typescript
    * const result = await painter.createText([
@@ -302,7 +318,250 @@ export class ApexPainter {
     return this.textCreator.createText(textArray, canvasBuffer);
   }
 
+  /**
+   * Measures text dimensions and properties (advanced text metrics API)
+   *
+   * @param textProps - Text properties to measure (same as createText)
+   * @returns Comprehensive text metrics including width, height, bounding boxes, and more
+   *
+   * @example
+   * ```typescript
+   * const metrics = await painter.measureText({
+   *   text: "Hello World",
+   *   fontSize: 24,
+   *   font: { family: 'Arial' },
+   *   bold: true,
+   *   includeCharMetrics: true // Get per-character metrics
+   * });
+   *
+   * console.log(metrics.width); // Text width
+   * console.log(metrics.height); // Text height
+   * console.log(metrics.lines); // Multi-line metrics if maxWidth provided
+   *
+   * // Optional: Customize measurement canvas size (for memory optimization)
+   * const metrics2 = await painter.measureText({
+   *   text: "Very long text...",
+   *   fontSize: 24,
+   *   measurementCanvas: { width: 5000, height: 2000 } // Optional
+   * });
+   * ```
+   */
+  async measureText(textProps: TextProperties): Promise<TextMetrics> {
+    const result = await this.textMetricsCreator.measureText(textProps);
+    return result as TextMetrics;
+  }
 
+  /**
+   * Gets pixel data from a canvas buffer (advanced pixel manipulation API)
+   *
+   * @param canvasBuffer - Canvas buffer or CanvasResults
+   * @param options - Options for pixel data extraction (x, y, width, height)
+   * @returns Pixel data with RGBA values
+   *
+   * @example
+   * ```typescript
+   * const pixelData = await painter.getPixelData(canvasBuffer, {
+   *   x: 0, y: 0, width: 100, height: 100
+   * });
+   *
+   * // Access RGBA values
+   * const r = pixelData.data[0]; // Red
+   * const g = pixelData.data[1]; // Green
+   * const b = pixelData.data[2]; // Blue
+   * const a = pixelData.data[3]; // Alpha
+   * ```
+   */
+  async getPixelData(
+    canvasBuffer: CanvasResults | Buffer,
+    options?: {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+    }
+  ): Promise<PixelData> {
+    return this.pixelDataCreator.getPixelData(canvasBuffer, options);
+  }
+
+  /**
+   * Sets pixel data to a canvas buffer
+   *
+   * @param canvasBuffer - Canvas buffer or CanvasResults
+   * @param pixelData - Pixel data to set (from getPixelData)
+   * @param options - Options for setting pixel data (x, y, dirty region)
+   * @returns New canvas buffer with updated pixels
+   *
+   * @example
+   * ```typescript
+   * // Modify pixels
+   * pixelData.data[0] = 255; // Set first pixel to red
+   *
+   * // Set back to canvas
+   * const updated = await painter.setPixelData(canvasBuffer, pixelData, {
+   *   x: 0, y: 0
+   * });
+   * ```
+   */
+  async setPixelData(
+    canvasBuffer: CanvasResults | Buffer,
+    pixelData: PixelData,
+    options?: {
+      x?: number;
+      y?: number;
+      dirtyX?: number;
+      dirtyY?: number;
+      dirtyWidth?: number;
+      dirtyHeight?: number;
+    }
+  ): Promise<Buffer> {
+    return this.pixelDataCreator.setPixelData(canvasBuffer, pixelData, options);
+  }
+
+  /**
+   * Manipulates pixels using custom processor or built-in filters (advanced pixel manipulation)
+   *
+   * @param canvasBuffer - Canvas buffer or CanvasResults
+   * @param options - Manipulation options (processor function or filter)
+   * @returns New canvas buffer with manipulated pixels
+   *
+   * @example
+   * ```typescript
+   * // Custom processor
+   * const processed = await painter.manipulatePixels(canvasBuffer, {
+   *   processor: (r, g, b, a, x, y) => {
+   *     // Invert colors
+   *     return [255 - r, 255 - g, 255 - b, a];
+   *   }
+   * });
+   *
+   * // Built-in filter
+   * const grayscale = await painter.manipulatePixels(canvasBuffer, {
+   *   filter: 'grayscale',
+   *   intensity: 1.0
+   * });
+   *
+   * // Apply to specific region
+   * const region = await painter.manipulatePixels(canvasBuffer, {
+   *   filter: 'brightness',
+   *   intensity: 0.8,
+   *   region: { x: 100, y: 100, width: 200, height: 200 }
+   * });
+   * ```
+   */
+  async manipulatePixels(
+    canvasBuffer: CanvasResults | Buffer,
+    options: PixelManipulationOptions
+  ): Promise<Buffer> {
+    return this.pixelDataCreator.manipulatePixels(canvasBuffer, options);
+  }
+
+  /**
+   * Gets pixel color at specific coordinates
+   *
+   * @param canvasBuffer - Canvas buffer or CanvasResults
+   * @param x - X coordinate
+   * @param y - Y coordinate
+   * @returns RGBA color values
+   *
+   * @example
+   * ```typescript
+   * const color = await painter.getPixelColor(canvasBuffer, 100, 200);
+   * console.log(color.r, color.g, color.b, color.a);
+   * ```
+   */
+  async getPixelColor(
+    canvasBuffer: CanvasResults | Buffer,
+    x: number,
+    y: number
+  ): Promise<{ r: number; g: number; b: number; a: number }> {
+    return this.pixelDataCreator.getPixelColor(canvasBuffer, x, y);
+  }
+
+  /**
+   * Sets pixel color at specific coordinates
+   *
+   * @param canvasBuffer - Canvas buffer or CanvasResults
+   * @param x - X coordinate
+   * @param y - Y coordinate
+   * @param color - RGBA color values
+   * @returns New canvas buffer
+   *
+   * @example
+   * ```typescript
+   * const updated = await painter.setPixelColor(canvasBuffer, 100, 200, {
+   *   r: 255, g: 0, b: 0, a: 255 // Red pixel
+   * });
+   * ```
+   */
+  async setPixelColor(
+    canvasBuffer: CanvasResults | Buffer,
+    x: number,
+    y: number,
+    color: { r: number; g: number; b: number; a?: number }
+  ): Promise<Buffer> {
+    return this.pixelDataCreator.setPixelColor(canvasBuffer, x, y, color);
+  }
+
+  /**
+   * Creates a Path2D object from commands (advanced path API)
+   */
+  createPath2D(commands: PathCommand[]): any {
+    return this.path2DCreator.createPath2D(commands);
+  }
+
+  /**
+   * Draws a Path2D object onto a canvas buffer
+   */
+  async drawPath(
+    canvasBuffer: CanvasResults | Buffer,
+    path: any | PathCommand[],
+    options?: Path2DDrawOptions
+  ): Promise<Buffer> {
+    return this.path2DCreator.drawPath(canvasBuffer, path, options);
+  }
+
+  /**
+   * Checks if a point is inside a Path2D object (hit detection)
+   */
+  async isPointInPath(
+    path: any | PathCommand[],
+    x: number,
+    y: number,
+    options?: HitDetectionOptions
+  ): Promise<HitDetectionResult> {
+    return this.hitDetectionCreator.isPointInPath(path, x, y, options);
+  }
+
+  /**
+   * Checks if a point is inside a custom region (advanced hit detection)
+   */
+  async isPointInRegion(
+    region: HitRegion,
+    x: number,
+    y: number,
+    options?: HitDetectionOptions
+  ): Promise<HitDetectionResult> {
+    return this.hitDetectionCreator.isPointInRegion(region, x, y, options);
+  }
+
+  /**
+   * Checks if a point is inside any of multiple regions
+   */
+  async isPointInAnyRegion(
+    regions: HitRegion[],
+    x: number,
+    y: number,
+    options?: HitDetectionOptions
+  ): Promise<HitDetectionResult> {
+    return this.hitDetectionCreator.isPointInAnyRegion(regions, x, y, options);
+  }
+
+  /**
+   * Gets the distance from a point to the nearest edge of a region
+   */
+  async getDistanceToRegion(region: HitRegion, x: number, y: number): Promise<number> {
+    return this.hitDetectionCreator.getDistanceToRegion(region, x, y);
+  }
 
   /**
    * Validates custom line options.
@@ -326,7 +585,7 @@ export class ApexPainter {
 
   async createCustom(options: CustomOptions | CustomOptions[], buffer: CanvasResults | Buffer): Promise<Buffer> {
     try {
-      // Validate inputs
+
       if (!buffer) {
         throw new Error("createCustom: buffer is required.");
       }
@@ -335,7 +594,7 @@ export class ApexPainter {
       const opts = Array.isArray(options) ? options : [options];
 
       let existingImage: Image;
-        
+
       if (Buffer.isBuffer(buffer)) {
         existingImage = await loadImage(buffer);
       } else if (buffer && buffer.buffer) {
@@ -361,8 +620,10 @@ export class ApexPainter {
     }
   }
 
-
-  async createGIF(gifFrames: { background: string; duration: number }[], options: GIFOptions): Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | undefined> {
+  async createGIF(
+    gifFrames: { background: string; duration: number }[] | undefined,
+    options: GIFOptions
+  ): Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | { gif: Buffer | string; static: Buffer } | undefined> {
     return this.gifCreator.createGIF(gifFrames, options);
   }
 
@@ -492,8 +753,8 @@ export class ApexPainter {
       if (!colorToRemove || typeof colorToRemove.red !== 'number' || typeof colorToRemove.green !== 'number' || typeof colorToRemove.blue !== 'number') {
         throw new Error("colorsRemover: colorToRemove must be an object with red, green, and blue properties (0-255).");
       }
-      if (colorToRemove.red < 0 || colorToRemove.red > 255 || 
-          colorToRemove.green < 0 || colorToRemove.green > 255 || 
+      if (colorToRemove.red < 0 || colorToRemove.red > 255 ||
+          colorToRemove.green < 0 || colorToRemove.green > 255 ||
           colorToRemove.blue < 0 || colorToRemove.blue > 255) {
         throw new Error("colorsRemover: colorToRemove RGB values must be between 0 and 255.");
       }
@@ -563,32 +824,30 @@ export class ApexPainter {
   ): Promise<Buffer> {
     try {
       this.#validateBlendInputs(layers, baseImageBuffer);
-      
+
       const baseImage = await loadImage(baseImageBuffer);
       const canvas = createCanvas(baseImage.width, baseImage.height);
       const ctx = getCanvasContext(canvas);
-  
+
       ctx.globalCompositeOperation = defaultBlendMode;
       ctx.drawImage(baseImage, 0, 0);
-  
+
       for (const layer of layers) {
         const layerImage = await loadImage(layer.image);
         ctx.globalAlpha = layer.opacity !== undefined ? layer.opacity : 1.0;
-  
+
         ctx.globalCompositeOperation = layer.blendMode;
         ctx.drawImage(layerImage, layer.position?.x || 0, layer.position?.y || 0);
       }
-  
+
       ctx.globalAlpha = 1.0;
-      ctx.globalCompositeOperation = defaultBlendMode; // Reset to user-defined default
-  
+      ctx.globalCompositeOperation = defaultBlendMode;
+
       return canvas.toBuffer('image/png');
     } catch (error) {
       throw new Error(`blend failed: ${getErrorMessage(error)}`);
     }
   }
-  
-
 
 
   /**
@@ -645,12 +904,12 @@ export class ApexPainter {
       instructions += '  1. Open PowerShell as Administrator\n';
       instructions += '  2. Run: choco install ffmpeg\n';
       instructions += '  3. Restart your terminal\n\n';
-      
+
       instructions += 'OPTION 2 - Using Winget:\n';
       instructions += '  1. Open PowerShell\n';
       instructions += '  2. Run: winget install ffmpeg\n';
       instructions += '  3. Restart your terminal\n\n';
-      
+
       instructions += 'OPTION 3 - Manual Installation:\n';
       instructions += '  1. Visit: https://www.gyan.dev/ffmpeg/builds/\n';
       instructions += '  2. Download "ffmpeg-release-essentials.zip"\n';
@@ -659,7 +918,7 @@ export class ApexPainter {
       instructions += '     - Press Win + X → System → Advanced → Environment Variables\n';
       instructions += '     - Edit "Path" → Add "C:\\ffmpeg\\bin"\n';
       instructions += '  5. Restart terminal and verify: ffmpeg -version\n\n';
-      
+
       instructions += '🔍 Search Terms: "install ffmpeg windows", "ffmpeg windows tutorial"\n';
       instructions += '📺 YouTube: Search "How to install FFmpeg on Windows 2024"\n';
       instructions += '🌐 Official: https://ffmpeg.org/download.html\n';
@@ -670,11 +929,11 @@ export class ApexPainter {
       instructions += '     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n';
       instructions += '  2. Run: brew install ffmpeg\n';
       instructions += '  3. Verify: ffmpeg -version\n\n';
-      
+
       instructions += 'OPTION 2 - Using MacPorts:\n';
       instructions += '  1. Install MacPorts from: https://www.macports.org/\n';
       instructions += '  2. Run: sudo port install ffmpeg\n\n';
-      
+
       instructions += '🔍 Search Terms: "install ffmpeg mac", "ffmpeg macos homebrew"\n';
       instructions += '📺 YouTube: Search "Install FFmpeg on Mac using Homebrew"\n';
       instructions += '🌐 Official: https://ffmpeg.org/download.html\n';
@@ -683,15 +942,15 @@ export class ApexPainter {
       instructions += 'Ubuntu/Debian:\n';
       instructions += '  sudo apt-get update\n';
       instructions += '  sudo apt-get install ffmpeg\n\n';
-      
+
       instructions += 'RHEL/CentOS/Fedora:\n';
       instructions += '  sudo yum install ffmpeg\n';
       instructions += '  # OR for newer versions:\n';
       instructions += '  sudo dnf install ffmpeg\n\n';
-      
+
       instructions += 'Arch Linux:\n';
       instructions += '  sudo pacman -S ffmpeg\n\n';
-      
+
       instructions += '🔍 Search Terms: "install ffmpeg [your-distro]", "ffmpeg linux tutorial"\n';
       instructions += '📺 YouTube: Search "Install FFmpeg on Linux"\n';
       instructions += '🌐 Official: https://ffmpeg.org/download.html\n';
@@ -700,7 +959,7 @@ export class ApexPainter {
     instructions += '\n' + '═'.repeat(50) + '\n';
     instructions += '✅ After installation, restart your terminal and verify with: ffmpeg -version\n';
     instructions += '💡 If still not working, ensure FFmpeg is in your system PATH\n';
-    
+
     return instructions;
   }
 
@@ -716,8 +975,8 @@ export class ApexPainter {
     }
 
     try {
-      // Try to execute ffmpeg -version (suppress output)
-      await execAsync('ffmpeg -version', { 
+
+      await execAsync('ffmpeg -version', {
         timeout: 5000,
         maxBuffer: 1024 * 1024 // 1MB buffer
       });
@@ -726,7 +985,7 @@ export class ApexPainter {
       this._ffmpegPath = 'ffmpeg';
       return true;
     } catch {
-      // Try common installation paths
+
       const commonPaths = process.platform === 'win32' ? [
         'C:\\ffmpeg\\bin\\ffmpeg.exe',
         'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
@@ -740,7 +999,7 @@ export class ApexPainter {
 
       for (const ffmpegPath of commonPaths) {
         try {
-          await execAsync(`"${ffmpegPath}" -version`, { 
+          await execAsync(`"${ffmpegPath}" -version`, {
             timeout: 3000,
             maxBuffer: 1024 * 1024
           });
@@ -783,11 +1042,11 @@ export class ApexPainter {
       if (!skipFFmpegCheck) {
         const ffmpegAvailable = await this.#checkFFmpegAvailable();
         if (!ffmpegAvailable) {
-          const errorMessage = 
+          const errorMessage =
             '❌ FFMPEG NOT FOUND\n' +
             'Video processing features require FFmpeg to be installed on your system.\n' +
             this.#getFFmpegInstallInstructions();
-          
+
           throw new Error(errorMessage);
         }
       }
@@ -800,7 +1059,6 @@ export class ApexPainter {
       let videoPath: string;
       const tempVideoPath = path.join(frameDir, `temp-video-${Date.now()}.mp4`);
 
-      // Handle video source
       if (Buffer.isBuffer(videoSource)) {
         fs.writeFileSync(tempVideoPath, videoSource);
         videoPath = tempVideoPath;
@@ -823,7 +1081,7 @@ export class ApexPainter {
       const escapedPath = videoPath.replace(/"/g, '\\"');
       const { stdout } = await execAsync(
         `ffprobe -v error -show_entries stream=width,height,r_frame_rate,bit_rate -show_entries format=duration,format_name -of json "${escapedPath}"`,
-        { 
+        {
           timeout: 30000, // 30 second timeout
           maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large JSON responses
         }
@@ -834,7 +1092,7 @@ export class ApexPainter {
       const format = info.format || {};
 
       // Parse frame rate (e.g., "30/1" -> 30)
-      const fps = videoStream?.r_frame_rate 
+      const fps = videoStream?.r_frame_rate
         ? (() => {
             const [num, den] = videoStream.r_frame_rate.split('/').map(Number);
             return den ? num / den : num;
@@ -850,7 +1108,6 @@ export class ApexPainter {
         format: format.format_name || 'unknown'
       };
 
-      // Cleanup temp file if created
       if (videoPath === tempVideoPath && fs.existsSync(tempVideoPath)) {
         fs.unlinkSync(tempVideoPath);
       }
@@ -877,7 +1134,7 @@ export class ApexPainter {
    * @returns Buffer containing the frame image
    */
   async #extractVideoFrame(
-    videoSource: string | Buffer, 
+    videoSource: string | Buffer,
     frameNumber: number = 0,
     timeSeconds?: number,
     outputFormat: 'jpg' | 'png' = 'jpg',
@@ -886,11 +1143,11 @@ export class ApexPainter {
     try {
       const ffmpegAvailable = await this.#checkFFmpegAvailable();
       if (!ffmpegAvailable) {
-        const errorMessage = 
+        const errorMessage =
           '❌ FFMPEG NOT FOUND\n' +
           'Video processing features require FFmpeg to be installed on your system.\n' +
           this.#getFFmpegInstallInstructions();
-        
+
         throw new Error(errorMessage);
       }
 
@@ -906,7 +1163,6 @@ export class ApexPainter {
       let videoPath: string;
       let shouldCleanupVideo = false;
 
-      // Handle video source
       if (Buffer.isBuffer(videoSource)) {
         fs.writeFileSync(tempVideoPath, videoSource);
         videoPath = tempVideoPath;
@@ -926,16 +1182,13 @@ export class ApexPainter {
         if (!/^https?:\/\//i.test(resolvedPath)) {
           resolvedPath = path.join(process.cwd(), resolvedPath);
         }
-        
+
         if (!fs.existsSync(resolvedPath)) {
           throw new Error(`Video file not found: ${videoSource} (resolved to: ${resolvedPath})`);
         }
         videoPath = resolvedPath;
       }
 
-      // Calculate time in seconds
-      // If time is provided, use it directly (most accurate)
-      // If only frame is provided, we need to get video FPS to convert frame to time
       let time: number;
       if (timeSeconds !== undefined) {
         time = timeSeconds;
@@ -943,7 +1196,7 @@ export class ApexPainter {
         // Frame 0 = start of video
         time = 0;
       } else {
-        // Get video FPS to convert frame number to time accurately
+
         try {
           const videoInfo = await this.getVideoInfo(videoPath, true); // Skip FFmpeg check (already done)
           if (videoInfo && videoInfo.fps > 0) {
@@ -954,20 +1207,17 @@ export class ApexPainter {
             time = frameNumber / 30;
           }
         } catch (error) {
-          // If getVideoInfo fails, assume 30 FPS (standard video framerate)
+
           console.warn(`Could not get video info, assuming 30 FPS for frame ${frameNumber}`);
           time = frameNumber / 30;
         }
       }
 
-      // Build ffmpeg command (escape paths for Windows)
-      // Don't use -f flag, let FFmpeg infer format from file extension
       // Use -frames:v 1 instead of -vframes 1 (more explicit)
-      // For PNG: use rgba pixel format (best compatibility with loadImage)
-      // For JPEG: don't specify pixel format, let FFmpeg use default (yuvj420p works better than rgb24)
+
       const escapedVideoPath = videoPath.replace(/"/g, '\\"');
       const escapedOutputPath = frameOutputPath.replace(/"/g, '\\"');
-      
+
       let command: string;
       if (outputFormat === 'png') {
         // PNG: Use rgba pixel format for best compatibility
@@ -980,24 +1230,23 @@ export class ApexPainter {
       }
 
       try {
-        await execAsync(command, { 
+        await execAsync(command, {
           timeout: 30000, // 30 second timeout
           maxBuffer: 10 * 1024 * 1024 // 10MB buffer
         });
-        
+
         if (!fs.existsSync(frameOutputPath)) {
           throw new Error('Frame extraction failed - output file not created');
         }
 
         const buffer = fs.readFileSync(frameOutputPath);
 
-        // Cleanup
         if (fs.existsSync(frameOutputPath)) fs.unlinkSync(frameOutputPath);
         if (shouldCleanupVideo && fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
 
         return buffer;
       } catch (error) {
-        // Cleanup on error
+
         if (fs.existsSync(frameOutputPath)) fs.unlinkSync(frameOutputPath);
         if (shouldCleanupVideo && fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
         throw error;
@@ -1043,16 +1292,16 @@ export class ApexPainter {
     try {
       const ffmpegAvailable = await this.#checkFFmpegAvailable();
       if (!ffmpegAvailable) {
-        const errorMessage = 
+        const errorMessage =
           '❌ FFMPEG NOT FOUND\n' +
           'Video processing features require FFmpeg to be installed on your system.\n' +
           this.#getFFmpegInstallInstructions();
-        
+
         throw new Error(errorMessage);
       }
 
       this.#validateExtractFramesInputs(videoSource, options);
-      
+
       const frames: Array<{ source: string; isRemote: boolean }> = [];
       const frameDir = path.join(process.cwd(), '.temp-frames', `frames-${Date.now()}`);
 
@@ -1064,7 +1313,6 @@ export class ApexPainter {
       const videoPath = typeof videoSource === 'string' ? videoSource : path.join(frameDir, `temp-video-${timestamp}.mp4`);
       let shouldCleanupVideo = false;
 
-      // Handle video source
       if (Buffer.isBuffer(videoSource)) {
         fs.writeFileSync(videoPath, videoSource);
         shouldCleanupVideo = true;
@@ -1080,13 +1328,12 @@ export class ApexPainter {
         throw new Error("Video file not found at specified path.");
       }
 
-      // Get video duration using ffprobe (escape path for Windows)
       const escapedVideoPath = videoPath.replace(/"/g, '\\"');
       const { stdout: probeOutput } = await execAsync(
         `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${escapedVideoPath}"`,
         { maxBuffer: 10 * 1024 * 1024 } // 10MB buffer
       );
-      
+
       const duration = parseFloat(probeOutput.trim());
       if (isNaN(duration) || duration <= 0) {
         throw new Error("Video duration not found in metadata.");
@@ -1095,31 +1342,30 @@ export class ApexPainter {
       const outputFormat = options.outputFormat || 'jpg';
       const fps = 1000 / options.interval; // Frames per second based on interval
       const totalFrames = Math.floor(duration * fps);
-      
-      // Apply frame selection if specified
+
+
       const startFrame = options.frameSelection?.start || 0;
-      const endFrame = options.frameSelection?.end !== undefined 
+      const endFrame = options.frameSelection?.end !== undefined
         ? Math.min(options.frameSelection.end, totalFrames - 1)
         : totalFrames - 1;
 
-      // Build ffmpeg command for frame extraction
       const outputFileTemplate = path.join(frameDir, `frame-%03d.${outputFormat}`);
       const qualityFlag = outputFormat === 'jpg' ? '-q:v 2' : '';
       const pixFmt = outputFormat === 'png' ? '-pix_fmt rgba' : '-pix_fmt yuvj420p';
-      
-      // Calculate start and end times
+
+
       const startTime = startFrame / fps;
       const endTime = (endFrame + 1) / fps;
       const durationToExtract = endTime - startTime;
 
       const escapedOutputTemplate = outputFileTemplate.replace(/"/g, '\\"');
-      // Don't use -f flag, let FFmpeg infer format from file extension
+
       // -vf fps=${fps} extracts frames at the specified FPS
       // Use -ss after -i for more accurate frame extraction
       const command = `ffmpeg -i "${escapedVideoPath}" -ss ${startTime} -t ${durationToExtract} -vf fps=${fps} ${pixFmt} ${qualityFlag} -y "${escapedOutputTemplate}"`;
 
       try {
-        await execAsync(command, { 
+        await execAsync(command, {
           timeout: 60000, // 60 second timeout for multiple frames
           maxBuffer: 10 * 1024 * 1024 // 10MB buffer
         });
@@ -1129,7 +1375,7 @@ export class ApexPainter {
         for (let i = 0; i < actualFrameCount; i++) {
           const frameNumber = startFrame + i;
           const framePath = path.join(frameDir, `frame-${String(i + 1).padStart(3, '0')}.${outputFormat}`);
-          
+
           if (fs.existsSync(framePath)) {
             frames.push({
               source: framePath,
@@ -1138,14 +1384,13 @@ export class ApexPainter {
           }
         }
 
-        // Cleanup temp video if created
         if (shouldCleanupVideo && fs.existsSync(videoPath)) {
           fs.unlinkSync(videoPath);
         }
 
         return frames;
       } catch (error) {
-        // Cleanup on error
+
         if (shouldCleanupVideo && fs.existsSync(videoPath)) {
           fs.unlinkSync(videoPath);
         }
@@ -1210,13 +1455,11 @@ export class ApexPainter {
       }
     }
 
-    // Create thumbnail canvas
     const thumbnailWidth = frameWidth * grid.cols;
     const thumbnailHeight = frameHeight * grid.rows;
     const canvas = createCanvas(thumbnailWidth, thumbnailHeight);
     const ctx = getCanvasContext(canvas);
 
-    // Draw frames in grid
     for (let i = 0; i < frames.length; i++) {
       const row = Math.floor(i / grid.cols);
       const col = i % grid.cols;
@@ -1257,7 +1500,6 @@ export class ApexPainter {
     let shouldCleanupVideo = false;
     const timestamp = Date.now();
 
-    // Handle video source
     if (Buffer.isBuffer(videoSource)) {
       videoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
       fs.writeFileSync(videoPath, videoSource);
@@ -1280,13 +1522,13 @@ export class ApexPainter {
       high: '-crf 18',
       ultra: '-crf 15'
     };
-    const qualityFlag = options.bitrate 
-      ? `-b:v ${options.bitrate}k` 
+    const qualityFlag = options.bitrate
+      ? `-b:v ${options.bitrate}k`
       : qualityPresets[options.quality || 'medium'];
 
     const fpsFlag = options.fps ? `-r ${options.fps}` : '';
-    const resolutionFlag = options.resolution 
-      ? `-vf scale=${options.resolution.width}:${options.resolution.height}` 
+    const resolutionFlag = options.resolution
+      ? `-vf scale=${options.resolution.width}:${options.resolution.height}`
       : '';
 
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
@@ -1295,7 +1537,7 @@ export class ApexPainter {
     const command = `ffmpeg -i "${escapedVideoPath}" ${qualityFlag} ${fpsFlag} ${resolutionFlag} -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000, // 5 minute timeout
         maxBuffer: 10 * 1024 * 1024
       });
@@ -1352,7 +1594,7 @@ export class ApexPainter {
     const command = `ffmpeg -i "${escapedVideoPath}" -ss ${options.startTime} -t ${duration} -c copy -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -1402,7 +1644,6 @@ export class ApexPainter {
       videoPath = resolvedPath;
     }
 
-    // Check if video has audio stream
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     try {
       const { stdout } = await execAsync(
@@ -1417,7 +1658,7 @@ export class ApexPainter {
       if (error instanceof Error && error.message.includes('Video does not contain')) {
         throw error;
       }
-      // If ffprobe fails, assume no audio
+
       throw new Error('Video does not contain an audio stream. Cannot extract audio.');
     }
 
@@ -1428,7 +1669,7 @@ export class ApexPainter {
     const command = `ffmpeg -i "${escapedVideoPath}" -vn -acodec ${format === 'mp3' ? 'libmp3lame' : format === 'wav' ? 'pcm_s16le' : format === 'aac' ? 'aac' : 'libvorbis'} -ab ${bitrate}k -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -1513,7 +1754,7 @@ export class ApexPainter {
     const command = `ffmpeg -i "${escapedVideoPath}" -i "${escapedWatermarkPath}" -filter_complex "${filter}" -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -1563,7 +1804,6 @@ export class ApexPainter {
       videoPath = resolvedPath;
     }
 
-    // Check if video has audio stream
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     let hasAudio = false;
     try {
@@ -1581,29 +1821,29 @@ export class ApexPainter {
 
     if (hasAudio) {
       // Video has audio - process both video and audio
-      // For speeds > 2.0, we need to chain atempo filters (atempo max is 2.0)
+
       if (options.speed > 2.0) {
         const atempoCount = Math.ceil(Math.log2(options.speed));
         const atempoValue = Math.pow(2, Math.log2(options.speed) / atempoCount);
         const atempoFilters = Array(atempoCount).fill(atempoValue).map(v => `atempo=${v}`).join(',');
         command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v];[0:a]${atempoFilters}[a]" -map "[v]" -map "[a]" -y "${escapedOutputPath}"`;
       } else if (options.speed < 0.5) {
-        // For speeds < 0.5, we need to chain atempo filters
+
         const atempoCount = Math.ceil(Math.log2(1 / options.speed));
         const atempoValue = Math.pow(0.5, Math.log2(1 / options.speed) / atempoCount);
         const atempoFilters = Array(atempoCount).fill(atempoValue).map(v => `atempo=${v}`).join(',');
         command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v];[0:a]${atempoFilters}[a]" -map "[v]" -map "[a]" -y "${escapedOutputPath}"`;
       } else {
-        // Normal speed range (0.5 to 2.0)
+
         command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v];[0:a]atempo=${options.speed}[a]" -map "[v]" -map "[a]" -y "${escapedOutputPath}"`;
       }
     } else {
-      // No audio - only process video
+
       command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v]" -map "[v]" -y "${escapedOutputPath}"`;
     }
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -1656,7 +1896,7 @@ export class ApexPainter {
     for (let i = 1; i <= count; i++) {
       const time = interval * i;
       const frameBuffer = await this.#extractVideoFrame(videoSource, 0, time, outputFormat, quality);
-      
+
       if (frameBuffer) {
         const framePath = path.join(outputDir, `preview-${String(i).padStart(3, '0')}.${outputFormat}`);
         fs.writeFileSync(framePath, frameBuffer);
@@ -1710,7 +1950,6 @@ export class ApexPainter {
       videoPath = resolvedPath;
     }
 
-    // Build filter chain
     const filters: string[] = [];
     for (const filter of options.filters) {
       switch (filter.type) {
@@ -1785,7 +2024,6 @@ export class ApexPainter {
     const videoPaths: string[] = [];
     const shouldCleanup: boolean[] = [];
 
-    // Prepare all video files
     for (let i = 0; i < options.videos.length; i++) {
       const video = options.videos[i];
       if (Buffer.isBuffer(video)) {
@@ -1812,7 +2050,7 @@ export class ApexPainter {
     let command: string;
 
     if (mode === 'sequential') {
-      // Create concat file
+
       const concatFile = path.join(frameDir, `concat-${timestamp}.txt`);
       const concatContent = videoPaths.map(vp => `file '${vp.replace(/'/g, "\\'")}'`).join('\n');
       fs.writeFileSync(concatFile, concatContent);
@@ -1832,17 +2070,17 @@ export class ApexPainter {
 
     try {
       await execAsync(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
-      // Cleanup
+
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
         }
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup on error
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
@@ -1879,7 +2117,6 @@ export class ApexPainter {
     let shouldCleanupMain = false;
     let shouldCleanupReplacement = false;
 
-    // Prepare main video
     let mainVideoPath: string;
     if (Buffer.isBuffer(mainVideoSource)) {
       mainVideoPath = path.join(frameDir, `main-video-${timestamp}.mp4`);
@@ -1897,7 +2134,6 @@ export class ApexPainter {
       mainVideoPath = resolvedPath;
     }
 
-    // Validate that either replacementVideo or replacementFrames is provided
     if (!options.replacementVideo && !options.replacementFrames) {
       throw new Error('Either replacementVideo or replacementFrames must be provided');
     }
@@ -1906,7 +2142,6 @@ export class ApexPainter {
       throw new Error('Cannot specify both replacementVideo and replacementFrames');
     }
 
-    // Get main video info to validate times
     const mainVideoInfo = await this.getVideoInfo(mainVideoPath, true);
     if (!mainVideoInfo) {
       throw new Error('Failed to get main video information');
@@ -1927,7 +2162,7 @@ export class ApexPainter {
       // Step 1: Extract part before the segment to replace
       const part1Path = path.join(frameDir, `part1-${timestamp}.mp4`);
       tempFiles.push(part1Path);
-      
+
       if (options.targetStartTime > 0) {
         const escapedPart1 = part1Path.replace(/"/g, '\\"');
         const part1Command = `ffmpeg -i "${escapedMainPath}" -t ${options.targetStartTime} -c copy -y "${escapedPart1}"`;
@@ -1937,7 +2172,7 @@ export class ApexPainter {
       // Step 2: Create replacement segment (from video or frames)
       const replacementSegmentPath = path.join(frameDir, `replacement-segment-${timestamp}.mp4`);
       tempFiles.push(replacementSegmentPath);
-      
+
       if (options.replacementVideo) {
         // Extract replacement segment from replacement video
         let replacementVideoPath: string;
@@ -1959,13 +2194,13 @@ export class ApexPainter {
 
         const replacementStartTime = options.replacementStartTime || 0;
         const replacementDuration = options.replacementDuration || targetDuration;
-        
+
         const escapedReplacementPath = replacementVideoPath.replace(/"/g, '\\"');
         const escapedSegment = replacementSegmentPath.replace(/"/g, '\\"');
         const segmentCommand = `ffmpeg -i "${escapedReplacementPath}" -ss ${replacementStartTime} -t ${replacementDuration} -c copy -y "${escapedSegment}"`;
         await execAsync(segmentCommand, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       } else if (options.replacementFrames) {
-        // Create video from frames
+
         const replacementFps = options.replacementFps || 30;
         await this.#createVideoFromFrames({
           frames: options.replacementFrames,
@@ -1979,33 +2214,33 @@ export class ApexPainter {
       // Step 3: Extract part after the segment to replace
       const part3Path = path.join(frameDir, `part3-${timestamp}.mp4`);
       tempFiles.push(part3Path);
-      
+
       const remainingDuration = mainVideoInfo.duration - options.targetEndTime;
       if (remainingDuration > 0) {
         const escapedPart3 = part3Path.replace(/"/g, '\\"');
         const part3Command = `ffmpeg -i "${escapedMainPath}" -ss ${options.targetEndTime} -t ${remainingDuration} -c copy -y "${escapedPart3}"`;
         await execAsync(part3Command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       } else {
-        // If no remaining duration, part3 is empty
+
       }
 
       // Step 4: Create concat file and merge all parts
       const concatFile = path.join(frameDir, `concat-${timestamp}.txt`);
       tempFiles.push(concatFile);
-      
+
       const concatParts: string[] = [];
-      
-      // Add part 1 if it exists and has content
+
+
       if (options.targetStartTime > 0 && fs.existsSync(part1Path) && fs.statSync(part1Path).size > 0) {
         concatParts.push(part1Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
       }
-      
-      // Add replacement segment
+
+
       if (fs.existsSync(replacementSegmentPath) && fs.statSync(replacementSegmentPath).size > 0) {
         concatParts.push(replacementSegmentPath.replace(/\\/g, '/').replace(/'/g, "\\'"));
       }
-      
-      // Add part 3 if it exists and has content
+
+
       if (remainingDuration > 0 && fs.existsSync(part3Path) && fs.statSync(part3Path).size > 0) {
         concatParts.push(part3Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
       }
@@ -2024,7 +2259,6 @@ export class ApexPainter {
 
       await execAsync(concatCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
 
-      // Cleanup temp files
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
@@ -2037,7 +2271,7 @@ export class ApexPainter {
 
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup temp files on error
+
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
@@ -2084,7 +2318,7 @@ export class ApexPainter {
     }
 
     const filters: string[] = [];
-    
+
     if (options.angle) {
       const rotationMap: Record<number, string> = {
         90: 'transpose=1',
@@ -2093,7 +2327,7 @@ export class ApexPainter {
       };
       filters.push(rotationMap[options.angle]);
     }
-    
+
     if (options.flip) {
       if (options.flip === 'horizontal') {
         filters.push('hflip');
@@ -2218,7 +2452,7 @@ export class ApexPainter {
     };
 
     let qualityFlag = qualityPresets[options.quality || 'medium'];
-    
+
     if (options.maxBitrate) {
       qualityFlag = `-b:v ${options.maxBitrate}k -maxrate ${options.maxBitrate}k -bufsize ${options.maxBitrate * 2}k`;
     }
@@ -2230,13 +2464,13 @@ export class ApexPainter {
 
     try {
       await execAsync(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
+
       const compressedSize = fs.existsSync(options.outputPath) ? fs.statSync(options.outputPath).size : 0;
-      
+
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
-      
+
       return {
         outputPath: options.outputPath,
         success: true,
@@ -2296,7 +2530,7 @@ export class ApexPainter {
     const fontSize = options.fontSize || 24;
     const fontColor = options.fontColor || 'white';
     const bgColor = options.backgroundColor || 'black@0.5';
-    
+
     const positionMap: Record<string, string> = {
       'top-left': `x=10:y=10`,
       'top-center': `x=(w-text_w)/2:y=10`,
@@ -2368,11 +2602,11 @@ export class ApexPainter {
     const duration = videoInfo?.duration || 0;
 
     const filters: string[] = [];
-    
+
     if (options.fadeIn) {
       filters.push(`fade=t=in:st=0:d=${options.fadeIn}`);
     }
-    
+
     if (options.fadeOut && duration > options.fadeOut) {
       filters.push(`fade=t=out:st=${duration - options.fadeOut}:d=${options.fadeOut}`);
     }
@@ -2483,7 +2717,6 @@ export class ApexPainter {
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
-    // Create loop by concatenating video with itself
     const concatFile = path.join(frameDir, `loop-${timestamp}.txt`);
     const concatContent = `file '${videoPath.replace(/'/g, "\\'")}'\nfile '${videoPath.replace(/'/g, "\\'")}'`;
     fs.writeFileSync(concatFile, concatContent);
@@ -2492,14 +2725,14 @@ export class ApexPainter {
 
     try {
       await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
-      
+
       if (fs.existsSync(concatFile)) {
         fs.unlinkSync(concatFile);
       }
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
       if (fs.existsSync(concatFile)) {
@@ -2528,14 +2761,14 @@ export class ApexPainter {
     for (let i = 0; i < options.videos.length; i++) {
       const video = options.videos[i];
       const outputPath = path.join(options.outputDirectory, `batch-${i + 1}.mp4`);
-      
+
       try {
-        // Process each video with its operations
+
         await this.createVideo({
           source: video.source,
           ...video.operations
         });
-        
+
         results.push({
           source: typeof video.source === 'string' ? video.source : 'buffer',
           output: outputPath,
@@ -2595,7 +2828,7 @@ export class ApexPainter {
     try {
       const { stdout } = await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       const times = stdout.toString().trim().split('\n').filter(t => t).map(parseFloat);
-      
+
       const scenes = times.map((time, index) => ({ time, scene: index + 1 }));
 
       if (options.outputPath && scenes.length > 0) {
@@ -2617,7 +2850,7 @@ export class ApexPainter {
       if (fs.existsSync(sceneFile)) {
         fs.unlinkSync(sceneFile);
       }
-      // Return empty array if detection fails
+
       return [];
     }
   }
@@ -2660,24 +2893,24 @@ export class ApexPainter {
 
     // Two-pass stabilization
     const transformsFile = path.join(frameDir, `transforms-${timestamp}.trf`);
-    
+
     // Pass 1: Analyze
     const analyzeCommand = `ffmpeg -i "${escapedVideoPath}" -vf vidstabdetect=shakiness=5:accuracy=15:result="${transformsFile.replace(/"/g, '\\"')}" -f null -`;
-    
+
     // Pass 2: Transform
     const transformCommand = `ffmpeg -i "${escapedVideoPath}" -vf vidstabtransform=smoothing=${smoothing}:input="${transformsFile.replace(/"/g, '\\"')}" -y "${escapedOutputPath}"`;
 
     try {
       await execAsync(analyzeCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
       await execAsync(transformCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
+
       if (fs.existsSync(transformsFile)) {
         fs.unlinkSync(transformsFile);
       }
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
       // Fallback to simple deshake if vidstab is not available
@@ -2737,7 +2970,7 @@ export class ApexPainter {
     }
 
     const filters: string[] = [];
-    
+
     if (options.brightness !== undefined) {
       filters.push(`eq=brightness=${(options.brightness / 100).toFixed(2)}`);
     }
@@ -2805,7 +3038,6 @@ export class ApexPainter {
     let shouldCleanupOverlay = false;
     const timestamp = Date.now();
 
-    // Handle main video
     if (Buffer.isBuffer(videoSource)) {
       videoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
       fs.writeFileSync(videoPath, videoSource);
@@ -2821,7 +3053,6 @@ export class ApexPainter {
       videoPath = resolvedPath;
     }
 
-    // Handle overlay video
     if (Buffer.isBuffer(options.overlayVideo)) {
       overlayPath = path.join(frameDir, `temp-overlay-${timestamp}.mp4`);
       fs.writeFileSync(overlayPath, options.overlayVideo);
@@ -2859,14 +3090,14 @@ export class ApexPainter {
 
     try {
       await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
-      
+
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
       if (shouldCleanupOverlay && fs.existsSync(overlayPath)) {
         fs.unlinkSync(overlayPath);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
@@ -2900,7 +3131,6 @@ export class ApexPainter {
     const videoPaths: string[] = [];
     const shouldCleanup: boolean[] = [];
 
-    // Prepare all video files
     for (let i = 0; i < options.videos.length; i++) {
       const video = options.videos[i];
       if (Buffer.isBuffer(video)) {
@@ -2941,17 +3171,17 @@ export class ApexPainter {
 
     try {
       await execAsync(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
-      // Cleanup
+
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
         }
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup on error
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
@@ -3009,7 +3239,6 @@ export class ApexPainter {
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
-    // If no ranges specified, mute entire video
     if (!options.ranges || options.ranges.length === 0) {
       const command = `ffmpeg -i "${escapedVideoPath}" -c copy -an -y "${escapedOutputPath}"`;
       try {
@@ -3027,14 +3256,12 @@ export class ApexPainter {
     }
 
     // Partial mute: mute specific time ranges
-    // Get video info to determine duration
+
     const videoInfo = await this.getVideoInfo(videoPath, true);
     if (!videoInfo) {
       throw new Error('Failed to get video information for partial mute');
     }
 
-    // Build audio filter for partial muting
-    // Format: volume=enable='between(t,start,end)':volume=0
     const volumeFilters = options.ranges.map((range, index) => {
       return `volume=enable='between(t,${range.start},${range.end})':volume=0`;
     }).join(',');
@@ -3141,17 +3368,16 @@ export class ApexPainter {
       high: '-crf 18',
       ultra: '-crf 15'
     };
-    const qualityFlag = options.bitrate 
-      ? `-b:v ${options.bitrate}k` 
+    const qualityFlag = options.bitrate
+      ? `-b:v ${options.bitrate}k`
       : qualityPresets[options.quality || 'medium'];
 
-    // Process frames: save buffers to temp files, resolve paths
     const framePaths: string[] = [];
     const tempFiles: string[] = [];
     const frameSequenceDir = path.join(frameDir, `frames-${timestamp}`);
 
     try {
-      // Get first frame dimensions if resolution not specified
+
       let frameWidth: number | undefined;
       let frameHeight: number | undefined;
 
@@ -3162,7 +3388,7 @@ export class ApexPainter {
         // Load first frame to get dimensions
         const firstFrame = options.frames[0];
         let firstFramePath: string;
-        
+
         if (Buffer.isBuffer(firstFrame)) {
           firstFramePath = path.join(frameDir, `frame-${timestamp}-0.png`);
           fs.writeFileSync(firstFramePath, firstFrame);
@@ -3178,7 +3404,6 @@ export class ApexPainter {
           firstFramePath = resolvedPath;
         }
 
-        // Get dimensions using ffprobe or loadImage
         try {
           const { loadImage } = require('@napi-rs/canvas');
           const img = await loadImage(firstFramePath);
@@ -3203,7 +3428,6 @@ export class ApexPainter {
         }
       }
 
-      // Process all frames - save all to temp directory with sequential naming for reliable pattern matching
       if (!fs.existsSync(frameSequenceDir)) {
         fs.mkdirSync(frameSequenceDir, { recursive: true });
       }
@@ -3237,20 +3461,19 @@ export class ApexPainter {
       const patternPath = path.join(frameSequenceDir, 'frame-%06d.png').replace(/\\/g, '/');
       const escapedPattern = patternPath.replace(/"/g, '\\"');
       const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
-      
-      const resolutionFlag = frameWidth && frameHeight 
+
+      const resolutionFlag = frameWidth && frameHeight
         ? `-vf scale=${frameWidth}:${frameHeight}:force_original_aspect_ratio=decrease,pad=${frameWidth}:${frameHeight}:(ow-iw)/2:(oh-ih)/2`
         : '';
 
       // Use image2 demuxer with pattern for frame sequence
       const command = `ffmpeg -framerate ${fps} -i "${escapedPattern}" ${resolutionFlag} ${qualityFlag} -pix_fmt yuv420p -y "${escapedOutputPath}"`;
 
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 600000, // 10 minute timeout for large frame sequences
         maxBuffer: 10 * 1024 * 1024
       });
 
-      // Cleanup temp files and directory
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
@@ -3260,7 +3483,7 @@ export class ApexPainter {
           }
         }
       }
-      // Remove frame sequence directory
+
       if (fs.existsSync(frameSequenceDir)) {
         try {
           fs.rmSync(frameSequenceDir, { recursive: true, force: true });
@@ -3271,7 +3494,7 @@ export class ApexPainter {
 
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup temp files on error
+
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
@@ -3281,7 +3504,7 @@ export class ApexPainter {
           }
         }
       }
-      // Remove frame sequence directory on error
+
       if (fs.existsSync(frameSequenceDir)) {
         try {
           fs.rmSync(frameSequenceDir, { recursive: true, force: true });
@@ -3324,16 +3547,15 @@ export class ApexPainter {
     outputFormat: 'jpg' | 'png' = 'jpg',
     quality: number = 2
   ): Promise<Buffer | null> {
-    // Get video info to convert frame number to time
+
     const videoInfo = await this.getVideoInfo(videoSource, true);
     if (!videoInfo || videoInfo.fps <= 0) {
       throw new Error('Could not get video FPS to convert frame number to time');
     }
-    
-    // Convert frame number to time (frame 1 = 0 seconds, frame 2 = 1/fps, etc.)
-    // For 1-based frame numbers: frame 1 = time 0, frame 2 = time 1/fps
+
+
     const timeSeconds = (frameNumber - 1) / videoInfo.fps;
-    
+
     return this.#extractVideoFrame(videoSource, frameNumber - 1, timeSeconds, outputFormat, quality);
   }
 
@@ -3372,24 +3594,23 @@ export class ApexPainter {
     options?: {
       outputFormat?: 'jpg' | 'png';
       outputDirectory?: string;
-      quality?: number; // JPEG quality 1-31 (lower = better, default: 2)
-      prefix?: string; // Filename prefix (default: 'frame')
-      startTime?: number; // Start time in seconds (default: 0)
+      quality?: number;
+      prefix?: string;
+      startTime?: number;
       endTime?: number; // End time in seconds (default: video duration)
     }
   ): Promise<Array<{ source: string; frameNumber: number; time: number }>> {
     try {
       const ffmpegAvailable = await this.#checkFFmpegAvailable();
       if (!ffmpegAvailable) {
-        const errorMessage = 
+        const errorMessage =
           '❌ FFMPEG NOT FOUND\n' +
           'Video processing features require FFmpeg to be installed on your system.\n' +
           this.#getFFmpegInstallInstructions();
-        
+
         throw new Error(errorMessage);
       }
 
-      // Get video info first
       const videoInfo = await this.getVideoInfo(videoSource, true);
       if (!videoInfo) {
         throw new Error('Could not get video information');
@@ -3400,7 +3621,6 @@ export class ApexPainter {
       const prefix = options?.prefix || 'frame';
       const quality = options?.quality || 2;
 
-      // Create output directory
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
@@ -3414,7 +3634,6 @@ export class ApexPainter {
       let videoPath: string;
       let shouldCleanupVideo = false;
 
-      // Handle video source
       if (Buffer.isBuffer(videoSource)) {
         videoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
         fs.writeFileSync(videoPath, videoSource);
@@ -3435,18 +3654,17 @@ export class ApexPainter {
         videoPath = videoSource;
       }
 
-      // Calculate time range
       const startTime = options?.startTime ?? 0;
       const endTime = options?.endTime ?? videoInfo.duration;
       const duration = endTime - startTime;
 
       // Extract all frames using ffmpeg
       // Use -fps_mode passthrough to extract every frame (no frame skipping)
-      // Don't use -f flag, let FFmpeg infer format from file extension
+
       const qualityFlag = outputFormat === 'jpg' ? `-q:v ${quality}` : '';
       const pixFmt = outputFormat === 'png' ? '-pix_fmt rgba' : '-pix_fmt rgb24';
       const outputTemplate = path.join(outputDir, `${prefix}-%06d.${outputFormat}`);
-      
+
       const escapedVideoPath = videoPath.replace(/"/g, '\\"');
       const escapedOutputTemplate = outputTemplate.replace(/"/g, '\\"');
 
@@ -3454,7 +3672,7 @@ export class ApexPainter {
       // Use -ss after -i for more accurate frame extraction
       const command = `ffmpeg -i "${escapedVideoPath}" -ss ${startTime} -t ${duration} -fps_mode passthrough ${pixFmt} ${qualityFlag} -y "${escapedOutputTemplate}"`;
 
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000, // 5 minute timeout for large videos
         maxBuffer: 10 * 1024 * 1024
       });
@@ -3467,21 +3685,20 @@ export class ApexPainter {
       while (true) {
         const frameNumber = frameIndex + 1;
         const framePath = path.join(outputDir, `${prefix}-${String(frameNumber).padStart(6, '0')}.${outputFormat}`);
-        
+
         if (fs.existsSync(framePath)) {
           frames.push({
             source: framePath,
             frameNumber: frameIndex,
             time: currentTime
           });
-          currentTime += 1 / videoInfo.fps; // Increment by frame duration
+currentTime += 1 / videoInfo.fps;
           frameIndex++;
         } else {
-          break; // No more frames
+break;
         }
       }
 
-      // Cleanup temp video if created
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
@@ -3499,10 +3716,6 @@ export class ApexPainter {
 
 
 
-
-  
-  
-  
 
 
   /**
@@ -3535,13 +3748,13 @@ export class ApexPainter {
   }
 
   async masking(
-    source: string | Buffer | PathLike | Uint8Array, 
-    maskSource: string | Buffer | PathLike | Uint8Array, 
+    source: string | Buffer | PathLike | Uint8Array,
+    maskSource: string | Buffer | PathLike | Uint8Array,
     options: MaskOptions = { type: "alpha" }
   ): Promise<Buffer> {
     try {
       this.#validateMaskingInputs(source, maskSource, options);
-      
+
       const img = await loadImage(source);
       const mask = await loadImage(maskSource);
 
@@ -3616,12 +3829,12 @@ export class ApexPainter {
   }
 
   async gradientBlend(
-    source: string | Buffer | PathLike | Uint8Array, 
+    source: string | Buffer | PathLike | Uint8Array,
     options: BlendOptions
   ): Promise<Buffer> {
     try {
       this.#validateGradientBlendInputs(source, options);
-      
+
       const img = await loadImage(source);
       const canvas = createCanvas(img.width, img.height);
       const ctx = canvas.getContext("2d") as SKRSContext2D;
@@ -3701,12 +3914,12 @@ export class ApexPainter {
 
   async animate(
     frames: Frame[],
-    defaultDuration: number, 
+    defaultDuration: number,
     defaultWidth: number = 800,
-    defaultHeight: number = 600, 
+    defaultHeight: number = 600,
     options?: {
-      gif?: boolean;  
-      gifPath?: string;  
+      gif?: boolean;
+      gifPath?: string;
       onStart?: () => void;
       onFrame?: (index: number) => void;
       onEnd?: () => void;
@@ -3714,7 +3927,7 @@ export class ApexPainter {
   ): Promise<Buffer[] | undefined> {
     try {
       this.#validateAnimateInputs(frames, defaultDuration, defaultWidth, defaultHeight, options);
-      
+
       const buffers: Buffer[] = [];
       const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
 
@@ -3731,8 +3944,8 @@ export class ApexPainter {
         gifStream = fs.createWriteStream(options.gifPath);
       encoder.createReadStream().pipe(gifStream);
       encoder.start();
-      encoder.setRepeat(0); 
-      encoder.setQuality(10); 
+      encoder.setRepeat(0);
+      encoder.setQuality(10);
   }
 
   for (let i = 0; i < frames.length; i++) {
@@ -3753,7 +3966,7 @@ export class ApexPainter {
 
       if (frame.transformations) {
           const { scaleX = 1, scaleY = 1, rotate = 0, translateX = 0, translateY = 0 } = frame.transformations;
-          ctx.save(); 
+          ctx.save();
           ctx.translate(translateX, translateY);
           ctx.rotate((rotate * Math.PI) / 180);
           ctx.scale(scaleX, scaleY);
@@ -3818,14 +4031,14 @@ export class ApexPainter {
       buffers.push(buffer);
 
       if (encoder) {
-         
+
           const frameDuration = frame.duration || defaultDuration;
-          encoder.setDelay(frameDuration); 
-          encoder.addFrame(ctx as unknown as CanvasRenderingContext2D); 
+          encoder.setDelay(frameDuration);
+          encoder.addFrame(ctx as unknown as CanvasRenderingContext2D);
       }
 
       if (options?.onFrame) options.onFrame(i);
-      
+
       await new Promise(resolve => setTimeout(resolve, frame.duration || defaultDuration));
   }
 
@@ -3840,8 +4053,6 @@ export class ApexPainter {
       throw new Error(`animate failed: ${getErrorMessage(error)}`);
     }
   }
-
-
 
   /**
    * Processes multiple operations in parallel
@@ -3948,7 +4159,7 @@ export class ApexPainter {
    * @param hexColor - Hexadecimal color string to validate (format: #RRGGBB)
    * @returns True if the color is valid
    * @throws Error if the color format is invalid
-   * 
+   *
    * @example
    * ```typescript
    * painter.validHex('#ff0000'); // true
@@ -3972,7 +4183,7 @@ export class ApexPainter {
    * @param results - Buffer or result to convert
    * @returns Converted result in the configured format
    * @throws Error if format is unsupported or conversion fails
-   * 
+   *
    * @example
    * ```typescript
    * const painter = new ApexPainter({ type: 'base64' });
@@ -3985,7 +4196,7 @@ export class ApexPainter {
       if (!Buffer.isBuffer(results)) {
         throw new Error("outPut: results must be a Buffer.");
       }
-      
+
       const formatType: string = this.format?.type || 'buffer';
       switch (formatType) {
         case 'buffer':
@@ -4010,18 +4221,18 @@ export class ApexPainter {
 
   /**
    * Advanced save method to save buffers to local files with extensive customization options.
-   * 
+   *
    * @param buffer - Buffer to save (from createCanvas, createImage, createText, etc.)
    * @param options - Save options for file path, format, naming, etc.
    * @returns SaveResult with file path, name, size, and format
-   * 
+   *
    * @example
    * ```typescript
    * // Simple save with auto-generated name
    * const canvas = await painter.createCanvas({ width: 800, height: 600 });
    * const result = await painter.save(canvas.buffer);
    * // Saves to: ./ApexPainter_output/20241220_143025_123.png
-   * 
+   *
    * // Custom filename and directory
    * await painter.save(canvas.buffer, {
    *   directory: './my-images',
@@ -4029,7 +4240,7 @@ export class ApexPainter {
    *   format: 'jpg',
    *   quality: 95
    * });
-   * 
+   *
    * // Save with counter naming
    * await painter.save(canvas.buffer, {
    *   naming: 'counter',
@@ -4037,7 +4248,7 @@ export class ApexPainter {
    *   counterStart: 1
    * });
    * // Saves to: ./ApexPainter_output/image-1.png, image-2.png, etc.
-   * 
+   *
    * // Save multiple buffers
    * const buffers = [canvas1.buffer, canvas2.buffer, canvas3.buffer];
    * const results = await painter.saveMultiple(buffers, {
@@ -4065,21 +4276,19 @@ export class ApexPainter {
         overwrite: options?.overwrite ?? false
       };
 
-      // Create directory if needed
       if (opts.createDirectory && !fs.existsSync(opts.directory)) {
         fs.mkdirSync(opts.directory, { recursive: true });
       }
 
-      // Generate filename
       let filename: string;
       if (opts.filename) {
         filename = opts.filename;
-        // Add extension if not present
+
         if (!filename.includes('.')) {
           filename += `.${opts.format}`;
         }
       } else {
-        // Auto-generate filename based on naming pattern
+
         switch (opts.naming) {
           case 'timestamp':
             const now = new Date();
@@ -4098,16 +4307,15 @@ export class ApexPainter {
         }
       }
 
-      // Handle file overwrite
       const filePath = path.join(opts.directory, filename);
       if (!opts.overwrite && fs.existsSync(filePath)) {
-        // Add number suffix if file exists
+
         let counter = 1;
         let newPath = filePath;
         const ext = path.extname(filePath);
         const baseName = path.basename(filePath, ext);
         const dir = path.dirname(filePath);
-        
+
         while (fs.existsSync(newPath)) {
           newPath = path.join(dir, `${baseName}_${counter}${ext}`);
           counter++;
@@ -4115,13 +4323,12 @@ export class ApexPainter {
         filename = path.basename(newPath);
       }
 
-      // Convert buffer format if needed
       let finalBuffer = buffer;
       if (opts.format !== 'png') {
         // Use Sharp for format conversion
         const sharp = require('sharp');
         let sharpImage = sharp(buffer);
-        
+
         switch (opts.format) {
           case 'jpg':
           case 'jpeg':
@@ -4166,11 +4373,11 @@ export class ApexPainter {
 
   /**
    * Save multiple buffers at once with batch options.
-   * 
+   *
    * @param buffers - Array of buffers to save
    * @param options - Save options (applied to all files)
    * @returns Array of SaveResult objects
-   * 
+   *
    * @example
    * ```typescript
    * const canvas1 = await painter.createCanvas({ width: 800, height: 600 });
@@ -4196,7 +4403,7 @@ export class ApexPainter {
           counterStart: baseCounter + i,
           naming: options?.naming === 'counter' ? 'counter' : options?.naming
         };
-        
+
         const result = await this.save(buffers[i], bufferOptions);
         results.push(result);
       }
@@ -4209,32 +4416,32 @@ export class ApexPainter {
 
   /**
    * Creates a chart based on the chart type.
-   * 
+   *
    * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line')
    * @param data - Chart data (varies by chart type)
    * @param options - Chart options (varies by chart type)
    * @returns Promise<Buffer> - Chart image buffer
-   * 
+   *
    * @example
    * ```typescript
    * // Pie Chart
-   * const pieChart = await painter.createChart('pie', 
+   * const pieChart = await painter.createChart('pie',
    *   [{ label: 'A', value: 30, color: '#ff0000' }],
    *   { dimensions: { width: 800, height: 600 } }
    * );
-   * 
+   *
    * // Bar Chart
    * const barChart = await painter.createChart('bar',
    *   [{ label: 'Jan', value: 20, xStart: 1, xEnd: 2, color: '#4A90E2' }],
    *   { dimensions: { height: 600 } }
    * );
-   * 
+   *
    * // Horizontal Bar Chart
    * const hBarChart = await painter.createChart('horizontalBar',
    *   [{ label: 'Product A', value: 150, color: '#4A90E2' }],
    *   { dimensions: { width: 800 } }
    * );
-   * 
+   *
    * // Line Chart
    * const lineChart = await painter.createChart('line',
    *   [{ label: 'Series 1', data: [{ x: 1, y: 10 }, { x: 2, y: 20 }], color: '#4A90E2' }],
@@ -4242,38 +4449,37 @@ export class ApexPainter {
    * );
    * ```
    */
-  async createChart(
-    chartType: 'pie',
-    data: import('./utils/Charts/piechart').PieSlice[],
-    options?: import('./utils/Charts/piechart').PieChartOptions
-  ): Promise<Buffer>;
-  async createChart(
-    chartType: 'bar',
-    data: import('./utils/Charts/barchart').BarChartData[],
-    options?: import('./utils/Charts/barchart').BarChartOptions
-  ): Promise<Buffer>;
-  async createChart(
-    chartType: 'horizontalBar',
-    data: import('./utils/Charts/horizontalbarchart').HorizontalBarChartData[],
-    options?: import('./utils/Charts/horizontalbarchart').HorizontalBarChartOptions
-  ): Promise<Buffer>;
-  async createChart(
-    chartType: 'line',
-    data: import('./utils/Charts/linechart').LineSeries[],
-    options?: import('./utils/Charts/linechart').LineChartOptions
-  ): Promise<Buffer>;
-  async createChart(
-    chartType: 'pie' | 'bar' | 'horizontalBar' | 'line',
-    data: any,
-    options: any = {}
+  async createChart<T extends 'pie' | 'bar' | 'horizontalBar' | 'line'>(
+    chartType: T,
+    data: T extends 'pie' ? PieSlice[] | any[]
+      : T extends 'bar' ? BarChartData[] | any[]
+      : T extends 'horizontalBar' ? HorizontalBarChartData[] | any[]
+      : T extends 'line' ? LineSeries[] | any[]
+      : never,
+    options?: T extends 'pie' ? PieChartOptions | any
+      : T extends 'bar' ? BarChartOptions | any
+      : T extends 'horizontalBar' ? HorizontalBarChartOptions | any
+      : T extends 'line' ? LineChartOptions | any
+      : never
   ): Promise<Buffer> {
-    return await this.chartCreator.createChart(chartType as any, data, options);
+    switch (chartType) {
+      case 'pie':
+        return await this.chartCreator.createChart('pie', data as PieSlice[], options as PieChartOptions | undefined);
+      case 'bar':
+        return await this.chartCreator.createChart('bar', data as BarChartData[], options as BarChartOptions | undefined);
+      case 'horizontalBar':
+        return await this.chartCreator.createChart('horizontalBar', data as HorizontalBarChartData[], options as HorizontalBarChartOptions | undefined);
+      case 'line':
+        return await this.chartCreator.createChart('line', data as LineSeries[], options as LineChartOptions | undefined);
+      default:
+        throw new Error(`Unsupported chart type: ${chartType}`);
+    }
   }
 
   /**
    * Creates a comparison chart with two charts side by side or top/bottom.
    * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
-   * 
+   *
    * @param options - Comparison chart configuration
    * @returns Promise<Buffer> - Comparison chart image buffer
    */

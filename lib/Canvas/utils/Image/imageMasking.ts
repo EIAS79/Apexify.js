@@ -25,7 +25,7 @@ export async function applyImageMask(
   height: number
 ): Promise<void> {
   try {
-    // Load mask image
+
     let maskImage: Image;
     if (Buffer.isBuffer(maskSource)) {
       maskImage = await loadImage(maskSource);
@@ -36,25 +36,20 @@ export async function applyImageMask(
       maskImage = await loadImage(fs.readFileSync(maskPath));
     }
 
-    // Create temporary canvas for mask processing
     const maskCanvas = createCanvas(width, height);
     const maskCtx = getCanvasContext(maskCanvas);
 
-    // Draw mask image scaled to target size
     maskCtx.drawImage(maskImage, 0, 0, width, height);
 
-    // Get mask image data
     const maskData = maskCtx.getImageData(0, 0, width, height);
     const maskPixels = maskData.data;
 
-    // Get source image data
     const sourceCanvas = createCanvas(width, height);
     const sourceCtx = getCanvasContext(sourceCanvas);
     sourceCtx.drawImage(image, 0, 0, width, height);
     const sourceData = sourceCtx.getImageData(0, 0, width, height);
     const sourcePixels = sourceData.data;
 
-    // Apply mask based on mode
     for (let i = 0; i < sourcePixels.length; i += 4) {
       const maskR = maskPixels[i];
       const maskG = maskPixels[i + 1];
@@ -64,20 +59,17 @@ export async function applyImageMask(
       let alpha = maskA / 255;
 
       if (mode === 'luminance') {
-        // Use luminance of mask as alpha
+
         const luminance = (maskR * 0.299 + maskG * 0.587 + maskB * 0.114) / 255;
         alpha = luminance;
       } else if (mode === 'inverse') {
-        // Invert the alpha
+
         alpha = 1 - (maskA / 255);
       }
-      // 'alpha' mode uses mask alpha directly (already set above)
 
-      // Apply mask alpha to source image
       sourcePixels[i + 3] = Math.round(sourcePixels[i + 3] * alpha);
     }
 
-    // Put masked image data back
     sourceCtx.putImageData(sourceData, 0, 0);
     ctx.drawImage(sourceCanvas, x, y);
   } catch (error) {
@@ -128,7 +120,6 @@ export function applyPerspectiveDistortion(
     throw new Error('Perspective distortion requires exactly 4 points');
   }
 
-  // Source corners (original image)
   const srcCorners = [
     { x: 0, y: 0 },
     { x: width, y: 0 },
@@ -136,10 +127,8 @@ export function applyPerspectiveDistortion(
     { x: 0, y: height }
   ];
 
-  // Destination corners (transformed)
   const dstCorners = points.map(p => ({ x: p.x - x, y: p.y - y }));
 
-  // Calculate perspective transform matrix
   const matrix = calculatePerspectiveMatrix(srcCorners, dstCorners);
 
   ctx.save();
@@ -155,22 +144,18 @@ function calculatePerspectiveMatrix(
   src: Array<{ x: number; y: number }>,
   dst: Array<{ x: number; y: number }>
 ): [number, number, number, number, number, number] {
-  // Simplified perspective transform using 2D affine approximation
-  // For true perspective, we'd need a 3x3 matrix, but canvas 2D only supports 2x3
-  
-  // Use the first 3 points for affine transform approximation
+
   const x0 = src[0].x, y0 = src[0].y;
   const x1 = src[1].x, y1 = src[1].y;
   const x2 = src[2].x, y2 = src[2].y;
-  
+
   const u0 = dst[0].x, v0 = dst[0].y;
   const u1 = dst[1].x, v1 = dst[1].y;
   const u2 = dst[2].x, v2 = dst[2].y;
 
-  // Solve for affine transform coefficients
   const denom = (x0 - x1) * (y0 - y2) - (x0 - x2) * (y0 - y1);
   if (Math.abs(denom) < 0.0001) {
-    // Fallback to identity
+
     return [1, 0, 0, 1, 0, 0];
   }
 
@@ -209,7 +194,7 @@ export function applyBulgeDistortion(
   width: number,
   height: number
 ): void {
-  // Create temporary canvas for distortion
+
   const tempCanvas = createCanvas(width, height);
   const tempCtx = getCanvasContext(tempCanvas);
 
@@ -280,7 +265,7 @@ export function applyMeshWarp(
   width: number,
   height: number
 ): void {
-  // Create temporary canvas
+
   const tempCanvas = createCanvas(width, height);
   const tempCtx = getCanvasContext(tempCanvas);
 
@@ -296,18 +281,17 @@ export function applyMeshWarp(
     for (let px = 0; px < width; px++) {
       const gridCol = Math.floor(px / cellWidth);
       const gridRow = Math.floor(py / cellHeight);
-      
-      if (gridRow < gridY && gridCol < gridX && 
-          gridRow < controlPoints.length && 
+
+      if (gridRow < gridY && gridCol < gridX &&
+          gridRow < controlPoints.length &&
           gridCol < controlPoints[gridRow].length) {
         const cp = controlPoints[gridRow][gridCol];
         const localX = (px % cellWidth) / cellWidth;
         const localY = (py % cellHeight) / cellHeight;
-        
-        // Bilinear interpolation for smooth warping
+
         const newX = Math.round(cp.x + (px - cp.x) * localX);
         const newY = Math.round(cp.y + (py - cp.y) * localY);
-        
+
         if (newX >= 0 && newX < width && newY >= 0 && newY < height) {
           const srcIdx = (py * width + px) * 4;
           const dstIdx = (newY * width + newX) * 4;

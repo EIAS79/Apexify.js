@@ -5,7 +5,176 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.2.0] - 2024-12-20
+## [5.2.5] - 2025-12-27
+
+### ✨ Added
+
+##### Advanced Text Metrics API ⭐ NEW!
+- **Comprehensive Text Measurement** (`measureText`): Complete text metrics matching Canvas API + extensions
+  - Standard Canvas API metrics: `width`, `actualBoundingBoxAscent/Descent`, `actualBoundingBoxLeft/Right`, `fontBoundingBoxAscent/Descent`
+  - Advanced Canvas API metrics: `alphabeticBaseline`, `emHeightAscent/Descent`, `hangingBaseline`, `ideographicBaseline` (when available)
+  - Enhanced Apexify.js metrics: `height`, `lineHeight`, `baseline`, `top`, `bottom`, `centerX`, `centerY`
+  - Multi-line support: `lines`, `totalHeight`, `lineCount` when `maxWidth` is provided
+  - Character-level metrics: `charWidths`, `charPositions` when `includeCharMetrics` is true
+  - Full font support: custom fonts, bold, italic, letter spacing, word spacing
+  - Perfect for dynamic layouts, text centering, and precise text positioning
+
+##### Advanced Pixel Data API ⭐ NEW!
+- **Pixel Manipulation** (`getPixelData`, `setPixelData`): Complete pixel-level control
+  - Get pixel data from any region: `getPixelData(canvasBuffer, { x, y, width, height })`
+  - Set pixel data back to canvas: `setPixelData(canvasBuffer, pixelData, { x, y })`
+  - Access RGBA values directly: `pixelData.data` (Uint8ClampedArray)
+  - Full Canvas ImageData compatibility
+
+- **Pixel Manipulation Filters** (`manipulatePixels`): Advanced pixel processing
+  - Custom processor functions: `processor: (r, g, b, a, x, y) => [r, g, b, a]`
+  - Built-in filters: `grayscale`, `invert`, `sepia`, `brightness`, `contrast`, `saturate`
+  - Intensity control for all filters (0-1)
+  - Region-specific manipulation: Apply filters to specific areas
+  - Perfect for custom effects, color adjustments, and advanced image processing
+
+- **Pixel Color Utilities** (`getPixelColor`, `setPixelColor`): Quick pixel access
+  - Get pixel color at coordinates: `getPixelColor(canvasBuffer, x, y)`
+  - Set pixel color at coordinates: `setPixelColor(canvasBuffer, x, y, { r, g, b, a })`
+  - Convenient helpers for pixel-level operations
+
+##### Advanced Path2D API ⭐ NEW!
+- **Path Creation** (`createPath2D`): Create complex paths from commands
+  - Full Canvas Path2D compatibility
+  - Comprehensive command set: `moveTo`, `lineTo`, `arc`, `arcTo`, `bezierCurveTo`, `quadraticCurveTo`, `rect`, `ellipse`, `closePath`
+  - Advanced shape commands: `circle`, `roundedRect` (with per-corner radius), `polygon`, `star`, `arrow`
+  - Build complex paths programmatically with type-safe command arrays
+  - Perfect for complex shapes, custom graphics, and advanced path manipulation
+
+- **Path Drawing** (`drawPath`): Draw paths with advanced styling options
+  - Stroke options: color, width, lineCap, lineJoin, miterLimit, dashArray, dashOffset, opacity
+  - Fill options: color, opacity, fill rule (nonzero/evenodd)
+  - Transform support: translate, rotate, scale with custom origin point
+  - Full integration with Apexify.js styling system
+  - Works with both Path2D objects and command arrays
+
+##### Advanced Hit Detection API ⭐ NEW!
+- **Point-in-Path Detection** (`isPointInPath`): Check if point is inside a Path2D object
+  - Detect hits in fill area and stroke edges
+  - Configurable stroke width for stroke detection
+  - Tolerance control for edge cases
+  - Returns detailed hit information: `hit`, `hitType` ('fill'/'stroke'/'outside'), `distance`
+
+- **Custom Region Detection** (`isPointInRegion`, `isPointInAnyRegion`): Advanced region-based hit detection
+  - Multiple region types: `rect`, `circle`, `ellipse`, `polygon`, `path`, `custom`
+  - Rectangle regions with precise boundary detection
+  - Circle and ellipse regions (with rotation support)
+  - Polygon regions with any number of points
+  - Path2D-based regions for complex shapes
+  - Custom function regions: `check: (x, y) => boolean` for any custom logic
+  - Multi-region detection: Test point against multiple regions at once
+  - Distance calculation: `getDistanceToRegion()` for spatial queries
+  - Perfect for interactive graphics, collision detection, and UI elements
+
+##### New Shape Types
+- **Arc and PieSlice Shapes**: Added `'arc'` and `'pieSlice'` as new `ShapeType` options
+  - Support for drawing arcs and pie slice sectors
+  - Configurable start and end angles (in radians)
+  - Support for donut slices with `innerRadius`
+  - Custom pivot points with `centerX` and `centerY`
+  - Full feature support: gradients, shadows, strokes, filters
+  - Perfect for roulette wheels, pie charts, and circular segments
+
+##### Enhanced GIF Creation with Callbacks
+- **Programmatic Frame Generation** (`onStart` callback): Generate GIF frames using Apexify.js APIs
+  - Callback receives frame count and painter instance
+  - Generate frames entirely using Apexify.js (`createCanvas`, `createImage`, `createText`, etc.)
+  - No file I/O needed - all frames generated in memory
+  - Configurable frame count via `frameCount` or `duration` options
+  - Perfect for animations, roulette wheels, spinners, and dynamic content
+
+- **Static Final Frame Generation** (`onEnd` callback): Automatically generate static image from final frame
+  - Receives final frame buffer and painter instance
+  - Can process/add effects to final frame
+  - Returns both GIF and static image when `onEnd` is provided
+  - Perfect for showing "winner" frames or final states
+
+##### Group Transform Operations
+- **Grouped Drawing** (`isGrouped` option): Transform multiple elements together as a group
+  - Apply rotations, scales, and translations to all elements simultaneously
+  - Shared pivot point for rotation and scaling
+  - All elements rotate around a common center point (not individual centers)
+  - Perfect for roulette wheels, clocks, spinners, and grouped UI elements
+  - Used with `createImage()` when passing array of elements
+
+### 🔧 Improved
+
+##### Text Metrics Enhancements
+- **Customizable Measurement Canvas**: Made measurement canvas size configurable
+  - Optional `measurementCanvas` option in `measureText()` for memory optimization
+  - Smart auto-calculation based on text length, font size, and wrapping
+  - Bounds protection: 1000-10000px width, 500-5000px height
+  - Better memory efficiency for large text measurements
+
+##### Image Creation Enhancements
+- **Enhanced Shape Property Support**: Properly pass all shape properties through the rendering pipeline
+  - Fixed passing of `points` array for custom polygons
+  - Fixed passing of `startAngle`, `endAngle` for arcs/pieSlices
+  - Fixed passing of `centerX`, `centerY` for custom pivot points
+  - All shape properties now correctly propagated to drawing functions
+
+##### Group Transform Implementation
+- **Correct Transform Order**: Fixed transformation order in grouped mode
+  - Proper order: translate to pivot → rotate → scale → translate → translate back
+  - Prevents double rotation and transform conflicts
+  - Ensures all elements transform correctly as a single unit
+
+##### GIF Creation Workflow
+- **Simplified Animation Creation**: Generate animated GIFs entirely using Apexify.js APIs
+  - No need to save frames to files first
+  - Generate frames programmatically in memory
+  - Cleaner API without direct canvas manipulation
+  - Better developer experience for animations
+
+### 🐛 Fixed
+
+##### Shape Drawing Fixes
+- **Fixed Polygon Default Behavior**: Fixed issue where polygons without `points` were defaulting to hexagon
+  - Custom `points` array now properly recognized and used
+  - Polygon drawing correctly uses provided points or falls back to regular polygon
+  - Fixed white hexagon appearing incorrectly
+
+- **Fixed Shape Property Passing**: Fixed shape properties not being passed to drawing functions
+  - `points`, `startAngle`, `endAngle`, `centerX`, `centerY` now properly passed through
+  - Type definitions updated to include all shape properties
+  - Shape rendering now works correctly for all shape types
+
+##### Group Transform Fixes
+- **Fixed Double Rotation Bug**: Fixed issue where elements in grouped mode were being rotated twice
+  - Elements in grouped mode now have `rotation: 0` to prevent individual rotation
+  - Group transform handles all transformations correctly
+  - Elements now rotate together as intended
+
+- **Fixed Transform Context**: Fixed canvas context state management in grouped transforms
+  - Proper `ctx.save()` and `ctx.restore()` usage
+  - Transform state correctly isolated per group operation
+  - No interference between grouped and individual transforms
+
+##### GIF Callback Fixes
+- **Fixed Return Type**: Fixed TypeScript return type for GIF creation with `onEnd` callback
+  - Returns `{ gif: Buffer | string, static: Buffer }` when `onEnd` is provided
+  - Returns just GIF buffer when `onEnd` is not provided
+  - Proper type handling for file output format
+
+- **Fixed Frame Count Calculation**: Improved frame count estimation when using `onStart` callback
+  - Better default frame count (30 frames)
+  - Proper calculation from `duration` and `delay` options
+  - More accurate animation timing
+
+##### Code Quality Improvements
+- **Comment Cleanup**: Removed descriptive inline comments throughout codebase
+  - Cleaned up redundant code comments that don't add value
+  - Improved code readability and maintainability
+  - Preserved important comments (eslint, TODO, FIXME, JSDoc)
+  - Total cleanup: ~58,000 characters removed across 42 files
+  - All code functionality preserved, cleaner codebase
+
+## [5.2.0] - 2025-12-25
 
 ### ✨ Added
 
@@ -245,7 +414,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [5.1.0] - 2024-12-20
+## [5.1.0] - 2025-12-20
 
 ### ✨ Added
 
@@ -410,7 +579,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [5.0.5] - 2024-12-20
+## [5.0.5] - 2025-09-24
 
 ### ✨ Enhanced
 
@@ -445,7 +614,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [5.0.0] - 2024-12-20
+## [5.0.0] - 2025-08-13
 
 ### 🎉 Major Feature Release - Advanced Image & Canvas Features
 

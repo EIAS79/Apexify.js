@@ -64,7 +64,7 @@ export type ChartType = 'pie' | 'bar' | 'horizontalBar' | 'line';
 /**
  * Unified chart data (union of all chart data types)
  */
-export type ChartData = 
+export type ChartData =
   | { type: 'pie'; data: import('./piechart').PieSlice[] }
   | { type: 'bar'; data: import('./barchart').BarChartData[] }
   | { type: 'horizontalBar'; data: import('./horizontalbarchart').HorizontalBarChartData[] }
@@ -73,7 +73,7 @@ export type ChartData =
 /**
  * Unified chart options (union of all chart options types)
  */
-export type ChartOptions = 
+export type ChartOptions =
   | { type: 'pie'; options: import('./piechart').PieChartOptions }
   | { type: 'bar'; options: import('./barchart').BarChartOptions }
   | { type: 'horizontalBar'; options: import('./horizontalbarchart').HorizontalBarChartOptions }

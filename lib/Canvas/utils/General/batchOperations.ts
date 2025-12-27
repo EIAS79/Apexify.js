@@ -22,17 +22,17 @@ export async function batchOperations(
         case 'canvas':
           const canvasResult = await painter.createCanvas(op.config as CanvasConfig);
           return canvasResult.buffer;
-          
+
         case 'image':
-          // For image operations, we need a base canvas
+
           const baseCanvas = await painter.createCanvas({ width: 800, height: 600 });
           return await painter.createImage(op.config as ImageProperties | ImageProperties[], baseCanvas);
-          
+
         case 'text':
-          // For text operations, we need a base canvas
+
           const textBaseCanvas = await painter.createCanvas({ width: 800, height: 600 });
           return await painter.createText(op.config as TextProperties | TextProperties[], textBaseCanvas);
-          
+
         default:
           throw new Error(`batch: Unknown operation type: ${op.type}`);
       }
@@ -68,7 +68,6 @@ export async function chainOperations(
         throw new Error(`chain: Method "${op.method}" does not exist on ApexPainter`);
       }
 
-      // Prepare arguments - replace 'current' with current buffer
       const args = op.args.map(arg => {
         if (arg === 'current' || (typeof arg === 'object' && arg !== null && (arg as any).__isCurrentBuffer)) {
           return currentBuffer;
@@ -78,7 +77,6 @@ export async function chainOperations(
 
       const result = await method.apply(painter, args);
 
-      // Update current buffer
       if (Buffer.isBuffer(result)) {
         currentBuffer = result;
       } else if (result && typeof result === 'object' && 'buffer' in result) {

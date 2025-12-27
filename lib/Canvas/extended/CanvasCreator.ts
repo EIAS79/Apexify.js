@@ -61,19 +61,19 @@ export class CanvasCreator {
     if (!canvas) {
       throw new Error("createCanvas: canvas configuration is required.");
     }
-    
+
     if (canvas.width !== undefined && (typeof canvas.width !== 'number' || canvas.width <= 0)) {
       throw new Error("createCanvas: width must be a positive number.");
     }
-    
+
     if (canvas.height !== undefined && (typeof canvas.height !== 'number' || canvas.height <= 0)) {
       throw new Error("createCanvas: height must be a positive number.");
     }
-    
+
     if (canvas.opacity !== undefined && (typeof canvas.opacity !== 'number' || canvas.opacity < 0 || canvas.opacity > 1)) {
       throw new Error("createCanvas: opacity must be a number between 0 and 1.");
     }
-    
+
     if (canvas.zoom?.scale !== undefined && (typeof canvas.zoom.scale !== 'number' || canvas.zoom.scale <= 0)) {
       throw new Error("createCanvas: zoom.scale must be a positive number.");
     }
@@ -82,19 +82,20 @@ export class CanvasCreator {
   /**
    * Creates a canvas with the given configuration.
    * Applies rotation, shadow, border effects, background, and stroke.
-   * 
+   *
    * @param canvas - Canvas configuration object
    * @returns Promise<CanvasResults> - Object containing canvas buffer and configuration
    */
   async createCanvas(canvas: CanvasConfig): Promise<CanvasResults> {
     try {
-      // Validate canvas configuration
+
       this.validateCanvasConfig(canvas);
-      
-      // Handle inherit sizing
+
       if (canvas.customBg?.inherit) {
         let p = canvas.customBg.source;
-        if (!/^https?:\/\//i.test(p)) p = path.join(process.cwd(), p);
+        if (!/^https?:\/\//.test(p)) {
+          p = path.join(process.cwd(), p);
+        }
         try {
           const img = await loadImage(p);
           canvas.width = img.width;
@@ -105,11 +106,10 @@ export class CanvasCreator {
         }
       }
 
-      // Handle video background inherit sizing
       if (canvas.videoBg && this.extractVideoFrame) {
         try {
           const frameBuffer = await this.extractVideoFrame(
-            canvas.videoBg.source, 
+            canvas.videoBg.source,
             canvas.videoBg.frame ?? 0,
             canvas.videoBg.time,
             canvas.videoBg.format || 'jpg',
@@ -125,7 +125,6 @@ export class CanvasCreator {
         }
       }
 
-      // Use final width/height after inherit
       const width = canvas.width ?? 500;
       const height = canvas.height ?? 500;
 
@@ -141,7 +140,6 @@ export class CanvasCreator {
         blur
       } = canvas;
 
-      // Validate background configuration
       const bgSources = [
         canvas.colorBg ? 'colorBg' : null,
         canvas.gradientBg ? 'gradientBg' : null,
@@ -157,7 +155,6 @@ export class CanvasCreator {
 
       ctx.globalAlpha = opacity;
 
-      // ---- BACKGROUND (clipped) ----
       ctx.save();
       applyRotation(ctx, rotation, x, y, width, height);
 
@@ -171,15 +168,14 @@ export class CanvasCreator {
         ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
       }
 
-      // Draw background - videoBg takes priority, then customBg, then gradientBg, then colorBg
       if (videoBg && this.extractVideoFrame) {
         try {
-          // For videoBg, always use PNG format to ensure compatibility with loadImage
+
           const frameBuffer = await this.extractVideoFrame(
-            videoBg.source, 
+            videoBg.source,
             videoBg.frame ?? 0,
             videoBg.time,
-            'png', // Force PNG format for videoBg
+'png',
             2
           );
           if (frameBuffer && frameBuffer.length > 0) {
@@ -187,7 +183,7 @@ export class CanvasCreator {
             try {
               videoImg = await loadImage(frameBuffer);
             } catch (bufferError) {
-              // If loading from buffer fails, try saving to temp file and loading from file
+
               const tempFramePath = path.join(process.cwd(), '.temp-frames', `video-bg-temp-${Date.now()}.png`);
               const frameDir = path.dirname(tempFramePath);
               if (!fs.existsSync(frameDir)) {
@@ -195,12 +191,12 @@ export class CanvasCreator {
               }
               fs.writeFileSync(tempFramePath, frameBuffer);
               videoImg = await loadImage(tempFramePath);
-              // Cleanup temp file after loading
+
               if (fs.existsSync(tempFramePath)) {
                 fs.unlinkSync(tempFramePath);
               }
             }
-            
+
             if (videoImg && videoImg.width > 0 && videoImg.height > 0) {
               ctx.globalAlpha = videoBg.opacity ?? 1;
               ctx.drawImage(videoImg, 0, 0, width, height);
@@ -219,9 +215,9 @@ export class CanvasCreator {
           throw new Error(`createCanvas: videoBg extraction failed: ${errorMsg}`);
         }
       } else if (customBg) {
-        // Draw custom background with filters and opacity support
+
         await customBackground(ctx, { ...canvas, blur });
-        // Apply filters to background if specified
+
         if (customBg.filters && customBg.filters.length > 0) {
           const tempCanvas = createCanvas(width, height);
           const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
@@ -243,7 +239,7 @@ export class CanvasCreator {
       } else if (gradientBg) {
         await drawBackgroundGradient(ctx, { ...canvas, blur });
       } else {
-        // Default to black background if no background is specified
+
         await drawBackgroundColor(ctx, { ...canvas, blur, colorBg: colorBg ?? '#000' });
       }
 
@@ -252,7 +248,6 @@ export class CanvasCreator {
 
       ctx.restore();
 
-      // Apply shadow effect
       if (shadow) {
         ctx.save();
         buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
@@ -260,7 +255,6 @@ export class CanvasCreator {
         ctx.restore();
       }
 
-      // Apply stroke effect
       if (stroke) {
         ctx.save();
         buildPath(ctx, x, y, width, height, borderRadius, borderPosition);

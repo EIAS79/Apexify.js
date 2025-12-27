@@ -25,12 +25,12 @@ async function resolveVideoSource(
   timestamp: number
 ): Promise<{ videoPath: string; shouldCleanup: boolean }> {
   if (Buffer.isBuffer(videoSource)) {
-    // Buffer: write to temp file
+
     const videoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
     fs.writeFileSync(videoPath, videoSource);
     return { videoPath, shouldCleanup: true };
-  } else if (typeof videoSource === 'string' && /^https?:\/\//i.test(videoSource)) {
-    // HTTP/HTTPS URL: download and write to temp file
+  } else if (typeof videoSource === 'string' && /^https?:\/\//.test(videoSource)) {
+
     const response = await axios({
       method: 'get',
       url: videoSource,
@@ -40,7 +40,7 @@ async function resolveVideoSource(
     fs.writeFileSync(videoPath, Buffer.from(response.data));
     return { videoPath, shouldCleanup: true };
   } else {
-    // Local file path: resolve and validate
+
     let resolvedPath = videoSource;
     if (!path.isAbsolute(resolvedPath)) {
       resolvedPath = path.join(process.cwd(), resolvedPath);
@@ -66,7 +66,7 @@ export interface VideoHelpersDependencies {
     outputFormat?: 'jpg' | 'png',
     quality?: number
   ) => Promise<Buffer | null>;
-  createVideo: (options: any) => Promise<any>; // For batch processing - required
+  createVideo: (options: any) => Promise<any>;
 }
 
 /**
@@ -99,17 +99,17 @@ export class VideoHelpers {
         let stderrBuffer = '';
         childProcess.stderr?.on('data', (data: Buffer) => {
           stderrBuffer += data.toString();
-          // Parse FFmpeg progress output
+
           const timeMatch = stderrBuffer.match(/time=(\d+):(\d+):(\d+\.\d+)/);
           const durationMatch = stderrBuffer.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
-          
+
           if (timeMatch && durationMatch) {
             const currentTime = parseFloat(timeMatch[1]) * 3600 + parseFloat(timeMatch[2]) * 60 + parseFloat(timeMatch[3]);
             const totalDuration = parseFloat(durationMatch[1]) * 3600 + parseFloat(durationMatch[2]) * 60 + parseFloat(durationMatch[3]);
             const percent = Math.min(100, (currentTime / totalDuration) * 100);
             const speedMatch = stderrBuffer.match(/speed=\s*([\d.]+)x/);
             const speed = speedMatch ? parseFloat(speedMatch[1]) : 1;
-            
+
             onProgress({ percent, time: currentTime, speed });
           }
         });
@@ -144,9 +144,8 @@ export class VideoHelpers {
     }
 
     const duration = videoInfo.duration;
-    const interval = duration / (count + 1); // Distribute frames evenly
+const interval = duration / (count + 1);
 
-    // Extract frames
     const frames: Buffer[] = [];
     for (let i = 1; i <= count; i++) {
       const time = interval * i;
@@ -156,13 +155,11 @@ export class VideoHelpers {
       }
     }
 
-    // Create thumbnail canvas
     const thumbnailWidth = frameWidth * grid.cols;
     const thumbnailHeight = frameHeight * grid.rows;
     const canvas = createCanvas(thumbnailWidth, thumbnailHeight);
     const ctx = getCanvasContext(canvas);
 
-    // Draw frames in grid
     for (let i = 0; i < frames.length; i++) {
       const row = Math.floor(i / grid.cols);
       const col = i % grid.cols;
@@ -208,13 +205,13 @@ export class VideoHelpers {
       high: '-crf 18',
       ultra: '-crf 15'
     };
-    const qualityFlag = options.bitrate 
-      ? `-b:v ${options.bitrate}k` 
+    const qualityFlag = options.bitrate
+      ? `-b:v ${options.bitrate}k`
       : qualityPresets[options.quality || 'medium'];
 
     const fpsFlag = options.fps ? `-r ${options.fps}` : '';
-    const resolutionFlag = options.resolution 
-      ? `-vf scale=${options.resolution.width}:${options.resolution.height}` 
+    const resolutionFlag = options.resolution
+      ? `-vf scale=${options.resolution.width}:${options.resolution.height}`
       : '';
 
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
@@ -223,8 +220,8 @@ export class VideoHelpers {
     const command = `ffmpeg -i "${escapedVideoPath}" ${qualityFlag} ${fpsFlag} ${resolutionFlag} -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
-        timeout: 300000, // 5 minute timeout
+      await execAsync(command, {
+timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
 
@@ -263,7 +260,7 @@ export class VideoHelpers {
     const command = `ffmpeg -i "${escapedVideoPath}" -ss ${options.startTime} -t ${duration} -c copy -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -296,7 +293,6 @@ export class VideoHelpers {
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    // Check if video has audio stream
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     try {
       const { stdout } = await execAsync(
@@ -311,7 +307,7 @@ export class VideoHelpers {
       if (error instanceof Error && error.message.includes('Video does not contain')) {
         throw error;
       }
-      // If ffprobe fails, assume no audio
+
       throw new Error('Video does not contain an audio stream. Cannot extract audio.');
     }
 
@@ -322,7 +318,7 @@ export class VideoHelpers {
     const command = `ffmpeg -i "${escapedVideoPath}" -vn -acodec ${format === 'mp3' ? 'libmp3lame' : format === 'wav' ? 'pcm_s16le' : format === 'aac' ? 'aac' : 'libvorbis'} -ab ${bitrate}k -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -362,7 +358,7 @@ export class VideoHelpers {
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
     let watermarkPath = options.watermarkPath;
-    if (!/^https?:\/\//i.test(watermarkPath)) {
+    if (!/^https?:\/\//.test(watermarkPath)) {
       watermarkPath = path.join(process.cwd(), watermarkPath);
     }
     if (!fs.existsSync(watermarkPath)) {
@@ -390,7 +386,7 @@ export class VideoHelpers {
     const command = `ffmpeg -i "${escapedVideoPath}" -i "${escapedWatermarkPath}" -filter_complex "${filter}" -y "${escapedOutputPath}"`;
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -423,7 +419,6 @@ export class VideoHelpers {
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    // Check if video has audio stream
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     let hasAudio = false;
     try {
@@ -440,30 +435,29 @@ export class VideoHelpers {
     let command: string;
 
     if (hasAudio) {
-      // Video has audio - process both video and audio
-      // For speeds > 2.0, we need to chain atempo filters (atempo max is 2.0)
+
       if (options.speed > 2.0) {
         const atempoCount = Math.ceil(Math.log2(options.speed));
         const atempoValue = Math.pow(2, Math.log2(options.speed) / atempoCount);
         const atempoFilters = Array(atempoCount).fill(atempoValue).map(v => `atempo=${v}`).join(',');
         command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v];[0:a]${atempoFilters}[a]" -map "[v]" -map "[a]" -y "${escapedOutputPath}"`;
       } else if (options.speed < 0.5) {
-        // For speeds < 0.5, we need to chain atempo filters
+
         const atempoCount = Math.ceil(Math.log2(1 / options.speed));
         const atempoValue = Math.pow(0.5, Math.log2(1 / options.speed) / atempoCount);
         const atempoFilters = Array(atempoCount).fill(atempoValue).map(v => `atempo=${v}`).join(',');
         command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v];[0:a]${atempoFilters}[a]" -map "[v]" -map "[a]" -y "${escapedOutputPath}"`;
       } else {
-        // Normal speed range (0.5 to 2.0)
+
         command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v];[0:a]atempo=${options.speed}[a]" -map "[v]" -map "[a]" -y "${escapedOutputPath}"`;
       }
     } else {
-      // No audio - only process video
+
       command = `ffmpeg -i "${escapedVideoPath}" -filter_complex "[0:v]setpts=${1/options.speed}*PTS[v]" -map "[v]" -y "${escapedOutputPath}"`;
     }
 
     try {
-      await execAsync(command, { 
+      await execAsync(command, {
         timeout: 300000,
         maxBuffer: 10 * 1024 * 1024
       });
@@ -515,7 +509,7 @@ export class VideoHelpers {
     for (let i = 1; i <= count; i++) {
       const time = interval * i;
       const frameBuffer = await this.deps.extractVideoFrame(videoSource, 0, time, outputFormat, quality);
-      
+
       if (frameBuffer) {
         const framePath = path.join(outputDir, `preview-${String(i).padStart(3, '0')}.${outputFormat}`);
         fs.writeFileSync(framePath, frameBuffer);
@@ -552,7 +546,6 @@ export class VideoHelpers {
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    // Build filter chain
     const filters: string[] = [];
     for (const filter of options.filters) {
       switch (filter.type) {
@@ -626,7 +619,6 @@ export class VideoHelpers {
     const videoPaths: string[] = [];
     const shouldCleanup: boolean[] = [];
 
-    // Prepare all video files
     for (let i = 0; i < options.videos.length; i++) {
       const video = options.videos[i];
       const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(video, frameDir, timestamp + i);
@@ -640,7 +632,7 @@ export class VideoHelpers {
     let command: string;
 
     if (mode === 'sequential') {
-      // Create concat file
+
       const concatFile = path.join(frameDir, `concat-${timestamp}.txt`);
       const concatContent = videoPaths.map(vp => `file '${vp.replace(/'/g, "\\'")}'`).join('\n');
       fs.writeFileSync(concatFile, concatContent);
@@ -652,7 +644,7 @@ export class VideoHelpers {
     } else if (mode === 'grid') {
       const grid = options.grid || { cols: 2, rows: 2 };
       const escapedPaths = videoPaths.map(vp => vp.replace(/"/g, '\\"'));
-      // Simplified grid - would need more complex filter for full grid
+
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1] || escapedPaths[0]}" -filter_complex "[0:v][1:v]hstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else {
       throw new Error(`Unknown merge mode: ${mode}`);
@@ -660,17 +652,16 @@ export class VideoHelpers {
 
     try {
       await execAsync(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
-      // Cleanup
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
         }
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup on error
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
@@ -706,14 +697,12 @@ export class VideoHelpers {
     let shouldCleanupMain = false;
     let shouldCleanupReplacement = false;
 
-    // Prepare main video
     const { videoPath: mainVideoPath, shouldCleanup: shouldCleanupMainValue } = await resolveVideoSource(mainVideoSource, frameDir, timestamp);
     shouldCleanupMain = shouldCleanupMainValue;
     if (shouldCleanupMain) {
       tempFiles.push(mainVideoPath);
     }
 
-    // Validate that either replacementVideo or replacementFrames is provided
     if (!options.replacementVideo && !options.replacementFrames) {
       throw new Error('Either replacementVideo or replacementFrames must be provided');
     }
@@ -722,7 +711,6 @@ export class VideoHelpers {
       throw new Error('Cannot specify both replacementVideo and replacementFrames');
     }
 
-    // Get main video info to validate times
     const mainVideoInfo = await this.deps.getVideoInfo(mainVideoPath, true);
     if (!mainVideoInfo) {
       throw new Error('Failed to get main video information');
@@ -740,22 +728,21 @@ export class VideoHelpers {
     const escapedMainPath = mainVideoPath.replace(/"/g, '\\"');
 
     try {
-      // Step 1: Extract part before the segment to replace
+
       const part1Path = path.join(frameDir, `part1-${timestamp}.mp4`);
       tempFiles.push(part1Path);
-      
+
       if (options.targetStartTime > 0) {
         const escapedPart1 = part1Path.replace(/"/g, '\\"');
         const part1Command = `ffmpeg -i "${escapedMainPath}" -t ${options.targetStartTime} -c copy -y "${escapedPart1}"`;
         await execAsync(part1Command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       }
 
-      // Step 2: Create replacement segment (from video or frames)
       const replacementSegmentPath = path.join(frameDir, `replacement-segment-${timestamp}.mp4`);
       tempFiles.push(replacementSegmentPath);
-      
+
       if (options.replacementVideo) {
-        // Extract replacement segment from replacement video
+
         const { videoPath: replacementVideoPath, shouldCleanup: shouldCleanupReplacementValue } = await resolveVideoSource(options.replacementVideo, frameDir, timestamp + 1000);
         shouldCleanupReplacement = shouldCleanupReplacementValue;
         if (shouldCleanupReplacement) {
@@ -764,13 +751,13 @@ export class VideoHelpers {
 
         const replacementStartTime = options.replacementStartTime || 0;
         const replacementDuration = options.replacementDuration || targetDuration;
-        
+
         const escapedReplacementPath = replacementVideoPath.replace(/"/g, '\\"');
         const escapedSegment = replacementSegmentPath.replace(/"/g, '\\"');
         const segmentCommand = `ffmpeg -i "${escapedReplacementPath}" -ss ${replacementStartTime} -t ${replacementDuration} -c copy -y "${escapedSegment}"`;
         await execAsync(segmentCommand, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       } else if (options.replacementFrames) {
-        // Create video from frames - will be available after we add createVideoFromFrames
+
         const replacementFps = options.replacementFps || 30;
         await this.createVideoFromFrames({
           frames: options.replacementFrames,
@@ -781,10 +768,9 @@ export class VideoHelpers {
         });
       }
 
-      // Step 3: Extract part after the segment to replace
       const part3Path = path.join(frameDir, `part3-${timestamp}.mp4`);
       tempFiles.push(part3Path);
-      
+
       const remainingDuration = mainVideoInfo.duration - options.targetEndTime;
       if (remainingDuration > 0) {
         const escapedPart3 = part3Path.replace(/"/g, '\\"');
@@ -792,23 +778,19 @@ export class VideoHelpers {
         await execAsync(part3Command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       }
 
-      // Step 4: Create concat file and merge all parts
       const concatFile = path.join(frameDir, `concat-${timestamp}.txt`);
       tempFiles.push(concatFile);
-      
+
       const concatParts: string[] = [];
-      
-      // Add part 1 if it exists and has content
+
       if (options.targetStartTime > 0 && fs.existsSync(part1Path) && fs.statSync(part1Path).size > 0) {
         concatParts.push(part1Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
       }
-      
-      // Add replacement segment
+
       if (fs.existsSync(replacementSegmentPath) && fs.statSync(replacementSegmentPath).size > 0) {
         concatParts.push(replacementSegmentPath.replace(/\\/g, '/').replace(/'/g, "\\'"));
       }
-      
-      // Add part 3 if it exists and has content
+
       if (remainingDuration > 0 && fs.existsSync(part3Path) && fs.statSync(part3Path).size > 0) {
         concatParts.push(part3Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
       }
@@ -820,33 +802,31 @@ export class VideoHelpers {
       const concatContent = concatParts.map(p => `file '${p}'`).join('\n');
       fs.writeFileSync(concatFile, concatContent);
 
-      // Step 5: Concatenate all parts
       const escapedConcatFile = concatFile.replace(/"/g, '\\"');
       const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
       const concatCommand = `ffmpeg -f concat -safe 0 -i "${escapedConcatFile}" -c copy -y "${escapedOutputPath}"`;
 
       await execAsync(concatCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
 
-      // Cleanup temp files
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
             fs.unlinkSync(tempFile);
           } catch {
-            // Ignore cleanup errors
+
           }
         }
       }
 
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup temp files on error
+
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
             fs.unlinkSync(tempFile);
           } catch {
-            // Ignore cleanup errors
+
           }
         }
       }
@@ -870,7 +850,7 @@ export class VideoHelpers {
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
     const filters: string[] = [];
-    
+
     if (options.angle) {
       const rotationMap: Record<number, string> = {
         90: 'transpose=1',
@@ -879,7 +859,7 @@ export class VideoHelpers {
       };
       filters.push(rotationMap[options.angle]);
     }
-    
+
     if (options.flip) {
       if (options.flip === 'horizontal') {
         filters.push('hflip');
@@ -958,8 +938,7 @@ export class VideoHelpers {
 
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
-    
-    // Get original size
+
     let originalSize = 0;
     if (Buffer.isBuffer(videoSource)) {
       originalSize = videoSource.length;
@@ -975,7 +954,7 @@ export class VideoHelpers {
     };
 
     let qualityFlag = qualityPresets[options.quality || 'medium'];
-    
+
     if (options.maxBitrate) {
       qualityFlag = `-b:v ${options.maxBitrate}k -maxrate ${options.maxBitrate}k -bufsize ${options.maxBitrate * 2}k`;
     }
@@ -987,13 +966,13 @@ export class VideoHelpers {
 
     try {
       await execAsync(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
+
       const compressedSize = fs.existsSync(options.outputPath) ? fs.statSync(options.outputPath).size : 0;
-      
+
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
-      
+
       return {
         outputPath: options.outputPath,
         success: true,
@@ -1036,7 +1015,7 @@ export class VideoHelpers {
     const fontSize = options.fontSize || 24;
     const fontColor = options.fontColor || 'white';
     const bgColor = options.backgroundColor || 'black@0.5';
-    
+
     const positionMap: Record<string, string> = {
       'top-left': `x=10:y=10`,
       'top-center': `x=(w-text_w)/2:y=10`,
@@ -1104,17 +1083,16 @@ export class VideoHelpers {
       high: '-crf 18',
       ultra: '-crf 15'
     };
-    const qualityFlag = options.bitrate 
-      ? `-b:v ${options.bitrate}k` 
+    const qualityFlag = options.bitrate
+      ? `-b:v ${options.bitrate}k`
       : qualityPresets[options.quality || 'medium'];
 
-    // Process frames: save buffers to temp files, resolve paths
     const framePaths: string[] = [];
     const tempFiles: string[] = [];
     const frameSequenceDir = path.join(frameDir, `frames-${timestamp}`);
 
     try {
-      // Get first frame dimensions if resolution not specified
+
       let frameWidth: number | undefined;
       let frameHeight: number | undefined;
 
@@ -1122,17 +1100,17 @@ export class VideoHelpers {
         frameWidth = options.resolution.width;
         frameHeight = options.resolution.height;
       } else {
-        // Load first frame to get dimensions
+
         const firstFrame = options.frames[0];
         let firstFramePath: string;
-        
+
         if (Buffer.isBuffer(firstFrame)) {
           firstFramePath = path.join(frameDir, `frame-${timestamp}-0.png`);
           fs.writeFileSync(firstFramePath, firstFrame);
           tempFiles.push(firstFramePath);
         } else {
           let resolvedPath = firstFrame;
-          if (!/^https?:\/\//i.test(resolvedPath)) {
+          if (!/^https?:\/\//.test(resolvedPath)) {
             resolvedPath = path.join(process.cwd(), resolvedPath);
           }
           if (!fs.existsSync(resolvedPath)) {
@@ -1141,14 +1119,13 @@ export class VideoHelpers {
           firstFramePath = resolvedPath;
         }
 
-        // Get dimensions using ffprobe or loadImage
         try {
           const { loadImage } = await import('@napi-rs/canvas');
           const img = await loadImage(firstFramePath);
           frameWidth = img.width;
           frameHeight = img.height;
         } catch {
-          // Fallback: try to get from ffprobe
+
           const escapedPath = firstFramePath.replace(/"/g, '\\"');
           try {
             const { stdout } = await execAsync(
@@ -1166,7 +1143,6 @@ export class VideoHelpers {
         }
       }
 
-      // Process all frames - save all to temp directory with sequential naming for reliable pattern matching
       if (!fs.existsSync(frameSequenceDir)) {
         fs.mkdirSync(frameSequenceDir, { recursive: true });
       }
@@ -1179,7 +1155,7 @@ export class VideoHelpers {
           frameBuffer = frame;
         } else {
           let resolvedPath = frame;
-          if (!/^https?:\/\//i.test(resolvedPath)) {
+          if (!/^https?:\/\//.test(resolvedPath)) {
             resolvedPath = path.join(process.cwd(), resolvedPath);
           }
           if (!fs.existsSync(resolvedPath)) {
@@ -1188,7 +1164,6 @@ export class VideoHelpers {
           frameBuffer = fs.readFileSync(resolvedPath);
         }
 
-        // Save with sequential naming (frame-000000.png, frame-000001.png, etc.)
         const frameNumber = i.toString().padStart(6, '0');
         const framePath = path.join(frameSequenceDir, `frame-${frameNumber}.png`);
         fs.writeFileSync(framePath, frameBuffer);
@@ -1196,60 +1171,57 @@ export class VideoHelpers {
         framePaths.push(framePath);
       }
 
-      // Use image2 pattern input for reliable frame sequence
       const patternPath = path.join(frameSequenceDir, 'frame-%06d.png').replace(/\\/g, '/');
       const escapedPattern = patternPath.replace(/"/g, '\\"');
       const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
-      
-      const resolutionFlag = frameWidth && frameHeight 
+
+      const resolutionFlag = frameWidth && frameHeight
         ? `-vf scale=${frameWidth}:${frameHeight}:force_original_aspect_ratio=decrease,pad=${frameWidth}:${frameHeight}:(ow-iw)/2:(oh-ih)/2`
         : '';
 
-      // Use image2 demuxer with pattern for frame sequence
       const command = `ffmpeg -framerate ${fps} -i "${escapedPattern}" ${resolutionFlag} ${qualityFlag} -pix_fmt yuv420p -y "${escapedOutputPath}"`;
 
-      await execAsync(command, { 
-        timeout: 600000, // 10 minute timeout for large frame sequences
+      await execAsync(command, {
+timeout: 600000,
         maxBuffer: 10 * 1024 * 1024
       });
 
-      // Cleanup temp files and directory
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
             fs.unlinkSync(tempFile);
           } catch {
-            // Ignore cleanup errors
+
           }
         }
       }
-      // Remove frame sequence directory
+
       if (fs.existsSync(frameSequenceDir)) {
         try {
           fs.rmSync(frameSequenceDir, { recursive: true, force: true });
         } catch {
-          // Ignore cleanup errors
+
         }
       }
 
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup temp files on error
+
       for (const tempFile of tempFiles) {
         if (fs.existsSync(tempFile)) {
           try {
             fs.unlinkSync(tempFile);
           } catch {
-            // Ignore cleanup errors
+
           }
         }
       }
-      // Remove frame sequence directory on error
+
       if (fs.existsSync(frameSequenceDir)) {
         try {
           fs.rmSync(frameSequenceDir, { recursive: true, force: true });
         } catch {
-          // Ignore cleanup errors
+
         }
       }
       throw error;
@@ -1275,11 +1247,11 @@ export class VideoHelpers {
     const duration = videoInfo?.duration || 0;
 
     const filters: string[] = [];
-    
+
     if (options.fadeIn) {
       filters.push(`fade=t=in:st=0:d=${options.fadeIn}`);
     }
-    
+
     if (options.fadeOut && duration > options.fadeOut) {
       filters.push(`fade=t=out:st=${duration - options.fadeOut}:d=${options.fadeOut}`);
     }
@@ -1356,7 +1328,6 @@ export class VideoHelpers {
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
-    // Create loop by concatenating video with itself
     const concatFile = path.join(frameDir, `loop-${timestamp}.txt`);
     const concatContent = `file '${videoPath.replace(/'/g, "\\'")}'\nfile '${videoPath.replace(/'/g, "\\'")}'`;
     fs.writeFileSync(concatFile, concatContent);
@@ -1365,14 +1336,14 @@ export class VideoHelpers {
 
     try {
       await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
-      
+
       if (fs.existsSync(concatFile)) {
         fs.unlinkSync(concatFile);
       }
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
       if (fs.existsSync(concatFile)) {
@@ -1400,14 +1371,14 @@ export class VideoHelpers {
     for (let i = 0; i < options.videos.length; i++) {
       const video = options.videos[i];
       const outputPath = path.join(options.outputDirectory, `batch-${i + 1}.mp4`);
-      
+
       try {
-        // Process each video with its operations
+
         await this.deps.createVideo({
           source: video.source,
           ...video.operations
         });
-        
+
         results.push({
           source: typeof video.source === 'string' ? video.source : 'buffer',
           output: outputPath,
@@ -1444,13 +1415,12 @@ export class VideoHelpers {
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const sceneFile = path.join(frameDir, `scenes-${timestamp}.txt`);
 
-    // Use FFmpeg's scene detection
     const command = `ffmpeg -i "${escapedVideoPath}" -vf "select='gt(scene,${threshold})',showinfo" -f null - 2>&1 | grep "pts_time" | awk '{print $6}' | sed 's/time=//'`;
 
     try {
       const { stdout } = await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
       const times = stdout.toString().trim().split('\n').filter(t => t).map(parseFloat);
-      
+
       const scenes = times.map((time, index) => ({ time, scene: index + 1 }));
 
       if (options.outputPath && scenes.length > 0) {
@@ -1472,7 +1442,7 @@ export class VideoHelpers {
       if (fs.existsSync(sceneFile)) {
         fs.unlinkSync(sceneFile);
       }
-      // Return empty array if detection fails
+
       return [];
     }
   }
@@ -1496,29 +1466,26 @@ export class VideoHelpers {
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
-    // Two-pass stabilization
     const transformsFile = path.join(frameDir, `transforms-${timestamp}.trf`);
-    
-    // Pass 1: Analyze
+
     const analyzeCommand = `ffmpeg -i "${escapedVideoPath}" -vf vidstabdetect=shakiness=5:accuracy=15:result="${transformsFile.replace(/"/g, '\\"')}" -f null -`;
-    
-    // Pass 2: Transform
+
     const transformCommand = `ffmpeg -i "${escapedVideoPath}" -vf vidstabtransform=smoothing=${smoothing}:input="${transformsFile.replace(/"/g, '\\"')}" -y "${escapedOutputPath}"`;
 
     try {
       await execAsync(analyzeCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
       await execAsync(transformCommand, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
+
       if (fs.existsSync(transformsFile)) {
         fs.unlinkSync(transformsFile);
       }
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Fallback to simple deshake if vidstab is not available
+
       const simpleCommand = `ffmpeg -i "${escapedVideoPath}" -vf "hqdn3d=4:3:6:4.5" -y "${escapedOutputPath}"`;
       try {
         await execAsync(simpleCommand, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
@@ -1558,7 +1525,7 @@ export class VideoHelpers {
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
     const filters: string[] = [];
-    
+
     if (options.brightness !== undefined) {
       filters.push(`eq=brightness=${(options.brightness / 100).toFixed(2)}`);
     }
@@ -1572,7 +1539,7 @@ export class VideoHelpers {
       filters.push(`hue=h=${options.hue}`);
     }
     if (options.temperature !== undefined) {
-      // Temperature adjustment using colorbalance
+
       const temp = options.temperature;
       if (temp > 0) {
         filters.push(`colorbalance=rs=${temp/100}:gs=-${temp/200}:bs=-${temp/100}`);
@@ -1620,11 +1587,9 @@ export class VideoHelpers {
     }
 
     const timestamp = Date.now();
-    
-    // Handle main video
+
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
-    
-    // Handle overlay video
+
     const { videoPath: overlayPath, shouldCleanup: shouldCleanupOverlay } = await resolveVideoSource(options.overlayVideo, frameDir, timestamp + 1000);
 
     const position = options.position || 'bottom-right';
@@ -1649,14 +1614,14 @@ export class VideoHelpers {
 
     try {
       await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
-      
+
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
         fs.unlinkSync(videoPath);
       }
       if (shouldCleanupOverlay && fs.existsSync(overlayPath)) {
         fs.unlinkSync(overlayPath);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
       if (shouldCleanupVideo && fs.existsSync(videoPath)) {
@@ -1689,7 +1654,6 @@ export class VideoHelpers {
     const videoPaths: string[] = [];
     const shouldCleanup: boolean[] = [];
 
-    // Prepare all video files
     for (let i = 0; i < options.videos.length; i++) {
       const video = options.videos[i];
       if (Buffer.isBuffer(video)) {
@@ -1699,7 +1663,7 @@ export class VideoHelpers {
         shouldCleanup.push(true);
       } else {
         let resolvedPath = video;
-        if (!/^https?:\/\//i.test(resolvedPath)) {
+        if (!/^https?:\/\//.test(resolvedPath)) {
           resolvedPath = path.join(process.cwd(), resolvedPath);
         }
         if (!fs.existsSync(resolvedPath)) {
@@ -1722,7 +1686,7 @@ export class VideoHelpers {
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1]}" -filter_complex "[0:v][1:v]vstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else if (layout === 'grid' && videoPaths.length >= 4) {
       const grid = options.grid || { cols: 2, rows: 2 };
-      // Simplified 2x2 grid
+
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1]}" -i "${escapedPaths[2]}" -i "${escapedPaths[3]}" -filter_complex "[0:v][1:v]hstack=inputs=2[top];[2:v][3:v]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else {
       throw new Error(`Invalid layout or insufficient videos for ${layout}`);
@@ -1730,17 +1694,16 @@ export class VideoHelpers {
 
     try {
       await execAsync(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
-      
-      // Cleanup
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
         }
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
-      // Cleanup on error
+
       for (let i = 0; i < videoPaths.length; i++) {
         if (shouldCleanup[i] && fs.existsSync(videoPaths[i])) {
           fs.unlinkSync(videoPaths[i]);
@@ -1758,7 +1721,7 @@ export class VideoHelpers {
     options: { speed?: number; outputPath: string }
   ): Promise<{ outputPath: string; success: boolean }> {
     const speed = options.speed || 10;
-    // Time-lapse is essentially speeding up the video
+
     return await this.changeVideoSpeed(videoSource, { speed, outputPath: options.outputPath });
   }
 
@@ -1783,13 +1746,13 @@ export class VideoHelpers {
     let command: string;
 
     if (options.ranges && options.ranges.length > 0) {
-      // Partial mute - mute specific time ranges
-      const volumeFilters = options.ranges.map(range => 
+
+      const volumeFilters = options.ranges.map(range =>
         `volume=enable='between(t,${range.start},${range.end})':volume=0`
       ).join(',');
       command = `ffmpeg -i "${escapedVideoPath}" -af "${volumeFilters}" -y "${escapedOutputPath}"`;
     } else {
-      // Full mute - remove audio track
+
       command = `ffmpeg -i "${escapedVideoPath}" -an -y "${escapedOutputPath}"`;
     }
 
@@ -1828,14 +1791,14 @@ export class VideoHelpers {
     let command: string;
 
     if (options.ranges && options.ranges.length > 0) {
-      // Volume adjustment for specific time ranges
+
       const volumeFilters = options.ranges.map(range => {
         const volumeMultiplier = range.volume / 100;
         return `volume=enable='between(t,${range.start},${range.end})':volume=${volumeMultiplier}`;
       }).join(',');
       command = `ffmpeg -i "${escapedVideoPath}" -af "${volumeFilters}" -y "${escapedOutputPath}"`;
     } else {
-      // Global volume adjustment
+
       const volumeMultiplier = (options.volume || 100) / 100;
       command = `ffmpeg -i "${escapedVideoPath}" -af "volume=${volumeMultiplier}" -y "${escapedOutputPath}"`;
     }
@@ -1870,7 +1833,6 @@ export class VideoHelpers {
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    // Get video info
     const videoInfo = await this.deps.getVideoInfo(videoPath, true);
     if (!videoInfo) {
       throw new Error('Failed to get video information');
@@ -1881,17 +1843,16 @@ export class VideoHelpers {
     }
 
     try {
-      // Extract frame at freeze time
+
       const freezeFramePath = path.join(frameDir, `freeze-frame-${timestamp}.png`);
       const escapedVideoPath = videoPath.replace(/"/g, '\\"');
       const escapedFramePath = freezeFramePath.replace(/"/g, '\\"');
-      
+
       await execAsync(
         `ffmpeg -i "${escapedVideoPath}" -ss ${options.time} -vframes 1 -y "${escapedFramePath}"`,
         { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }
       );
 
-      // Create video parts: before freeze, freeze frame (repeated), after freeze
       const part1Path = path.join(frameDir, `part1-${timestamp}.mp4`);
       const freezePartPath = path.join(frameDir, `freeze-part-${timestamp}.mp4`);
       const part3Path = path.join(frameDir, `part3-${timestamp}.mp4`);
@@ -1902,7 +1863,6 @@ export class VideoHelpers {
       const escapedPart3 = part3Path.replace(/"/g, '\\"');
       const escapedOutput = options.outputPath.replace(/"/g, '\\"');
 
-      // Part 1: Before freeze
       if (options.time > 0) {
         await execAsync(
           `ffmpeg -i "${escapedVideoPath}" -t ${options.time} -c copy -y "${escapedPart1}"`,
@@ -1910,13 +1870,11 @@ export class VideoHelpers {
         );
       }
 
-      // Freeze part: Repeat frame for duration
       await execAsync(
         `ffmpeg -loop 1 -i "${escapedFramePath}" -t ${options.duration} -c:v libx264 -pix_fmt yuv420p -y "${escapedFreeze}"`,
         { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }
       );
 
-      // Part 3: After freeze
       const remainingDuration = videoInfo.duration - options.time;
       if (remainingDuration > 0) {
         await execAsync(
@@ -1925,7 +1883,6 @@ export class VideoHelpers {
         );
       }
 
-      // Create concat file
       const concatParts: string[] = [];
       if (options.time > 0 && fs.existsSync(part1Path)) {
         concatParts.push(part1Path.replace(/\\/g, '/').replace(/'/g, "\\'"));
@@ -1940,7 +1897,6 @@ export class VideoHelpers {
       const concatContent = concatParts.map(p => `file '${p}'`).join('\n');
       fs.writeFileSync(concatFile, concatContent);
 
-      // Concatenate
       const escapedConcat = concatFile.replace(/"/g, '\\"');
       await this.executeFFmpegWithProgress(
         `ffmpeg -f concat -safe 0 -i "${escapedConcat}" -c copy -y "${escapedOutput}"`,
@@ -1948,7 +1904,6 @@ export class VideoHelpers {
         onProgress
       );
 
-      // Cleanup
       const tempFiles = [freezeFramePath, part1Path, freezePartPath, part3Path, concatFile];
       for (const file of tempFiles) {
         if (fs.existsSync(file)) {
@@ -2027,13 +1982,13 @@ export class VideoHelpers {
 
     let command: string;
     if (method === 'lufs') {
-      // Use loudnorm for LUFS (broadcast standard)
+
       command = `ffmpeg -i "${escapedVideoPath}" -af "loudnorm=I=${targetLevel}:TP=-1.5:LRA=11" -c:v copy -y "${escapedOutputPath}"`;
     } else if (method === 'peak') {
-      // Peak normalization
+
       command = `ffmpeg -i "${escapedVideoPath}" -af "volume=${targetLevel}dB" -c:v copy -y "${escapedOutputPath}"`;
     } else {
-      // RMS normalization
+
       command = `ffmpeg -i "${escapedVideoPath}" -af "volume=${targetLevel}dB" -c:v copy -y "${escapedOutputPath}"`;
     }
 
@@ -2067,9 +2022,8 @@ export class VideoHelpers {
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    // Resolve LUT path
     let lutPath = options.lutPath;
-    if (!/^https?:\/\//i.test(lutPath)) {
+    if (!/^https?:\/\//.test(lutPath)) {
       lutPath = path.join(process.cwd(), lutPath);
     }
     if (!fs.existsSync(lutPath)) {
@@ -2081,7 +2035,6 @@ export class VideoHelpers {
     const escapedLutPath = lutPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
-    // Apply LUT with intensity blending
     const command = `ffmpeg -i "${escapedVideoPath}" -vf "lut3d='${escapedLutPath}',format=yuv420p" -c:v libx264 -crf 18 -y "${escapedOutputPath}"`;
 
     try {
@@ -2116,11 +2069,9 @@ export class VideoHelpers {
     }
 
     const timestamp = Date.now();
-    
-    // Prepare first video
+
     const { videoPath: video1Path, shouldCleanup: shouldCleanup1 } = await resolveVideoSource(videoSource, frameDir, timestamp);
-    
-    // Prepare second video (if provided)
+
     let video2Path: string | undefined;
     let shouldCleanup2 = false;
     if (options.secondVideo) {
@@ -2129,25 +2080,22 @@ export class VideoHelpers {
       shouldCleanup2 = shouldCleanup2Value;
     }
 
-    // Get video info
     const video1Info = await this.deps.getVideoInfo(video1Path, true);
     if (!video1Info) {
       throw new Error('Failed to get video information');
     }
 
-    // Ensure videos have same resolution
     const width = video1Info.width;
     const height = video1Info.height;
 
     const escapedVideo1 = video1Path.replace(/"/g, '\\"');
     const escapedOutput = options.outputPath.replace(/"/g, '\\"');
 
-    // Handle fade transition (can work on single video)
     if (options.type === 'fade' && !options.secondVideo) {
-      // Fade in/out on single video
+
       const fadeType = options.direction === 'out' ? 'fade=t=out' : 'fade=t=in';
       const command = `ffmpeg -i "${escapedVideo1}" -vf "${fadeType}:st=0:d=${options.duration}" -c:a copy -y "${escapedOutput}"`;
-      
+
       try {
         await this.executeFFmpegWithProgress(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }, onProgress);
         if (shouldCleanup1 && fs.existsSync(video1Path)) {
@@ -2176,7 +2124,6 @@ export class VideoHelpers {
 
     const escapedVideo2 = video2Path.replace(/"/g, '\\"');
 
-    // Map transition types to FFmpeg xfade types
     const xfadeTypes: Record<string, string> = {
       fade: 'fade',
       wipe: 'wipeleft',
@@ -2191,14 +2138,13 @@ export class VideoHelpers {
 
     let xfadeType = xfadeTypes[options.type] || 'fade';
 
-    // Handle direction modifiers
     if (options.direction) {
       const dirMap: Record<string, Record<string, string>> = {
         wipe: { left: 'wipeleft', right: 'wiperight', up: 'wipeup', down: 'wipedown' },
         slide: { left: 'slideleft', right: 'slideright', up: 'slideup', down: 'slidedown' },
         zoom: { in: 'zoomin', out: 'zoomout' }
       };
-      
+
       if (dirMap[options.type] && dirMap[options.type][options.direction]) {
         xfadeType = dirMap[options.type][options.direction];
       }
@@ -2206,19 +2152,18 @@ export class VideoHelpers {
 
     const transitionOffset = video1Info.duration - options.duration;
 
-    // Build FFmpeg command with xfade filter
     const command = `ffmpeg -i "${escapedVideo1}" -i "${escapedVideo2}" -filter_complex "[0:v]scale=${finalWidth}:${finalHeight}[v0];[1:v]scale=${finalWidth}:${finalHeight}[v1];[v0][v1]xfade=transition=${xfadeType}:duration=${options.duration}:offset=${transitionOffset}[v]" -map "[v]" -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a copy -y "${escapedOutput}"`;
 
     try {
       await this.executeFFmpegWithProgress(command, { timeout: 600000, maxBuffer: 20 * 1024 * 1024 }, onProgress);
-      
+
       if (shouldCleanup1 && fs.existsSync(video1Path)) {
         fs.unlinkSync(video1Path);
       }
       if (shouldCleanup2 && fs.existsSync(video2Path)) {
         fs.unlinkSync(video2Path);
       }
-      
+
       return { outputPath: options.outputPath, success: true };
     } catch (error) {
       if (shouldCleanup1 && fs.existsSync(video1Path)) {
@@ -2266,7 +2211,6 @@ export class VideoHelpers {
     const animation = options.animation || 'none';
     const duration = options.endTime - options.startTime;
 
-    // Build position string
     let positionStr: string;
     if (typeof options.position === 'string') {
       const positionMap: Record<string, string> = {
@@ -2283,7 +2227,6 @@ export class VideoHelpers {
       positionStr = `x=${options.position?.x || 10}:y=${options.position?.y || 10}`;
     }
 
-    // Build animation filter
     let animationFilter = '';
     if (animation === 'fade') {
       animationFilter = `:alpha='if(lt(t,${options.startTime}),0,if(lt(t,${options.startTime}+1), (t-${options.startTime})/1, if(lt(t,${options.endTime}-1), 1, if(lt(t,${options.endTime}), (${options.endTime}-t)/1, 0))))'`;

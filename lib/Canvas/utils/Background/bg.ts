@@ -68,23 +68,23 @@ export async function customBackground(
   if (!cfg) return;
 
   let imagePath = cfg.source;
-  if (!/^https?:\/\//i.test(imagePath)) {
+  if (!/^https?:\/\//.test(imagePath)) {
     imagePath = path.join(process.cwd(), imagePath);
   }
 
   try {
     const img = await loadImage(imagePath);
-    // Canvas size (createCanvas may have overridden via inherit)
+
     const W = canvas.width ?? img.width;
     const H = canvas.height ?? img.height;
 
     if (canvas.blur) ctx.filter = `blur(${canvas.blur}px)`;
 
     if (cfg.inherit) {
-      // Canvas was resized to image size in createCanvas; just draw 1:1
+
       ctx.drawImage(img, 0, 0);
     } else {
-      // scale by fit + align
+
       const fit: FitMode = cfg.fit ?? 'fill';
       let dx = 0, dy = 0, dw = W, dh = H;
 
@@ -94,11 +94,11 @@ export async function customBackground(
           : Math.max(W / img.width, H / img.height);
         dw = img.width * s;
         dh = img.height * s;
-        // alignment
+
         const align: AlignMode = cfg.align ?? 'center';
         ({ dx, dy } = alignInto(W, H, dw, dh, align));
       } else {
-        // 'fill' stretches image to exactly W x H (may distort)
+
         dx = 0; dy = 0; dw = W; dh = H;
       }
 
@@ -111,7 +111,6 @@ export async function customBackground(
   }
 }
 
-// helper to place the fitted rect inside canvas by alignment keyword
 function alignInto(
   W: number, H: number, w: number, h: number, align: AlignMode
 ): { dx: number; dy: number } {
@@ -130,8 +129,6 @@ function alignInto(
     default:             return { dx: cx,  dy: cy };
   }
 }
- 
-
 
 export function buildPathbg(
   ctx: SKRSContext2D,
@@ -176,8 +173,6 @@ export function buildPathbg(
 
   ctx.closePath();
 }
-
-
 
 export function applyNoise(ctx: SKRSContext2D, width: number, height: number, intensity = 0.05) {
   const noiseCanvas = createCanvas(width, height);
@@ -232,7 +227,7 @@ export function applyCanvasZoom(
   if (!zoom) return;
 
   const scale = zoom.scale ?? 1;
-  if (scale === 1) return; // nothing to do
+if (scale === 1) return;
 
   const cx = zoom.centerX ?? width / 2;
   const cy = zoom.centerY ?? height / 2;
@@ -241,7 +236,6 @@ export function applyCanvasZoom(
   ctx.scale(scale, scale);
   ctx.translate(-cx, -cy);
 }
-
 
 export function buildCanvasGradient(
   ctx: SKRSContext2D,
@@ -264,12 +258,11 @@ export function buildCanvasGradient(
 
     const g = ctx.createLinearGradient(sx, sy, ex, ey);
     for (const { stop, color } of colors) g.addColorStop(stop, color);
-    
-    // Handle repeat mode for linear gradients
+
     if (repeat !== 'no-repeat') {
       return createRepeatingGradientPattern(ctx, g, repeat, width, height);
     }
-    
+
     return g;
   }
 
@@ -283,22 +276,19 @@ export function buildCanvasGradient(
       colors
     } = gradient;
 
-    // If centers differ, rotation will rotate both centers around pivot.
     const [sx, sy] = rotatePoint(startX, startY, pivotX, pivotY, rotate);
     const [ex, ey] = rotatePoint(endX,   endY,   pivotX, pivotY, rotate);
 
     const g = ctx.createRadialGradient(sx, sy, startRadius, ex, ey, endRadius);
     for (const { stop, color } of colors) g.addColorStop(stop, color);
-    
-    // Handle repeat mode for radial gradients
+
     if (repeat !== 'no-repeat') {
       return createRepeatingGradientPattern(ctx, g, repeat, width, height);
     }
-    
+
     return g;
   }
 
-  // conic
   const {
     centerX = width / 2,
     centerY = height / 2,
@@ -328,20 +318,18 @@ function createRepeatingGradientPattern(
   width: number,
   height: number
 ): CanvasPattern {
-  // Create a temporary canvas for the pattern
+
   const { createCanvas } = require('@napi-rs/canvas');
   const patternCanvas = createCanvas(width, height);
   const patternCtx = patternCanvas.getContext('2d') as SKRSContext2D;
-  
-  // Draw the gradient on the pattern canvas
+
   patternCtx.fillStyle = gradient;
   patternCtx.fillRect(0, 0, width, height);
-  
-  // Create pattern from the canvas
+
   const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
   if (!pattern) {
     throw new Error('Failed to create repeating gradient pattern');
   }
-  
+
   return pattern;
 }

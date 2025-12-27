@@ -63,7 +63,6 @@ export function applyRotation(
   ctx.translate(-cx, -cy);
 }
 
-
 function rotatePoint(
   x: number, y: number, px: number, py: number, deg = 0
 ): [number, number] {
@@ -102,12 +101,11 @@ export function createGradientFill(
 
     const grad = ctx.createLinearGradient(x + sx, y + sy, x + ex, y + ey);
     colors.forEach(cs => grad.addColorStop(cs.stop, cs.color));
-    
-    // Handle repeat mode for linear gradients
+
     if (repeat !== 'no-repeat') {
       return createRepeatingGradientPattern(ctx, grad, repeat, w, h);
     }
-    
+
     return grad;
   }
 
@@ -129,16 +127,14 @@ export function createGradientFill(
       x + ex, y + ey, endRadius
     );
     colors.forEach(cs => grad.addColorStop(cs.stop, cs.color));
-    
-    // Handle repeat mode for radial gradients
+
     if (repeat !== 'no-repeat') {
       return createRepeatingGradientPattern(ctx, grad, repeat, w, h);
     }
-    
+
     return grad;
   }
 
-  // conic
   const {
     centerX = w / 2,
     centerY = h / 2,
@@ -168,24 +164,21 @@ function createRepeatingGradientPattern(
   width: number,
   height: number
 ): CanvasPattern {
-  // Create a temporary canvas for the pattern
+
   const patternCanvas = createCanvas(width, height);
   const patternCtx = patternCanvas.getContext('2d') as SKRSContext2D;
-  
-  // Draw the gradient on the pattern canvas
+
   patternCtx.fillStyle = gradient;
   patternCtx.fillRect(0, 0, width, height);
-  
-  // Create pattern from the canvas
+
   const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
   if (!pattern) {
     throw new Error('Failed to create repeating gradient pattern');
   }
-  
+
   return pattern;
 }
 
-// utils/imageMath.ts
 import type { AlignMode, FitMode } from "../types";
 
 export function fitInto(
@@ -226,8 +219,6 @@ export function fitInto(
   return { dx, dy, dw, dh, sx, sy, sw, sh };
 }
 
-
-// utils/imageCache.ts
 import { loadImage, type Image } from "@napi-rs/canvas";
 import path from "path";
 
@@ -240,27 +231,22 @@ export function loadImageCached(src: string | Buffer): Promise<Image> {
   return cache.get(key)!;
 }
 
-
-// utils/drawPasses.ts
-
 import type { BoxBackground, ShadowOptions, StrokeOptions, gradient } from "../types";
 
 /** Shadow pass (independent) — supports solid color or gradient fill */
-// Shared rect type
+
 type Rect = { x: number; y: number; w: number; h: number };
 
 /* ---------------------------------------------
    SHADOW — overloaded to support both call styles
    --------------------------------------------- */
 
-// Overload 1: rect-first (new style)
 export function applyShadow(
   ctx: SKRSContext2D,
   rect: Rect,
   shadow?: ShadowOptions
 ): void;
 
-// Overload 2: positional (legacy createCanvas style)
 export function applyShadow(
   ctx: SKRSContext2D,
   shadow: ShadowOptions | undefined,
@@ -269,7 +255,6 @@ export function applyShadow(
   borderPosition?: borderPosition
 ): void;
 
-// Single implementation handling both
 export function applyShadow(
   ctx: SKRSContext2D,
   a: any,
@@ -281,15 +266,14 @@ export function applyShadow(
   let radius: number | "circular" | undefined;
   let borderPos: borderPosition | undefined;
 
-  // Detect which overload we’re in
   if (typeof a === "object" && "x" in a && "w" in a) {
-    // (ctx, rect, shadow)
+
     rect = a as Rect;
     shadow = b as ShadowOptions | undefined;
     radius = shadow?.borderRadius ?? 0;
     borderPos = shadow?.borderPosition ?? "all";
   } else {
-    // (ctx, shadow, x, y, w, h, radius?, borderPos?)
+
     shadow = a as ShadowOptions | undefined;
     rect = { x: b as number, y: c as number, w: d as number, h: e as number };
     radius = (f as number | "circular") ?? shadow?.borderRadius ?? 0;
@@ -328,19 +312,16 @@ export function applyShadow(
   ctx.restore();
 }
 
-
 /* ---------------------------------------------
    STROKE — overloaded to support both call styles
    --------------------------------------------- */
 
-// Overload 1: rect-first (new style)
 export function applyStroke(
   ctx: SKRSContext2D,
   rect: Rect,
   stroke?: StrokeOptions
 ): void;
 
-// Overload 2: positional (legacy createCanvas style)
 export function applyStroke(
   ctx: SKRSContext2D,
   stroke: StrokeOptions | undefined,
@@ -349,7 +330,6 @@ export function applyStroke(
   borderPosition?: borderPosition
 ): void;
 
-// Single implementation handling both
 export function applyStroke(
   ctx: SKRSContext2D,
   a: any,
@@ -362,13 +342,13 @@ export function applyStroke(
   let borderPos: borderPosition | undefined;
 
   if (typeof a === "object" && "x" in a && "w" in a) {
-    // (ctx, rect, stroke)
+
     rect = a as Rect;
     stroke = b as StrokeOptions | undefined;
     radius = stroke?.borderRadius ?? 0;
     borderPos = stroke?.borderPosition ?? "all";
   } else {
-    // (ctx, stroke, x, y, w, h, radius?, borderPos?)
+
     stroke = a as StrokeOptions | undefined;
     rect = { x: b as number, y: c as number, w: d as number, h: e as number };
     radius = (f as number | "circular") ?? stroke?.borderRadius ?? 0;
@@ -387,7 +367,6 @@ export function applyStroke(
     style = 'solid'
   } = stroke;
 
-  // expand/shrink by `position`
   const r = {
     x: rect.x - position,
     y: rect.y - position,
@@ -410,10 +389,8 @@ export function applyStroke(
     ctx.strokeStyle = color;
   }
 
-  // Apply stroke style
   applyStrokeStyle(ctx, style, width);
 
-  // Handle complex stroke styles that require multiple passes
   if (style === 'groove' || style === 'ridge' || style === 'double') {
     applyComplexStrokeStyle(ctx, style, width, color, gradient, r);
   } else {
@@ -436,7 +413,6 @@ export function drawBoxBackground(
   if (!boxBg) return;
   const { color, gradient } = boxBg;
 
-  // clip to the box radius, then fill
   ctx.save();
   buildPath(ctx, rect.x, rect.y, rect.w, rect.h, borderRadius ?? 0, borderPosition ?? "all");
   ctx.clip();
@@ -470,43 +446,43 @@ function applyStrokeStyle(
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
       break;
-      
+
     case 'dashed':
       ctx.setLineDash([width * 3, width * 2]);
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
       break;
-      
+
     case 'dotted':
       ctx.setLineDash([width, width]);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       break;
-      
+
     case 'groove':
-      // Groove effect: draw multiple strokes with different colors/opacity
+
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
-      // Note: Groove effect requires multiple passes - handled in main stroke function
+
       break;
-      
+
     case 'ridge':
-      // Ridge effect: draw multiple strokes with different colors/opacity
+
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
-      // Note: Ridge effect requires multiple passes - handled in main stroke function
+
       break;
-      
+
     case 'double':
-      // Double effect: draw multiple strokes
+
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
-      // Note: Double effect requires multiple passes - handled in main stroke function
+
       break;
-      
+
     default:
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
@@ -533,13 +509,12 @@ function applyComplexStrokeStyle(
   rect: { x: number; y: number; w: number; h: number }
 ): void {
   const halfWidth = width / 2;
-  
+
   switch (style) {
     case 'groove':
-      // Groove: dark outer, light inner
+
       ctx.lineWidth = halfWidth;
-      
-      // Outer dark stroke
+
       if (gradient) {
         const gstroke = createGradientFill(ctx, gradient, rect);
         ctx.strokeStyle = gstroke as any;
@@ -547,8 +522,7 @@ function applyComplexStrokeStyle(
         ctx.strokeStyle = darkenColor(color, 0.3);
       }
       ctx.stroke();
-      
-      // Inner light stroke
+
       ctx.lineWidth = halfWidth;
       if (gradient) {
         const gstroke = createGradientFill(ctx, gradient, rect);
@@ -558,12 +532,11 @@ function applyComplexStrokeStyle(
       }
       ctx.stroke();
       break;
-      
+
     case 'ridge':
-      // Ridge: light outer, dark inner
+
       ctx.lineWidth = halfWidth;
-      
-      // Outer light stroke
+
       if (gradient) {
         const gstroke = createGradientFill(ctx, gradient, rect);
         ctx.strokeStyle = gstroke as any;
@@ -571,8 +544,7 @@ function applyComplexStrokeStyle(
         ctx.strokeStyle = lightenColor(color, 0.3);
       }
       ctx.stroke();
-      
-      // Inner dark stroke
+
       ctx.lineWidth = halfWidth;
       if (gradient) {
         const gstroke = createGradientFill(ctx, gradient, rect);
@@ -582,12 +554,11 @@ function applyComplexStrokeStyle(
       }
       ctx.stroke();
       break;
-      
+
     case 'double':
-      // Double: two parallel strokes
+
       const gap = Math.max(1, width / 4);
-      
-      // First stroke (outer)
+
       ctx.lineWidth = halfWidth;
       if (gradient) {
         const gstroke = createGradientFill(ctx, gradient, rect);
@@ -596,8 +567,7 @@ function applyComplexStrokeStyle(
         ctx.strokeStyle = color;
       }
       ctx.stroke();
-      
-      // Second stroke (inner)
+
       ctx.lineWidth = halfWidth;
       if (gradient) {
         const gstroke = createGradientFill(ctx, gradient, rect);
@@ -617,7 +587,7 @@ function applyComplexStrokeStyle(
  * @returns Darkened color string
  */
 function darkenColor(color: string, factor: number): string {
-  // Simple darkening for hex colors
+
   if (color.startsWith('#')) {
     const hex = color.slice(1);
     const num = parseInt(hex, 16);
@@ -626,7 +596,7 @@ function darkenColor(color: string, factor: number): string {
     const b = Math.max(0, Math.floor((num & 0x0000FF) * (1 - factor)));
     return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
   }
-  return color; // Return original for non-hex colors
+return color;
 }
 
 /**
@@ -636,7 +606,7 @@ function darkenColor(color: string, factor: number): string {
  * @returns Lightened color string
  */
 function lightenColor(color: string, factor: number): string {
-  // Simple lightening for hex colors
+
   if (color.startsWith('#')) {
     const hex = color.slice(1);
     const num = parseInt(hex, 16);
@@ -645,5 +615,5 @@ function lightenColor(color: string, factor: number): string {
     const b = Math.min(255, Math.floor((num & 0x0000FF) + (255 - (num & 0x0000FF)) * factor));
     return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
   }
-  return color; // Return original for non-hex colors
+return color;
 }

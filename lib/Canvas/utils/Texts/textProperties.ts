@@ -9,23 +9,19 @@ import { TextObject } from '../types';
 export function drawText(ctx: SKRSContext2D, textOptions: TextObject) {
   ctx.save();
 
-  // 1) Apply rotation if any
   if (textOptions.rotation && textOptions.rotation !== 0) {
     ctx.translate(textOptions.x || 0, textOptions.y || 0);
     ctx.rotate((textOptions.rotation * Math.PI) / 180);
   }
 
-  // 2) Setup font (for measuring and for final draw)
   const fontSize = textOptions.fontSize || 16;
   const isBold = textOptions.isBold ? 'bold ' : '';
   const fontFamily = textOptions.fontName || (textOptions.fontPath ? 'customFont' : 'Arial');
   ctx.font = `${isBold}${fontSize}px "${fontFamily}"`;
 
-  // 3) Alignment, baseline
   ctx.textAlign = textOptions.textAlign || 'left';
   ctx.textBaseline = textOptions.textBaseline || 'alphabetic';
 
-  // 4) Shadow
   if (textOptions.shadow) {
     const { color, offsetX, offsetY, blur, opacity } = textOptions.shadow;
     ctx.shadowColor = color || 'transparent';
@@ -35,7 +31,6 @@ export function drawText(ctx: SKRSContext2D, textOptions: TextObject) {
     ctx.globalAlpha = opacity !== undefined ? opacity : 1;
   }
 
-  // 5) Opacity
   if (textOptions.opacity !== undefined) {
     if (textOptions.opacity < 0 || textOptions.opacity > 1) {
       throw new Error('Text opacity must be between 0 and 1.');
@@ -43,7 +38,6 @@ export function drawText(ctx: SKRSContext2D, textOptions: TextObject) {
     ctx.globalAlpha = textOptions.opacity;
   }
 
-  // 6) If maxWidth is provided, we do word wrapping
   if (textOptions.maxWidth) {
     WrappedText(
       ctx,
@@ -54,7 +48,7 @@ export function drawText(ctx: SKRSContext2D, textOptions: TextObject) {
       textOptions
     );
   } else {
-    // No wrapping needed → just draw stroke + fill
+
     drawStrokeAndFill(ctx, textOptions.text as string, textOptions.x || 0, textOptions.y || 0, textOptions);
   }
 
@@ -76,19 +70,19 @@ export function WrappedText(
     const lineHeight = options.lineHeight || fontSize * 1.4;
     const maxHeight = options.maxHeight;
     const maxLines = maxHeight ? Math.floor(maxHeight / lineHeight) : Infinity;
-  
+
     let currentLine = "";
     const words = text.split(" ");
     const lines: string[] = [];
-  
+
     for (let i = 0; i < words.length; i++) {
       const testLine = currentLine ? currentLine + " " + words[i] : words[i];
       const testWidth = ctx.measureText(testLine).width;
-  
+
       if (testWidth > maxWidth && currentLine) {
         lines.push(currentLine);
         currentLine = words[i];
-  
+
         if (lines.length >= maxLines) {
           currentLine = "...";
           break;
@@ -97,22 +91,20 @@ export function WrappedText(
         currentLine = testLine;
       }
     }
-  
+
     if (currentLine && lines.length < maxLines) {
       lines.push(currentLine);
     }
-  
-    // 🔥 Ensure correct text alignment for Arabic & English
+
     ctx.textAlign = options.textAlign || "left";
-  
-    // 🎯 Draw each line with stroke & fill together
+
     let offsetY = 0;
     for (const line of lines) {
       drawStrokeAndFill(ctx, line, startX, startY + offsetY, options);
       offsetY += lineHeight;
     }
   }
-    
+
 /**
  * Draws a single line with correct alignment. Then uses `drawStrokeAndFill` to apply stroke, fill, etc.
  */
@@ -126,7 +118,6 @@ function drawLine(
 ) {
   let xOffset = startX;
 
-  // If user wants 'center' or 'right', we offset by measured width
   const measuredWidth = ctx.measureText(lineText).width;
   if (options.textAlign === 'center') {
     xOffset = startX + (maxWidth / 2) - (measuredWidth / 2);
@@ -134,7 +125,6 @@ function drawLine(
     xOffset = startX + maxWidth - measuredWidth;
   }
 
-  // Finally, draw stroke+fill for this line
   drawStrokeAndFill(ctx, lineText, xOffset, startY, options);
 }
 
@@ -152,7 +142,6 @@ function drawStrokeAndFill(
   const textWidth = ctx.measureText(text).width;
   const textHeight = fontSize;
 
-  // Apply gradient fill if needed
   if (options.gradient) {
     const gradientFill = createGradient(
       ctx,
@@ -167,7 +156,6 @@ function drawStrokeAndFill(
     ctx.fillStyle = options.color || 'darkgray';
   }
 
-  // Draw stroke first (if exists)
   if (options.stroke) {
     ctx.save();
     ctx.lineWidth = options.stroke.width || 1;
@@ -188,7 +176,6 @@ function drawStrokeAndFill(
     ctx.restore();
   }
 
-  // Then fill
   ctx.fillText(text, x, y);
 }
 
@@ -210,18 +197,17 @@ export function createGradient(
   let gradient: CanvasGradient;
   const width = Math.abs(endX - startX) || 100;
   const height = Math.abs(endY - startY) || 100;
-  
+
   if (gradientOptions.type === "linear") {
     gradient = ctx.createLinearGradient(startX, startY, endX, endY);
     for (const colorStop of gradientOptions.colors) {
       gradient.addColorStop(colorStop.stop, colorStop.color);
     }
-    
-    // Handle repeat mode for linear gradients
+
     if (gradientOptions.repeat && gradientOptions.repeat !== 'no-repeat') {
       return createRepeatingGradientPattern(ctx, gradient, gradientOptions.repeat, width, height);
     }
-    
+
     return gradient;
   } else if (gradientOptions.type === "radial") {
     gradient = ctx.createRadialGradient(
@@ -235,24 +221,23 @@ export function createGradient(
     for (const colorStop of gradientOptions.colors) {
       gradient.addColorStop(colorStop.stop, colorStop.color);
     }
-    
-    // Handle repeat mode for radial gradients
+
     if (gradientOptions.repeat && gradientOptions.repeat !== 'no-repeat') {
       return createRepeatingGradientPattern(ctx, gradient, gradientOptions.repeat, width, height);
     }
-    
+
     return gradient;
   } else if (gradientOptions.type === "conic") {
     const centerX = gradientOptions.centerX ?? (startX + endX) / 2;
     const centerY = gradientOptions.centerY ?? (startY + endY) / 2;
     const startAngle = gradientOptions.startAngle ?? 0;
     const angleRad = (startAngle * Math.PI) / 180;
-    
+
     gradient = ctx.createConicGradient(angleRad, centerX, centerY);
     for (const colorStop of gradientOptions.colors) {
       gradient.addColorStop(colorStop.stop, colorStop.color);
     }
-    
+
     return gradient;
   } else {
     throw new Error('Unsupported gradient type. Use "linear", "radial", or "conic".');
@@ -273,16 +258,14 @@ function createRepeatingGradientPattern(
   const { createCanvas } = require('@napi-rs/canvas');
   const patternCanvas = createCanvas(width, height);
   const patternCtx = patternCanvas.getContext('2d') as SKRSContext2D;
-  
-  // Draw the gradient on the pattern canvas
+
   patternCtx.fillStyle = gradient;
   patternCtx.fillRect(0, 0, width, height);
-  
-  // Create pattern from the canvas
+
   const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
   if (!pattern) {
     throw new Error('Failed to create repeating gradient pattern');
   }
-  
+
   return pattern;
 }

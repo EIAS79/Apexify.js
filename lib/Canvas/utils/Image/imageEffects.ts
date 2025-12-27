@@ -28,14 +28,14 @@ export function applyVignette(
     const dx = x - centerX;
     const dy = y - centerY;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
+
     if (distance > vignetteRadius) {
       const vignetteAmount = Math.min(1, (distance - vignetteRadius) / (maxDistance - vignetteRadius));
       const darken = 1 - (vignetteAmount * intensity);
-      
-      pixels[i] = Math.round(pixels[i] * darken);     // R
-      pixels[i + 1] = Math.round(pixels[i + 1] * darken); // G
-      pixels[i + 2] = Math.round(pixels[i + 2] * darken); // B
+
+pixels[i] = Math.round(pixels[i] * darken);
+pixels[i + 1] = Math.round(pixels[i + 1] * darken);
+pixels[i + 2] = Math.round(pixels[i + 2] * darken);
     }
   }
 
@@ -60,30 +60,28 @@ export function applyLensFlare(
   height: number
 ): void {
   ctx.save();
-  
-  // Create gradient for lens flare
+
   const gradient = ctx.createRadialGradient(
     flareX, flareY, 0,
     flareX, flareY, Math.max(width, height) * 0.5
   );
-  
+
   const flareColor = `rgba(255, 255, 255, ${intensity * 0.6})`;
   gradient.addColorStop(0, flareColor);
   gradient.addColorStop(0.3, `rgba(255, 255, 255, ${intensity * 0.3})`);
   gradient.addColorStop(0.6, `rgba(255, 255, 200, ${intensity * 0.1})`);
   gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  
+
   ctx.globalCompositeOperation = 'screen';
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
-  
-  // Add additional flare elements
+
   const flareElements = [
     { x: flareX * 0.7, y: flareY * 0.7, size: 30, opacity: intensity * 0.4 },
     { x: flareX * 1.3, y: flareY * 1.1, size: 20, opacity: intensity * 0.3 },
     { x: flareX * 0.9, y: flareY * 1.2, size: 15, opacity: intensity * 0.2 }
   ];
-  
+
   for (const element of flareElements) {
     if (element.x >= 0 && element.x < width && element.y >= 0 && element.y < height) {
       const elementGradient = ctx.createRadialGradient(
@@ -96,7 +94,7 @@ export function applyLensFlare(
       ctx.fillRect(element.x - element.size, element.y - element.size, element.size * 2, element.size * 2);
     }
   }
-  
+
   ctx.restore();
 }
 
@@ -116,26 +114,22 @@ export function applyChromaticAberration(
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
   const newPixels = new Uint8ClampedArray(pixels.length);
-  const offset = Math.round(intensity * 5); // Max 5 pixel offset
+const offset = Math.round(intensity * 5);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4;
-      
-      // Red channel - shift left
+
       const redX = Math.max(0, Math.min(width - 1, x - offset));
       const redIdx = (y * width + redX) * 4;
       newPixels[idx] = pixels[redIdx];
-      
-      // Green channel - no shift
+
       newPixels[idx + 1] = pixels[idx + 1];
-      
-      // Blue channel - shift right
+
       const blueX = Math.max(0, Math.min(width - 1, x + offset));
       const blueIdx = (y * width + blueX) * 4;
       newPixels[idx + 2] = pixels[blueIdx];
-      
-      // Alpha channel - no change
+
       newPixels[idx + 3] = pixels[idx + 3];
     }
   }
@@ -158,16 +152,16 @@ export function applyFilmGrain(
 ): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  const grainAmount = intensity * 30; // Max 30 pixel variation
+const grainAmount = intensity * 30;
 
   for (let i = 0; i < pixels.length; i += 4) {
-    // Generate random grain
+
     const grain = (Math.random() - 0.5) * grainAmount;
-    
-    pixels[i] = Math.max(0, Math.min(255, pixels[i] + grain));     // R
-    pixels[i + 1] = Math.max(0, Math.min(255, pixels[i + 1] + grain)); // G
-    pixels[i + 2] = Math.max(0, Math.min(255, pixels[i + 2] + grain)); // B
-    // Alpha unchanged
+
+pixels[i] = Math.max(0, Math.min(255, pixels[i] + grain));
+pixels[i + 1] = Math.max(0, Math.min(255, pixels[i + 1] + grain));
+pixels[i + 2] = Math.max(0, Math.min(255, pixels[i + 2] + grain));
+
   }
 
   ctx.putImageData(imageData, 0, 0);

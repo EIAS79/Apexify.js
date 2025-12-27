@@ -8,9 +8,7 @@
  * @param customBackground The function for drawing a custom background image on the canvas.
  */
 
-
-
-import { OutputFormat, CanvasConfig, ImageProperties, TextObject, TextProperties, GIFOptions, GIFResults, CustomOptions, cropOptions, GradientConfig, Frame, PatternOptions, ExtractFramesOptions, ResizeOptions, CropOptions, MaskOptions, BlendOptions, ShapeType, ShapeProperties, ImageFilter, BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions, SaveOptions, SaveResult } from "./types";
+import { OutputFormat, CanvasConfig, ImageProperties, TextObject, TextProperties, GIFOptions, GIFResults, CustomOptions, cropOptions, GradientConfig, Frame, PatternOptions, ExtractFramesOptions, ResizeOptions, CropOptions, MaskOptions, BlendOptions, ShapeType, ShapeProperties, ImageFilter, BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions, SaveOptions, SaveResult, CreateImageOptions, GroupTransformOptions, TextMetrics, PixelData, PixelManipulationOptions } from "./types";
 import { drawBackgroundColor, drawBackgroundGradient, customBackground, applyCanvasZoom, drawPattern, applyNoise } from "./Background/bg";
 import { buildPath, applyRotation, createGradientFill, fitInto, loadImageCached, applyStroke, drawBoxBackground, applyShadow } from './Image/imageProperties'
 import { applyImageFilters } from './Image/imageFilters'
@@ -70,7 +68,7 @@ export {
     buildPath,
     applyRotation,
     createGradientFill,
-    fitInto, loadImageCached, 
+    fitInto, loadImageCached,
     applyStroke,
     applyShadow,
     drawBoxBackground,
@@ -87,20 +85,20 @@ export {
     createShapePath,
     applyImageFilters,
     applySimpleProfessionalFilters,
-    // New image masking and distortion
+
     applyImageMask,
     applyClipPath,
     applyPerspectiveDistortion,
     applyBulgeDistortion,
     applyMeshWarp,
-    // New image effects
+
     applyVignette,
     applyLensFlare,
     applyChromaticAberration,
     applyFilmGrain,
-    // New text path rendering
+
     renderTextOnPath,
-    // New custom lines features
+
     drawArrow,
     drawMarker,
     createSmoothPath,
@@ -117,7 +115,7 @@ export {
     // Image compression and palette
     compressImage,
     extractPalette,
-    // New types
+
     BatchOperation,
     ChainOperation,
     StitchOptions,
@@ -131,5 +129,17 @@ export {
     getErrorMessage,
     getCanvasContext,
     // Charts
-    Charts
+    Charts,
+    // Group transform options
+    CreateImageOptions,
+    GroupTransformOptions,
+    // Text metrics
+    TextMetrics,
+    // Pixel data
+    PixelData,
+    PixelManipulationOptions
 };
+
+// Export Path2D and Hit Detection types
+export type { PathCommand, Path2DDrawOptions } from "../extended/Path2DCreator";
+export type { HitRegion, HitDetectionOptions, HitDetectionResult } from "../extended/HitDetectionCreator";

@@ -15,8 +15,8 @@ export class EnhancedPatternRenderer {
    * @param patternOptions - Pattern configuration
    */
   static async renderPattern(
-    ctx: SKRSContext2D, 
-    canvas: Canvas, 
+    ctx: SKRSContext2D,
+    canvas: Canvas,
     patternOptions: PatternOptions
   ): Promise<void> {
     if (!patternOptions || !patternOptions.type) return;
@@ -24,15 +24,13 @@ export class EnhancedPatternRenderer {
     ctx.save();
 
     try {
-      // Set pattern opacity
+
       const opacity = patternOptions.opacity !== undefined ? patternOptions.opacity : 0.3;
       ctx.globalAlpha = opacity;
 
-      // Set blend mode
       const blendMode = patternOptions.blendMode || 'overlay';
       ctx.globalCompositeOperation = blendMode;
 
-      // Apply rotation if specified
       if (patternOptions.rotation && patternOptions.rotation !== 0) {
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
@@ -41,12 +39,10 @@ export class EnhancedPatternRenderer {
         ctx.translate(-centerX, -centerY);
       }
 
-      // Apply offset if specified
       if (patternOptions.offsetX || patternOptions.offsetY) {
         ctx.translate(patternOptions.offsetX || 0, patternOptions.offsetY || 0);
       }
 
-      // Render based on pattern type
       switch (patternOptions.type) {
         case 'grid':
           this.renderGridPattern(ctx, canvas, patternOptions);
@@ -102,22 +98,19 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
-    
-    // Calculate proper grid spacing
+
     const gridSpacing = size + spacing;
-    
-    // Vertical lines - start from 0 and go to canvas width
+
     for (let x = 0; x <= canvas.width; x += gridSpacing) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, canvas.height);
       ctx.stroke();
     }
-    
-    // Horizontal lines - start from 0 and go to canvas height
+
     for (let y = 0; y <= canvas.height; y += gridSpacing) {
       ctx.beginPath();
       ctx.moveTo(0, y);
@@ -133,14 +126,12 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.fillStyle = color;
-    
-    // Calculate proper dot spacing
+
     const dotSpacing = size + spacing;
     const dotRadius = size / 4;
-    
-    // Start from spacing offset to center first dot, then continue with full spacing
+
     for (let x = spacing; x <= canvas.width; x += dotSpacing) {
       for (let y = spacing; y <= canvas.height; y += dotSpacing) {
         ctx.beginPath();
@@ -157,13 +148,12 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    
+
     const diagonalSpacing = size + spacing;
-    
-    // Diagonal lines going up-right
+
     for (let i = -canvas.height; i <= canvas.width; i += diagonalSpacing) {
       ctx.beginPath();
       ctx.moveTo(i, 0);
@@ -179,12 +169,11 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.fillStyle = color;
-    
-    // Calculate proper stripe spacing
+
     const stripeSpacing = size + spacing;
-    
+
     for (let y = 0; y <= canvas.height; y += stripeSpacing) {
       ctx.fillRect(0, y, canvas.width, size);
     }
@@ -197,19 +186,19 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    
+
     for (let y = 0; y <= canvas.height; y += size + spacing) {
       ctx.beginPath();
       ctx.moveTo(0, y);
-      
+
       for (let x = 0; x <= canvas.width; x += 10) {
         const waveY = y + Math.sin(x * 0.1) * (size / 4);
         ctx.lineTo(x, waveY);
       }
-      
+
       ctx.stroke();
     }
   }
@@ -221,21 +210,19 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    
+
     for (let x = 0; x <= canvas.width; x += size + spacing) {
       for (let y = 0; y <= canvas.height; y += size + spacing) {
         const crossSize = size / 2;
-        
-        // Horizontal line
+
         ctx.beginPath();
         ctx.moveTo(x - crossSize, y);
         ctx.lineTo(x + crossSize, y);
         ctx.stroke();
-        
-        // Vertical line
+
         ctx.beginPath();
         ctx.moveTo(x, y - crossSize);
         ctx.lineTo(x, y + crossSize);
@@ -251,13 +238,13 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    
+
     const hexWidth = size;
     const hexHeight = size * Math.sqrt(3) / 2;
-    
+
     for (let x = 0; x <= canvas.width + hexWidth; x += hexWidth + spacing) {
       for (let y = 0; y <= canvas.height + hexHeight; y += hexHeight * 1.5 + spacing) {
         this.drawHexagon(ctx, x, y, hexWidth / 2);
@@ -272,7 +259,7 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const color = options.color || '#ffffff';
     const secondaryColor = options.secondaryColor || 'transparent';
-    
+
     for (let x = 0; x <= canvas.width; x += size) {
       for (let y = 0; y <= canvas.height; y += size) {
         const isEven = ((x / size) + (y / size)) % 2 === 0;
@@ -289,10 +276,10 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    
+
     for (let x = 0; x <= canvas.width + size; x += size + spacing) {
       for (let y = 0; y <= canvas.height + size; y += size + spacing) {
         this.drawDiamond(ctx, x, y, size / 2);
@@ -307,10 +294,10 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    
+
     for (let x = 0; x <= canvas.width + size; x += size + spacing) {
       for (let y = 0; y <= canvas.height + size; y += size + spacing) {
         this.drawTriangle(ctx, x, y, size / 2);
@@ -325,9 +312,9 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.fillStyle = color;
-    
+
     for (let x = 0; x <= canvas.width + size; x += size + spacing) {
       for (let y = 0; y <= canvas.height + size; y += size + spacing) {
         this.drawStar(ctx, x, y, size / 4);
@@ -342,9 +329,9 @@ export class EnhancedPatternRenderer {
     const size = options.size || 20;
     const spacing = options.spacing || 10;
     const color = options.color || '#ffffff';
-    
+
     ctx.fillStyle = color;
-    
+
     for (let x = 0; x <= canvas.width; x += size + spacing) {
       for (let y = 0; y <= canvas.height; y += size + spacing) {
         ctx.beginPath();
@@ -362,7 +349,7 @@ export class EnhancedPatternRenderer {
 
     try {
       let imagePath = options.customPatternImage;
-      if (!/^https?:\/\//i.test(imagePath)) {
+      if (!/^https?:\/\//.test(imagePath)) {
         imagePath = path.join(process.cwd(), imagePath);
       }
 
@@ -399,8 +386,6 @@ export class EnhancedPatternRenderer {
       console.warn(`Failed to load custom pattern image: ${options.customPatternImage}`, error);
     }
   }
-
-  // === HELPER DRAWING FUNCTIONS ===
 
   private static drawHexagon(ctx: SKRSContext2D, x: number, y: number, radius: number): void {
     ctx.beginPath();

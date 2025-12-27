@@ -3,12 +3,11 @@ import { createGradientFill } from "../Image/imageProperties";
 import { CustomOptions } from "../types";
 import { drawArrow, drawMarker, createSmoothPath, createCatmullRomPath, applyLinePattern, applyLineTexture, getPointOnLinePath } from "./advancedLines";
 
-
 export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]): Promise<void> {
-    // Enable high-quality anti-aliasing for ultra-smooth lines (graph quality)
+
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    
+
     let previousEndCoordinates: { x: number; y: number } | null = null;
     let currentStyle: CustomOptions['lineStyle'] | null = null;
     let inSingleLineSequence = false;
@@ -17,8 +16,7 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
         const customOption = options[i];
         const { startCoordinates, endCoordinates, lineStyle, path, arrow, markers } = customOption;
         const isSingleLine = lineStyle?.singleLine;
-        
-        // Collect all points for path rendering
+
         const allPoints: Array<{ x: number; y: number }> = [];
         if (i === 0 || !isSingleLine) {
             allPoints.push(startCoordinates);
@@ -50,7 +48,6 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
             ctx.moveTo(start.x, start.y);
         }
 
-        // Apply path smoothing if specified
         if (path && allPoints.length >= 2) {
             ctx.beginPath();
             if (path.type === 'smooth') {
@@ -87,7 +84,6 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
         ctx.lineJoin = appliedStyle?.lineJoin || 'miter';
         ctx.lineCap = appliedStyle?.lineCap || 'butt';
 
-        // Apply line patterns
         if (appliedStyle?.pattern) {
             applyLinePattern(ctx, appliedStyle.pattern);
         } else if (appliedStyle?.lineDash) {
@@ -97,9 +93,8 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
             ctx.setLineDash([]);
         }
 
-        // Apply line texture if specified
         if (appliedStyle?.texture) {
-            await applyLineTexture(ctx, appliedStyle.texture, appliedStyle.width || 1, 
+            await applyLineTexture(ctx, appliedStyle.texture, appliedStyle.width || 1,
                 Math.sqrt(Math.pow(endCoordinates.x - start.x, 2) + Math.pow(endCoordinates.y - start.y, 2)));
         }
 
@@ -116,8 +111,8 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
             ctx.arc(start.x, start.y, radius, angle + Math.PI / 2, angle - Math.PI / 2, true);
             ctx.arc(endCoordinates.x, endCoordinates.y, radius, angle - Math.PI / 2, angle + Math.PI / 2, false);
             ctx.fill();
-        } 
-        
+        }
+
         else if (appliedStyle?.lineRadius === 'circular') {
             const dx = endCoordinates.x - start.x;
             const dy = endCoordinates.y - start.y;
@@ -137,14 +132,13 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
             }
         }
 
-        // Draw arrows if specified
         if (arrow) {
             const dx = endCoordinates.x - start.x;
             const dy = endCoordinates.y - start.y;
             const angle = Math.atan2(dy, dx);
             const arrowColor = arrow.color || appliedStyle?.color || 'black';
             const arrowSize = arrow.size || 10;
-            
+
             if (arrow.start) {
                 drawArrow(ctx, start.x, start.y, angle + Math.PI, arrowSize, arrow.style || 'filled', arrowColor);
             }
@@ -153,7 +147,6 @@ export async function customLines(ctx: SKRSContext2D, options: CustomOptions[]):
             }
         }
 
-        // Draw markers if specified
         if (markers && markers.length > 0) {
             const linePoints = [start, endCoordinates];
             for (const marker of markers) {
@@ -175,7 +168,7 @@ function applyStroke(ctx: SKRSContext2D, style: CustomOptions['lineStyle'] | und
     if (!style || !style.stroke) {
       return;
     }
-    
+
     if (style.stroke) {
         const { color, width, gradient, lineRadius, lineCap } = style.stroke;
         const prevStrokeStyle = ctx.strokeStyle;
@@ -189,7 +182,7 @@ function applyStroke(ctx: SKRSContext2D, style: CustomOptions['lineStyle'] | und
         }
 
         ctx.lineWidth = width || prevLineWidth;
-        ctx.lineCap = lineCap || prevLineCap; 
+        ctx.lineCap = lineCap || prevLineCap;
         ctx.stroke();
 
         if (typeof lineRadius === 'number' && lineRadius > 0) {

@@ -1,6 +1,6 @@
 {
   "name": "apexify.js",
-  "version": "5.2.0",
+  "version": "5.2.5",
   "description": "🎨 Advanced Canvas Rendering Library - Professional image processing, shape drawing, text effects, patterns, filters, and charts. Built with TypeScript & Rust for high performance.",
   "author": "zenith-79",
   "license": "MIT",
@@ -32,6 +32,7 @@
     "watch": "tsc -w",
     "start": "node ./dist/cjs/index.js",
     "dev": "ts-node ./lib/index.ts",
+    "showcase": "ts-node generate-showcase.ts",
     "publish:prep": "npm run build",
     "publish": "npm run publish:prep && npm publish"
   },
@@ -215,7 +216,7 @@
   ],
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
-    "apexify.js": "^5.1.1",
+    "apexify.js": "^5.2.0",
     "axios": "^1.7.7",
     "chart.js": "^4.5.1",
     "fs-extra": "^11.3.1",

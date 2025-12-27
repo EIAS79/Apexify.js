@@ -22,8 +22,8 @@ export function drawShape(
   shapeProps: ShapeProperties
 ): void {
   ctx.save();
-  
-  // Set up fill style
+
+
   if (shapeProps.gradient) {
     const gradient = createGradientFill(ctx, shapeProps.gradient, { x, y, w: width, h: height });
     ctx.fillStyle = gradient as any;
@@ -31,7 +31,6 @@ export function drawShape(
     ctx.fillStyle = shapeProps.color || '#000000';
   }
 
-  // Draw the shape based on type
   switch (shapeType) {
     case 'rectangle':
       drawRectangle(ctx, x, y, width, height, shapeProps);
@@ -57,6 +56,10 @@ export function drawShape(
       break;
     case 'polygon':
       drawPolygon(ctx, x, y, width, height, shapeProps);
+      break;
+    case 'arc':
+    case 'pieSlice':
+      drawArc(ctx, x, y, width, height, shapeProps);
       break;
     default:
       throw new Error(`Unknown shape type: ${shapeType}`);
@@ -110,6 +113,10 @@ export function createShapePath(
     case 'polygon':
       createPolygonPath(ctx, x, y, width, height, shapeProps);
       break;
+    case 'arc':
+    case 'pieSlice':
+      createArcPath(ctx, x, y, width, height, shapeProps);
+      break;
     default:
       throw new Error(`Unknown shape type: ${shapeType}`);
   }
@@ -128,7 +135,7 @@ function drawRectangle(
 ): void {
   ctx.beginPath();
   ctx.rect(x, y, width, height);
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
@@ -162,10 +169,10 @@ function drawCircle(
   const centerX = x + width / 2;
   const centerY = y + height / 2;
   const radius = shapeProps.radius || Math.min(width, height) / 2;
-  
+
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
@@ -185,7 +192,7 @@ function createCirclePath(
   const centerX = x + width / 2;
   const centerY = y + height / 2;
   const radius = shapeProps.radius || Math.min(width, height) / 2;
-  
+
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
 }
@@ -206,13 +213,13 @@ function drawTriangle(
   const bottomY = y + height;
   const leftX = x;
   const rightX = x + width;
-  
+
   ctx.beginPath();
-  ctx.moveTo(centerX, topY);      // Top point
+ctx.moveTo(centerX, topY);
   ctx.lineTo(rightX, bottomY);    // Bottom right
   ctx.lineTo(leftX, bottomY);     // Bottom left
   ctx.closePath();
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
@@ -233,9 +240,9 @@ function createTrianglePath(
   const bottomY = y + height;
   const leftX = x;
   const rightX = x + width;
-  
+
   ctx.beginPath();
-  ctx.moveTo(centerX, topY);      // Top point
+ctx.moveTo(centerX, topY);
   ctx.lineTo(rightX, bottomY);    // Bottom right
   ctx.lineTo(leftX, bottomY);     // Bottom left
   ctx.closePath();
@@ -252,16 +259,16 @@ function drawTrapezium(
   height: number,
   shapeProps: ShapeProperties
 ): void {
-  const topWidth = width * 0.6;  // Top is 60% of bottom width
+const topWidth = width * 0.6;
   const topOffset = (width - topWidth) / 2;
-  
+
   ctx.beginPath();
-  ctx.moveTo(x + topOffset, y);                    // Top left
-  ctx.lineTo(x + topOffset + topWidth, y);         // Top right
+ctx.moveTo(x + topOffset, y);
+ctx.lineTo(x + topOffset + topWidth, y);
   ctx.lineTo(x + width, y + height);               // Bottom right
   ctx.lineTo(x, y + height);                       // Bottom left
   ctx.closePath();
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
@@ -277,12 +284,12 @@ function createTrapeziumPath(
   width: number,
   height: number
 ): void {
-  const topWidth = width * 0.6;  // Top is 60% of bottom width
+const topWidth = width * 0.6;
   const topOffset = (width - topWidth) / 2;
-  
+
   ctx.beginPath();
-  ctx.moveTo(x + topOffset, y);                    // Top left
-  ctx.lineTo(x + topOffset + topWidth, y);         // Top right
+ctx.moveTo(x + topOffset, y);
+ctx.lineTo(x + topOffset + topWidth, y);
   ctx.lineTo(x + width, y + height);               // Bottom right
   ctx.lineTo(x, y + height);                       // Bottom left
   ctx.closePath();
@@ -304,24 +311,24 @@ function drawStar(
   const outerRadius = shapeProps.outerRadius || Math.min(width, height) / 2;
   const innerRadius = shapeProps.innerRadius || outerRadius * 0.4;
   const points = 5; // 5-pointed star
-  
+
   ctx.beginPath();
-  
+
   for (let i = 0; i < points * 2; i++) {
     const angle = (i * Math.PI) / points;
     const radius = i % 2 === 0 ? outerRadius : innerRadius;
     const pointX = centerX + Math.cos(angle - Math.PI / 2) * radius;
     const pointY = centerY + Math.sin(angle - Math.PI / 2) * radius;
-    
+
     if (i === 0) {
       ctx.moveTo(pointX, pointY);
     } else {
       ctx.lineTo(pointX, pointY);
     }
   }
-  
+
   ctx.closePath();
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
@@ -343,22 +350,22 @@ function createStarPath(
   const outerRadius = shapeProps.outerRadius || Math.min(width, height) / 2;
   const innerRadius = shapeProps.innerRadius || outerRadius * 0.4;
   const points = 5; // 5-pointed star
-  
+
   ctx.beginPath();
-  
+
   for (let i = 0; i < points * 2; i++) {
     const angle = (i * Math.PI) / points;
     const radius = i % 2 === 0 ? outerRadius : innerRadius;
     const pointX = centerX + Math.cos(angle - Math.PI / 2) * radius;
     const pointY = centerY + Math.sin(angle - Math.PI / 2) * radius;
-    
+
     if (i === 0) {
       ctx.moveTo(pointX, pointY);
     } else {
       ctx.lineTo(pointX, pointY);
     }
   }
-  
+
   ctx.closePath();
 }
 
@@ -402,7 +409,7 @@ function drawHeart(
   );
 
   ctx.closePath();
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
@@ -450,7 +457,7 @@ function createHeartPath(
 }
 
 /**
- * Draws a polygon
+ * Draws a polygon (regular or custom with points array)
  */
 function drawPolygon(
   ctx: SKRSContext2D,
@@ -460,34 +467,44 @@ function drawPolygon(
   height: number,
   shapeProps: ShapeProperties
 ): void {
-  const centerX = x + width / 2;
-  const centerY = y + height / 2;
-  const radius = Math.min(width, height) / 2;
-  const sides = shapeProps.sides || 6; // Default to hexagon
-  
   ctx.beginPath();
-  
-  for (let i = 0; i < sides; i++) {
-    const angle = (i * 2 * Math.PI) / sides;
-    const pointX = centerX + Math.cos(angle - Math.PI / 2) * radius;
-    const pointY = centerY + Math.sin(angle - Math.PI / 2) * radius;
-    
-    if (i === 0) {
-      ctx.moveTo(pointX, pointY);
-    } else {
-      ctx.lineTo(pointX, pointY);
+
+  // Use custom points if provided
+  if (shapeProps.points && shapeProps.points.length > 0) {
+    const points = shapeProps.points;
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
     }
+    ctx.closePath();
+  } else {
+    // Regular polygon
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const radius = Math.min(width, height) / 2;
+const sides = shapeProps.sides || 6;
+
+    for (let i = 0; i < sides; i++) {
+      const angle = (i * 2 * Math.PI) / sides;
+      const pointX = centerX + Math.cos(angle - Math.PI / 2) * radius;
+      const pointY = centerY + Math.sin(angle - Math.PI / 2) * radius;
+
+      if (i === 0) {
+        ctx.moveTo(pointX, pointY);
+      } else {
+        ctx.lineTo(pointX, pointY);
+      }
+    }
+    ctx.closePath();
   }
-  
-  ctx.closePath();
-  
+
   if (shapeProps.fill !== false) {
     ctx.fill();
   }
 }
 
 /**
- * Creates polygon path
+ * Creates polygon path (regular or custom with points array)
  */
 function createPolygonPath(
   ctx: SKRSContext2D,
@@ -497,32 +514,122 @@ function createPolygonPath(
   height: number,
   shapeProps: ShapeProperties
 ): void {
-  const centerX = x + width / 2;
-  const centerY = y + height / 2;
-  const radius = Math.min(width, height) / 2;
-  const sides = shapeProps.sides || 6; // Default to hexagon
-  
   ctx.beginPath();
-  
-  for (let i = 0; i < sides; i++) {
-    const angle = (i * 2 * Math.PI) / sides;
-    const pointX = centerX + Math.cos(angle - Math.PI / 2) * radius;
-    const pointY = centerY + Math.sin(angle - Math.PI / 2) * radius;
-    
-    if (i === 0) {
-      ctx.moveTo(pointX, pointY);
-    } else {
-      ctx.lineTo(pointX, pointY);
+
+  // Use custom points if provided
+  if (shapeProps.points && shapeProps.points.length > 0) {
+    const points = shapeProps.points;
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
     }
+    ctx.closePath();
+  } else {
+    // Regular polygon
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const radius = Math.min(width, height) / 2;
+const sides = shapeProps.sides || 6;
+
+    for (let i = 0; i < sides; i++) {
+      const angle = (i * 2 * Math.PI) / sides;
+      const pointX = centerX + Math.cos(angle - Math.PI / 2) * radius;
+      const pointY = centerY + Math.sin(angle - Math.PI / 2) * radius;
+
+      if (i === 0) {
+        ctx.moveTo(pointX, pointY);
+      } else {
+        ctx.lineTo(pointX, pointY);
+      }
+    }
+    ctx.closePath();
   }
-  
-  ctx.closePath();
+}
+
+/**
+ * Draws an arc or pie slice
+ */
+function drawArc(
+  ctx: SKRSContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  shapeProps: ShapeProperties
+): void {
+  const centerX = shapeProps.centerX ?? (x + width / 2);
+  const centerY = shapeProps.centerY ?? (y + height / 2);
+  const outerRadius = shapeProps.radius ?? shapeProps.outerRadius ?? Math.min(width, height) / 2;
+  const innerRadius = shapeProps.innerRadius ?? 0;
+  const startAngle = shapeProps.startAngle ?? 0;
+  const endAngle = shapeProps.endAngle ?? Math.PI * 2;
+
+  ctx.beginPath();
+
+  if (innerRadius > 0) {
+
+    ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+    ctx.lineTo(
+      centerX + innerRadius * Math.cos(endAngle),
+      centerY + innerRadius * Math.sin(endAngle)
+    );
+    ctx.arc(centerX, centerY, innerRadius, endAngle, startAngle, true); // counterclockwise
+    ctx.closePath();
+  } else {
+
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+    ctx.lineTo(centerX, centerY);
+    ctx.closePath();
+  }
+
+  if (shapeProps.fill !== false) {
+    ctx.fill();
+  }
+}
+
+/**
+ * Creates arc/pieSlice path
+ */
+function createArcPath(
+  ctx: SKRSContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  shapeProps: ShapeProperties
+): void {
+  const centerX = shapeProps.centerX ?? (x + width / 2);
+  const centerY = shapeProps.centerY ?? (y + height / 2);
+  const outerRadius = shapeProps.radius ?? shapeProps.outerRadius ?? Math.min(width, height) / 2;
+  const innerRadius = shapeProps.innerRadius ?? 0;
+  const startAngle = shapeProps.startAngle ?? 0;
+  const endAngle = shapeProps.endAngle ?? Math.PI * 2;
+
+  ctx.beginPath();
+
+  if (innerRadius > 0) {
+
+    ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+    ctx.lineTo(
+      centerX + innerRadius * Math.cos(endAngle),
+      centerY + innerRadius * Math.sin(endAngle)
+    );
+    ctx.arc(centerX, centerY, innerRadius, endAngle, startAngle, true);
+    ctx.closePath();
+  } else {
+
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+    ctx.lineTo(centerX, centerY);
+    ctx.closePath();
+  }
 }
 
 /**
  * Checks if a source is a shape type
  */
 export function isShapeSource(source: string | Buffer | ShapeType): source is ShapeType {
-  const shapeTypes: ShapeType[] = ['rectangle', 'square', 'circle', 'triangle', 'trapezium', 'star', 'heart', 'polygon'];
+  const shapeTypes: ShapeType[] = ['rectangle', 'square', 'circle', 'triangle', 'trapezium', 'star', 'heart', 'polygon', 'arc', 'pieSlice'];
   return typeof source === 'string' && shapeTypes.includes(source as ShapeType);
 }
