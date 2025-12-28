@@ -120,6 +120,31 @@ export function applyPerspectiveDistortion(
     throw new Error('Perspective distortion requires exactly 4 points');
   }
 
+  // Create a temporary canvas for the source image
+  const tempCanvas = createCanvas(width, height);
+  const tempCtx = getCanvasContext(tempCanvas);
+  tempCtx.drawImage(image, 0, 0, width, height);
+
+  // Get image data
+  const sourceData = tempCtx.getImageData(0, 0, width, height);
+  const sourcePixels = sourceData.data;
+
+  // Calculate bounding box of destination points
+  const minX = Math.min(points[0].x, points[1].x, points[2].x, points[3].x);
+  const maxX = Math.max(points[0].x, points[1].x, points[2].x, points[3].x);
+  const minY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y);
+  const maxY = Math.max(points[0].y, points[1].y, points[2].y, points[3].y);
+
+  const destWidth = Math.ceil(maxX - minX);
+  const destHeight = Math.ceil(maxY - minY);
+
+  // Create destination canvas
+  const destCanvas = createCanvas(destWidth, destHeight);
+  const destCtx = getCanvasContext(destCanvas);
+  const destData = destCtx.createImageData(destWidth, destHeight);
+  const destPixels = destData.data;
+
+  // Calculate inverse perspective transform matrix (from destination to source)
   const srcCorners = [
     { x: 0, y: 0 },
     { x: width, y: 0 },
@@ -127,46 +152,172 @@ export function applyPerspectiveDistortion(
     { x: 0, y: height }
   ];
 
-  const dstCorners = points.map(p => ({ x: p.x - x, y: p.y - y }));
+  const dstCorners = points.map(p => ({ x: p.x - minX, y: p.y - minY }));
 
-  const matrix = calculatePerspectiveMatrix(srcCorners, dstCorners);
+  // Calculate homography matrix (perspective transform)
+  const H = calculateHomographyMatrix(srcCorners, dstCorners);
+  const Hinv = invertHomographyMatrix(H);
 
-  ctx.save();
-  ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
-  ctx.drawImage(image, 0, 0, width, height);
-  ctx.restore();
+  // Warp pixels
+  for (let dy = 0; dy < destHeight; dy++) {
+    for (let dx = 0; dx < destWidth; dx++) {
+      // Transform destination pixel to source coordinates
+      const denom = Hinv[6] * dx + Hinv[7] * dy + Hinv[8];
+      if (Math.abs(denom) < 0.0001) continue;
+
+      const sx = (Hinv[0] * dx + Hinv[1] * dy + Hinv[2]) / denom;
+      const sy = (Hinv[3] * dx + Hinv[4] * dy + Hinv[5]) / denom;
+
+      // Bilinear interpolation
+      const x1 = Math.floor(sx);
+      const y1 = Math.floor(sy);
+      const x2 = x1 + 1;
+      const y2 = y1 + 1;
+
+      if (x1 >= 0 && x2 < width && y1 >= 0 && y2 < height) {
+        const fx = sx - x1;
+        const fy = sy - y1;
+
+        const getPixel = (px: number, py: number) => {
+          const idx = (py * width + px) * 4;
+          return [
+            sourcePixels[idx],
+            sourcePixels[idx + 1],
+            sourcePixels[idx + 2],
+            sourcePixels[idx + 3]
+          ];
+        };
+
+        const p11 = getPixel(x1, y1);
+        const p21 = getPixel(x2, y1);
+        const p12 = getPixel(x1, y2);
+        const p22 = getPixel(x2, y2);
+
+        const interpolate = (a: number, b: number, c: number, d: number, fx: number, fy: number) => {
+          return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+        };
+
+        const destIdx = (dy * destWidth + dx) * 4;
+        destPixels[destIdx] = Math.round(interpolate(p11[0], p21[0], p12[0], p22[0], fx, fy));
+        destPixels[destIdx + 1] = Math.round(interpolate(p11[1], p21[1], p12[1], p22[1], fx, fy));
+        destPixels[destIdx + 2] = Math.round(interpolate(p11[2], p21[2], p12[2], p22[2], fx, fy));
+        destPixels[destIdx + 3] = Math.round(interpolate(p11[3], p21[3], p12[3], p22[3], fx, fy));
+      }
+    }
+  }
+
+  destCtx.putImageData(destData, 0, 0);
+  ctx.drawImage(destCanvas, minX, minY);
 }
 
 /**
- * Calculates perspective transform matrix
+ * Calculates 3x3 homography matrix for perspective transform
  */
-function calculatePerspectiveMatrix(
+function calculateHomographyMatrix(
   src: Array<{ x: number; y: number }>,
   dst: Array<{ x: number; y: number }>
-): [number, number, number, number, number, number] {
+): number[] {
+  // Build system of equations: Ah = 0
+  const A: number[][] = [];
+  
+  for (let i = 0; i < 4; i++) {
+    const x = src[i].x;
+    const y = src[i].y;
+    const u = dst[i].x;
+    const v = dst[i].y;
 
-  const x0 = src[0].x, y0 = src[0].y;
-  const x1 = src[1].x, y1 = src[1].y;
-  const x2 = src[2].x, y2 = src[2].y;
-
-  const u0 = dst[0].x, v0 = dst[0].y;
-  const u1 = dst[1].x, v1 = dst[1].y;
-  const u2 = dst[2].x, v2 = dst[2].y;
-
-  const denom = (x0 - x1) * (y0 - y2) - (x0 - x2) * (y0 - y1);
-  if (Math.abs(denom) < 0.0001) {
-
-    return [1, 0, 0, 1, 0, 0];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y, -u]);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y, -v]);
   }
 
-  const a = ((u0 - u1) * (y0 - y2) - (u0 - u2) * (y0 - y1)) / denom;
-  const b = ((u0 - u1) * (x0 - x2) - (u0 - u2) * (x0 - x1)) / denom;
-  const c = u0 - a * x0 - b * y0;
-  const d = ((v0 - v1) * (y0 - y2) - (v0 - v2) * (y0 - y1)) / denom;
-  const e = ((v0 - v1) * (x0 - x2) - (v0 - v2) * (x0 - x1)) / denom;
-  const f = v0 - d * x0 - e * y0;
+  // Solve using SVD (simplified - find null space)
+  // For 8 equations with 9 unknowns, we can set h[8] = 1 and solve
+  // Or use a simpler approach: solve the 8x8 system
+  
+  // Extract the 8x8 matrix (excluding last column for h[8]=1 normalization)
+  const M: number[][] = [];
+  const b: number[] = [];
+  
+  for (let i = 0; i < 8; i++) {
+    M.push(A[i].slice(0, 8));
+    b.push(-A[i][8]);
+  }
 
-  return [a, b, d, e, c, f];
+  // Solve M * h = b using Gaussian elimination
+  const h = solveLinearSystem(M, b);
+  
+  // Normalize so h[8] = 1
+  return [...h, 1];
+}
+
+/**
+ * Solves a linear system using Gaussian elimination
+ */
+function solveLinearSystem(M: number[][], b: number[]): number[] {
+  const n = M.length;
+  const augmented = M.map((row, i) => [...row, b[i]]);
+
+  // Forward elimination
+  for (let i = 0; i < n; i++) {
+    // Find pivot
+    let maxRow = i;
+    for (let k = i + 1; k < n; k++) {
+      if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+        maxRow = k;
+      }
+    }
+    [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+
+    // Make all rows below this one 0 in current column
+    for (let k = i + 1; k < n; k++) {
+      const factor = augmented[k][i] / augmented[i][i];
+      for (let j = i; j < n + 1; j++) {
+        augmented[k][j] -= factor * augmented[i][j];
+      }
+    }
+  }
+
+  // Back substitution
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = augmented[i][n];
+    for (let j = i + 1; j < n; j++) {
+      x[i] -= augmented[i][j] * x[j];
+    }
+    x[i] /= augmented[i][i];
+  }
+
+  return x;
+}
+
+/**
+ * Inverts a 3x3 homography matrix
+ */
+function invertHomographyMatrix(H: number[]): number[] {
+  const a = H[0], b = H[1], c = H[2];
+  const d = H[3], e = H[4], f = H[5];
+  const g = H[6], h = H[7], i = H[8];
+
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  
+  if (Math.abs(det) < 0.0001) {
+    // Return identity if singular
+    return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  }
+
+  const invDet = 1 / det;
+  
+  return [
+    (e * i - f * h) * invDet,
+    (c * h - b * i) * invDet,
+    (b * f - c * e) * invDet,
+    (f * g - d * i) * invDet,
+    (a * i - c * g) * invDet,
+    (c * d - a * f) * invDet,
+    (d * h - e * g) * invDet,
+    (b * g - a * h) * invDet,
+    (a * e - b * d) * invDet
+  ];
 }
 
 /**
