@@ -23,7 +23,7 @@ import {
   applyLensFlare,
   applyChromaticAberration,
   applyFilmGrain,
-  applySimpleProfessionalFilters,
+  applyProfessionalImageFilters,
 } from "../utils/utils";
 
 /**
@@ -333,11 +333,11 @@ export class ImageCreator {
       innerRadius?: number;
       outerRadius?: number;
       filters?: any[];
-points?: Array<{ x: number; y: number }>;
-startAngle?: number;
-endAngle?: number;
-centerX?: number;
-centerY?: number;
+      points?: Array<{ x: number; y: number }>;
+      startAngle?: number;
+      endAngle?: number;
+      centerX?: number;
+      centerY?: number;
     }
   ): Promise<void> {
     const box = { x, y, w: width, h: height };
@@ -378,7 +378,7 @@ centerY?: number;
     }
 
     if (options.filters && options.filters.length > 0) {
-      await applySimpleProfessionalFilters(ctx, options.filters, width, height);
+      await applyProfessionalImageFilters(ctx, options.filters, width, height);
     }
 
     // Pass ALL shape properties including points, angles, centers
@@ -390,11 +390,11 @@ centerY?: number;
       sides: options.sides,
       innerRadius: options.innerRadius,
       outerRadius: options.outerRadius,
-points: options.points,
-startAngle: options.startAngle,
-endAngle: options.endAngle,
-centerX: options.centerX,
-centerY: options.centerY
+      points: options.points,
+      startAngle: options.startAngle,
+      endAngle: options.endAngle,
+      centerX: options.centerX,
+      centerY: options.centerY
     });
 
     ctx.restore();
@@ -493,13 +493,26 @@ centerY: options.centerY
     if ((blur ?? 0) > 0) ctx.filter = `blur(${blur}px)`;
 
     if (filters && filters.length > 0 && filterOrder === 'pre') {
+      // For pre-filters, draw image to temp canvas first, then apply filters
+      const tempCanvas = createCanvas(dw, dh);
+      const tempCtx = getCanvasContext(tempCanvas);
+      tempCtx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+      
       const adjustedFilters = filters.map(f => ({
         ...f,
         intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
         value: f.value !== undefined ? f.value * filterIntensity : f.value,
         radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
       }));
-      await applySimpleProfessionalFilters(ctx, adjustedFilters, dw, dh);
+      await applyProfessionalImageFilters(tempCtx, adjustedFilters, dw, dh);
+      
+      // Draw the filtered result to main canvas
+      ctx.drawImage(tempCanvas, dx, dy);
+      ctx.filter = "none";
+      ctx.globalAlpha = prevAlpha;
+      ctx.restore();
+      ctx.restore();
+      return;
     }
 
     if (distortion) {
@@ -556,7 +569,7 @@ centerY: options.centerY
           value: f.value !== undefined ? f.value * filterIntensity : f.value,
           radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
         }));
-        await applySimpleProfessionalFilters(tempCtx, adjustedFilters, box.w, box.h);
+        await applyProfessionalImageFilters(tempCtx, adjustedFilters, box.w, box.h);
         ctx.clearRect(box.x, box.y, box.w, box.h);
         ctx.drawImage(tempCanvas, box.x, box.y);
       }
@@ -635,44 +648,256 @@ centerY: options.centerY
       const groupTransform = options?.groupTransform;
 
       if (isGrouped && groupTransform) {
-        // GROUPED MODE: Apply transformations to all elements together
-        const pivotX = groupTransform.pivotX ?? base.width / 2;
-        const pivotY = groupTransform.pivotY ?? base.height / 2;
+        // GROUPED MODE: Apply transformations and effects to all elements together
+        
+        // Calculate group bounding box (before transformations)
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const ip of list) {
+          const w = ip.width ?? 100;
+          const h = ip.height ?? 100;
+          minX = Math.min(minX, ip.x);
+          minY = Math.min(minY, ip.y);
+          maxX = Math.max(maxX, ip.x + w);
+          maxY = Math.max(maxY, ip.y + h);
+        }
+        const groupBox = {
+          x: minX,
+          y: minY,
+          w: maxX - minX,
+          h: maxY - minY
+        };
+        
+        const pivotX = groupTransform.pivotX ?? (groupBox.x + groupBox.w / 2);
+        const pivotY = groupTransform.pivotY ?? (groupBox.y + groupBox.h / 2);
 
-        // Save context state
+        // Save context state for group
         ctx.save();
 
+        // Apply group opacity
+        if (groupTransform.opacity !== undefined) {
+          ctx.globalAlpha = groupTransform.opacity;
+        }
 
-        // 1. Translate to pivot
+        // Apply group blur
+        if (groupTransform.blur && groupTransform.blur > 0) {
+          ctx.filter = `blur(${groupTransform.blur}px)`;
+        }
+
+        // Apply group box background (before transformations)
+        if (groupTransform.boxBackground) {
+          drawBoxBackground(ctx, groupBox, groupTransform.boxBackground, 
+            groupTransform.borderRadius, groupTransform.borderPosition);
+        }
+
+        // Apply group shadow (before transformations, if pre-shadow)
+        if (groupTransform.shadow) {
+          applyShadow(ctx, groupBox, groupTransform.shadow);
+        }
+
+        // Apply group clip path or border radius
+        if (groupTransform.clipPath && groupTransform.clipPath.length >= 3) {
+          applyClipPath(ctx, groupTransform.clipPath);
+          ctx.clip();
+        } else if (groupTransform.borderRadius) {
+          buildPath(ctx, groupBox.x, groupBox.y, groupBox.w, groupBox.h, 
+            groupTransform.borderRadius, groupTransform.borderPosition ?? 'all');
+          ctx.clip();
+        }
+
+        // Apply pre-filters if specified
+        if (groupTransform.filters && groupTransform.filters.length > 0 && 
+            groupTransform.filterOrder === 'pre') {
+          const tempCanvas = createCanvas(groupBox.w, groupBox.h);
+          const tempCtx = getCanvasContext(tempCanvas);
+          
+          // Draw group elements to temp canvas first
+          tempCtx.save();
+          for (const ip of list) {
+            const ipWithoutRotation = { ...ip, rotation: 0 };
+            // Adjust coordinates relative to group box
+            const adjustedIp = {
+              ...ipWithoutRotation,
+              x: ipWithoutRotation.x - groupBox.x,
+              y: ipWithoutRotation.y - groupBox.y
+            };
+            await this.drawImageBitmap(tempCtx, adjustedIp);
+          }
+          tempCtx.restore();
+          
+          // Apply filters
+          const adjustedFilters = groupTransform.filters.map(f => ({
+            ...f,
+            intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) : 
+                     (f.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
+            value: f.value !== undefined ? f.value * (groupTransform.filterIntensity ?? 1) : f.value,
+            radius: f.radius !== undefined ? f.radius * (groupTransform.filterIntensity ?? 1) : f.radius
+          }));
+          await applyProfessionalImageFilters(tempCtx, adjustedFilters, groupBox.w, groupBox.h);
+          
+          // Draw filtered result to main canvas
+          ctx.drawImage(tempCanvas, groupBox.x, groupBox.y);
+          ctx.filter = "none";
+          ctx.restore();
+          return cv.toBuffer("image/png");
+        }
+
+        // Apply group transformations
         ctx.translate(pivotX, pivotY);
-
-        // 2. Apply rotation (if specified)
         if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
           ctx.rotate((groupTransform.rotation * Math.PI) / 180);
         }
-
-        // 3. Apply scale (if specified)
         if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
           ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
         }
-
-        // 4. Apply translation (relative to pivot, after rotation/scale)
         if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
           ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
         }
-
-        // 5. Translate back to origin
         ctx.translate(-pivotX, -pivotY);
 
+        // Draw all elements (individual rotation removed, but all other properties preserved)
         for (const ip of list) {
-
           const ipWithoutRotation = { ...ip, rotation: 0 };
           await this.drawImageBitmap(ctx, ipWithoutRotation);
         }
 
-        ctx.restore();
-      } else {
+        // Save state before applying post-effects (transformations are still active)
+        ctx.save();
+        
+        // Apply post-filters and effects after drawing all elements (in transformed space)
+        if (groupTransform.filters && groupTransform.filters.length > 0 && 
+            groupTransform.filterOrder !== 'pre') {
+          // Get image data from transformed group area
+          // Calculate transformed bounding box corners
+          const corners = [
+            { x: groupBox.x, y: groupBox.y },
+            { x: groupBox.x + groupBox.w, y: groupBox.y },
+            { x: groupBox.x + groupBox.w, y: groupBox.y + groupBox.h },
+            { x: groupBox.x, y: groupBox.y + groupBox.h }
+          ];
+          
+          // Transform corners to get actual bounds
+          let tMinX = Infinity, tMinY = Infinity, tMaxX = -Infinity, tMaxY = -Infinity;
+          for (const corner of corners) {
+            const dx = corner.x - pivotX;
+            const dy = corner.y - pivotY;
+            const scaleX = groupTransform.scaleX ?? 1;
+            const scaleY = groupTransform.scaleY ?? 1;
+            const rot = (groupTransform.rotation ?? 0) * Math.PI / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            const tx = groupTransform.translateX ?? 0;
+            const ty = groupTransform.translateY ?? 0;
+            
+            const tX = pivotX + (dx * scaleX * cos - dy * scaleY * sin) + tx;
+            const tY = pivotY + (dx * scaleX * sin + dy * scaleY * cos) + ty;
+            
+            tMinX = Math.min(tMinX, tX);
+            tMinY = Math.min(tMinY, tY);
+            tMaxX = Math.max(tMaxX, tX);
+            tMaxY = Math.max(tMaxY, tY);
+          }
+          
+          const tBox = {
+            x: Math.max(0, Math.floor(tMinX)),
+            y: Math.max(0, Math.floor(tMinY)),
+            w: Math.min(base.width, Math.ceil(tMaxX)) - Math.max(0, Math.floor(tMinX)),
+            h: Math.min(base.height, Math.ceil(tMaxY)) - Math.max(0, Math.floor(tMinY))
+          };
+          
+          if (tBox.w > 0 && tBox.h > 0) {
+            const imageData = ctx.getImageData(tBox.x, tBox.y, tBox.w, tBox.h);
+            const tempCanvas = createCanvas(tBox.w, tBox.h);
+            const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
+            if (tempCtx) {
+              tempCtx.putImageData(imageData, 0, 0);
+              const adjustedFilters = groupTransform.filters.map(f => ({
+                ...f,
+                intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) : 
+                         (f.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
+                value: f.value !== undefined ? f.value * (groupTransform.filterIntensity ?? 1) : f.value,
+                radius: f.radius !== undefined ? f.radius * (groupTransform.filterIntensity ?? 1) : f.radius
+              }));
+              await applyProfessionalImageFilters(tempCtx, adjustedFilters, tBox.w, tBox.h);
+              ctx.clearRect(tBox.x, tBox.y, tBox.w, tBox.h);
+              ctx.drawImage(tempCanvas, tBox.x, tBox.y);
+            }
+          }
+        }
 
+        // Apply group effects (in transformed space)
+        if (groupTransform.effects) {
+          // For effects, use the original group box but account for transformations
+          const scaleX = groupTransform.scaleX ?? 1;
+          const scaleY = groupTransform.scaleY ?? 1;
+          const effectBox = {
+            x: groupBox.x,
+            y: groupBox.y,
+            w: groupBox.w * scaleX,
+            h: groupBox.h * scaleY
+          };
+          
+          if (groupTransform.effects.vignette) {
+            applyVignette(ctx, groupTransform.effects.vignette.intensity, 
+              groupTransform.effects.vignette.size, effectBox.w, effectBox.h);
+          }
+          if (groupTransform.effects.lensFlare) {
+            applyLensFlare(ctx, effectBox.x + groupTransform.effects.lensFlare.x, 
+              effectBox.y + groupTransform.effects.lensFlare.y, 
+              groupTransform.effects.lensFlare.intensity, effectBox.w, effectBox.h);
+          }
+          if (groupTransform.effects.chromaticAberration) {
+            const imageData = ctx.getImageData(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
+            const tempCanvas = createCanvas(effectBox.w, effectBox.h);
+            const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
+            if (tempCtx) {
+              tempCtx.putImageData(imageData, 0, 0);
+              applyChromaticAberration(tempCtx, groupTransform.effects.chromaticAberration.intensity, 
+                effectBox.w, effectBox.h);
+              ctx.clearRect(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
+              ctx.drawImage(tempCanvas, effectBox.x, effectBox.y);
+            }
+          }
+          if (groupTransform.effects.filmGrain) {
+            const imageData = ctx.getImageData(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
+            const tempCanvas = createCanvas(effectBox.w, effectBox.h);
+            const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
+            if (tempCtx) {
+              tempCtx.putImageData(imageData, 0, 0);
+              applyFilmGrain(tempCtx, groupTransform.effects.filmGrain.intensity, effectBox.w, effectBox.h);
+              ctx.clearRect(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
+              ctx.drawImage(tempCanvas, effectBox.x, effectBox.y);
+            }
+          }
+        }
+        
+        ctx.restore(); // Restore from post-effects save
+        ctx.filter = "none";
+        ctx.globalAlpha = 1;
+        ctx.restore(); // Restore from main group save
+
+        // Apply group stroke (after all drawing, outside the transform context)
+        if (groupTransform.stroke) {
+          ctx.save();
+          // Need to apply transformations to stroke path if group is transformed
+          if (groupTransform.rotation || groupTransform.scaleX || groupTransform.scaleY || 
+              groupTransform.translateX || groupTransform.translateY) {
+            ctx.translate(pivotX, pivotY);
+            if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
+              ctx.rotate((groupTransform.rotation * Math.PI) / 180);
+            }
+            if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
+              ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
+            }
+            if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
+              ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
+            }
+            ctx.translate(-pivotX, -pivotY);
+          }
+          applyStroke(ctx, groupBox, groupTransform.stroke);
+          ctx.restore();
+        }
+      } else {
+        // NON-GROUPED MODE: Draw elements individually
         for (const ip of list) {
           await this.drawImageBitmap(ctx, ip);
         }

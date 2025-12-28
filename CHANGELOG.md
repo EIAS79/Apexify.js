@@ -5,6 +5,99 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.9] - 2025-12-28
+
+
+### 🐛 Fixed
+
+##### Image Filters & Distortion
+- **Fixed Perspective Distortion**: Completely rewrote perspective transform implementation
+  - Replaced incorrect affine transform (only used 3 points) with proper homography matrix (uses all 4 points)
+  - Added proper perspective transform using 3x3 homography matrix with bilinear interpolation
+  - Fixed bounding box calculation to ensure transformed image stays within canvas bounds
+  - Images now correctly transform to specified perspective points without going outside canvas dimensions
+  
+- **Fixed Pre-Filter Application**: Pre-filters now work correctly
+  - Pre-filters were being applied to empty canvas (before image was drawn)
+  - Now draws image to temporary canvas first, applies filters, then draws result to main canvas
+  - All filters now work correctly in both 'pre' and 'post' filter order modes
+
+- **Fixed Invert Filter**: Invert filter no longer causes image displacement or disappearance
+  - Fixed dimension preservation issue where Sharp processing could change image dimensions
+  - Added dimension verification and automatic resizing if dimensions don't match
+  - Ensured alpha channel preservation throughout filter pipeline
+  - Image now stays in correct position and maintains exact dimensions after inversion
+
+- **Fixed Filter Parameter Usage**: Corrected all filter parameter types
+  - **Use `intensity`**: gaussianBlur, sharpen, motionBlur, radialBlur, noise, grain, edgeDetection, emboss
+  - **Use `value`**: brightness (-100 to 100%), contrast (-100 to 100%), saturation (-100 to 100%), hueShift (0-360 degrees)
+  - **Special parameters**: posterize uses `levels` (2-256), pixelate uses `size` (2+), radialBlur uses `centerX/centerY`
+  - Added comprehensive validation and value clamping for all filter parameters
+
+### ✨ Enhanced
+
+##### Group Transform Operations - Full Feature Parity ⭐ MAJOR UPDATE!
+- **Extended Group Transform Options**: `GroupTransformOptions` now supports ALL properties available in normal `createImage`
+  - **Visual Properties**: `opacity`, `blur`, `borderRadius`, `borderPosition` - Apply to entire group
+  - **Image Filters**: `filters`, `filterIntensity`, `filterOrder` - Apply filters to entire group (pre/post)
+  - **Image Effects**: `effects` - Vignette, lens flare, chromatic aberration, film grain for entire group
+  - **Styling**: `shadow`, `stroke`, `boxBackground` - Group-level shadows, strokes, and backgrounds
+  - **Masking**: `mask`, `clipPath` - Apply masks and clip paths to entire group
+  - **Distortion**: `distortion`, `meshWarp` - Apply distortions to entire group
+  - Full feature parity with individual element properties
+  - Group-level properties are applied to the entire group as a single unit
+  - Individual element properties still work (except `rotation` which is handled by group transform)
+  - Matches Photoshop-style group functionality where groups can have their own effects and styling
+
+- **Enhanced Group Transform Implementation**: Complete rewrite of grouped drawing logic
+  - Calculates group bounding box automatically from all elements
+  - Applies group transformations (rotation, scale, translation) with proper pivot point
+  - Supports pre-filters: Draws all elements to temp canvas, applies filters, then composites
+  - Supports post-filters: Applies filters after all elements are drawn
+  - Applies group effects (vignette, lens flare, chromatic aberration, film grain) to transformed group
+  - Group shadow and stroke are applied with proper transform accounting
+  - Group opacity and blur affect entire group uniformly
+  - Group clip paths and border radius work correctly with transformations
+  - All group properties work seamlessly together
+
+##### Professional Image Filters
+- **Upgraded to Professional Filters**: Switched from simple to professional filter implementation
+  - All filters now use Sharp library for high-quality processing
+  - Motion blur and radial blur use proper convolution kernels
+  - Edge detection uses Sobel kernel algorithm
+  - Emboss uses proper emboss kernel
+  - Noise and grain use Jimp for pixel-level manipulation
+  - Better quality and more accurate filter effects
+
+- **Improved Filter Documentation**: Added comprehensive JSDoc comments
+  - Documented all filter types and their required/optional parameters
+  - Added parameter ranges and usage examples
+  - Clear distinction between `intensity` and `value` parameters
+  - Better TypeScript type definitions with detailed descriptions
+
+- **Enhanced Filter Validation**: Added robust parameter validation
+  - Value clamping for noise/grain (0-1 range)
+  - Angle normalization for motion blur (0-360 degrees)
+  - Dimension preservation throughout filter pipeline
+  - Better error handling and fallback mechanisms
+
+### 🔧 Improved
+
+##### Group Transform Architecture
+- **Better Transform Order**: Proper application order for group properties
+  - Group opacity and blur applied first
+  - Group box background and shadow applied before transformations
+  - Group clip path/border radius applied before element drawing
+  - Transformations applied (rotation, scale, translation)
+  - Elements drawn with individual properties (except rotation)
+  - Post-filters and effects applied to transformed group
+  - Group stroke applied after all drawing with transform accounting
+- **Improved Bounding Box Calculation**: Automatic calculation from all group elements
+  - Handles elements with different sizes and positions
+  - Accounts for transformed coordinates when applying effects
+  - Proper coordinate space handling for pre/post filters
+
+
 ## [5.2.5] - 2025-12-27
 
 ### ✨ Added

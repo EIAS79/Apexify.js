@@ -12,7 +12,7 @@ import { OutputFormat, CanvasConfig, ImageProperties, TextObject, TextProperties
 import { drawBackgroundColor, drawBackgroundGradient, customBackground, applyCanvasZoom, drawPattern, applyNoise } from "./Background/bg";
 import { buildPath, applyRotation, createGradientFill, fitInto, loadImageCached, applyStroke, drawBoxBackground, applyShadow } from './Image/imageProperties'
 import { applyImageFilters } from './Image/imageFilters'
-import { applySimpleProfessionalFilters } from './Image/simpleProfessionalFilters'
+import { applyProfessionalImageFilters } from './Image/professionalImageFilters'
 import { drawText, WrappedText } from "./Texts/textProperties";
 import { loadImages, resizingImg, converter, applyColorFilters, imgEffects, cropOuter, cropInner, detectColors, removeColor, bgRemoval } from './General/general functions';
 import { customLines } from "./Custom/customLines";
@@ -84,7 +84,7 @@ export {
     isShapeSource,
     createShapePath,
     applyImageFilters,
-    applySimpleProfessionalFilters,
+    applyProfessionalImageFilters,
 
     applyImageMask,
     applyClipPath,

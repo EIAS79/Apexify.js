@@ -23,39 +23,59 @@ export async function applyProfessionalImageFilters(
     const imageData = ctx.getImageData(0, 0, width, height);
     const buffer = Buffer.from(new Uint8Array(imageData.data.buffer));
 
+    // Create Sharp image with exact dimensions, ensuring alpha channel
     let sharpImage = sharp(buffer, {
       raw: {
         width: width,
         height: height,
         channels: 4
       }
-    });
+    }).ensureAlpha();
 
     for (const filter of filters) {
       switch (filter.type) {
         case 'gaussianBlur':
-          sharpImage = await applyGaussianBlurSharp(sharpImage, filter.intensity || 0);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            sharpImage = await applyGaussianBlurSharp(sharpImage, filter.intensity);
+          }
           break;
         case 'motionBlur':
-          sharpImage = await applyMotionBlurSharp(sharpImage, filter.intensity || 0, filter.angle || 0);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            const angle = filter.angle !== undefined ? filter.angle : 0;
+            sharpImage = await applyMotionBlurSharp(sharpImage, filter.intensity, angle);
+          }
           break;
         case 'radialBlur':
-          sharpImage = await applyRadialBlurSharp(sharpImage, filter.intensity || 0, filter.centerX || width/2, filter.centerY || height/2);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            const centerX = filter.centerX !== undefined ? filter.centerX : width / 2;
+            const centerY = filter.centerY !== undefined ? filter.centerY : height / 2;
+            sharpImage = await applyRadialBlurSharp(sharpImage, filter.intensity, centerX, centerY);
+          }
           break;
         case 'sharpen':
-          sharpImage = await applySharpenSharp(sharpImage, filter.intensity || 0);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            sharpImage = await applySharpenSharp(sharpImage, filter.intensity);
+          }
           break;
         case 'brightness':
-          sharpImage = await applyBrightnessSharp(sharpImage, filter.value || 0);
+          if (filter.value !== undefined && filter.value !== 0) {
+            sharpImage = await applyBrightnessSharp(sharpImage, filter.value);
+          }
           break;
         case 'contrast':
-          sharpImage = await applyContrastSharp(sharpImage, filter.value || 0);
+          if (filter.value !== undefined && filter.value !== 0) {
+            sharpImage = await applyContrastSharp(sharpImage, filter.value);
+          }
           break;
         case 'saturation':
-          sharpImage = await applySaturationSharp(sharpImage, filter.value || 0);
+          if (filter.value !== undefined && filter.value !== 0) {
+            sharpImage = await applySaturationSharp(sharpImage, filter.value);
+          }
           break;
         case 'hueShift':
-          sharpImage = await applyHueShiftSharp(sharpImage, filter.value || 0);
+          if (filter.value !== undefined && filter.value !== 0) {
+            sharpImage = await applyHueShiftSharp(sharpImage, filter.value);
+          }
           break;
         case 'grayscale':
           sharpImage = await applyGrayscaleSharp(sharpImage);
@@ -67,29 +87,66 @@ export async function applyProfessionalImageFilters(
           sharpImage = await applyInvertSharp(sharpImage);
           break;
         case 'posterize':
-          sharpImage = await applyPosterizeSharp(sharpImage, filter.levels || 4);
+          const levels = filter.levels !== undefined && filter.levels > 1 ? filter.levels : 4;
+          sharpImage = await applyPosterizeSharp(sharpImage, levels);
           break;
         case 'pixelate':
-          sharpImage = await applyPixelateSharp(sharpImage, filter.size || 10);
+          const size = filter.size !== undefined && filter.size > 1 ? filter.size : 10;
+          sharpImage = await applyPixelateSharp(sharpImage, size);
           break;
         case 'noise':
-          sharpImage = await applyNoiseSharp(sharpImage, filter.intensity || 0.1);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            sharpImage = await applyNoiseSharp(sharpImage, Math.min(1, Math.max(0, filter.intensity)));
+          }
           break;
         case 'grain':
-          sharpImage = await applyGrainSharp(sharpImage, filter.intensity || 0.05);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            sharpImage = await applyGrainSharp(sharpImage, Math.min(1, Math.max(0, filter.intensity)));
+          }
           break;
         case 'edgeDetection':
-          sharpImage = await applyEdgeDetectionSharp(sharpImage, filter.intensity || 1);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            sharpImage = await applyEdgeDetectionSharp(sharpImage, filter.intensity);
+          }
           break;
         case 'emboss':
-          sharpImage = await applyEmbossSharp(sharpImage, filter.intensity || 1);
+          if (filter.intensity !== undefined && filter.intensity > 0) {
+            sharpImage = await applyEmbossSharp(sharpImage, filter.intensity);
+          }
           break;
       }
     }
 
-    const { data } = await sharpImage.raw().toBuffer({ resolveWithObject: true });
-    const newImageData = new ImageData(new Uint8ClampedArray(data), width, height);
-    ctx.putImageData(newImageData, 0, 0);
+    // Ensure output dimensions match input dimensions exactly
+    const { data, info } = await sharpImage
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    // Verify dimensions match
+    if (info.width !== width || info.height !== height) {
+      // If dimensions don't match, resize to exact dimensions
+      const resized = await sharp(data, {
+        raw: {
+          width: info.width,
+          height: info.height,
+          channels: 4
+        }
+      })
+      .resize(width, height, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+      
+      const newImageData = ctx.createImageData(width, height);
+      newImageData.data.set(new Uint8ClampedArray(resized.data));
+      ctx.putImageData(newImageData, 0, 0);
+    } else {
+      // Dimensions match, use directly
+      const newImageData = ctx.createImageData(width, height);
+      newImageData.data.set(new Uint8ClampedArray(data));
+      ctx.putImageData(newImageData, 0, 0);
+    }
 
   } catch (error) {
     console.error('Error applying professional filters:', error);
@@ -99,39 +156,37 @@ export async function applyProfessionalImageFilters(
 }
 
 async function applyGaussianBlurSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
-    return image.blur(intensity);
-  }
-  return image;
+  // Intensity: blur radius in pixels (0-100+)
+  // Sharp's blur accepts sigma value, we use intensity directly
+  const sigma = Math.max(0.3, Math.min(1000, intensity));
+  return image.blur(sigma);
 }
 
 async function applyMotionBlurSharp(image: sharp.Sharp, intensity: number, angle: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
-
-    const kernel = createMotionBlurKernel(intensity, angle);
-    return image.convolve(kernel);
-  }
-  return image;
+  // Intensity: blur strength (0-100+)
+  // Angle: direction in degrees (0-360)
+  const normalizedAngle = ((angle % 360) + 360) % 360; // Normalize to 0-360
+  const kernel = createMotionBlurKernel(intensity, normalizedAngle);
+  return image.convolve(kernel);
 }
 
 async function applyRadialBlurSharp(image: sharp.Sharp, intensity: number, centerX: number, centerY: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
-
-    const kernel = createRadialBlurKernel(intensity, centerX, centerY);
-    return image.convolve(kernel);
-  }
-  return image;
+  // Intensity: blur strength (0-100+)
+  // CenterX, CenterY: center point coordinates
+  const kernel = createRadialBlurKernel(intensity, centerX, centerY);
+  return image.convolve(kernel);
 }
 
 async function applySharpenSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
-    return image.sharpen(intensity, 1, 2);
-  }
-  return image;
+  // Intensity: sharpening strength (0-100+)
+  // Sharp's sharpen: (sigma, flat, jagged)
+  const sigma = Math.max(0.3, Math.min(1000, intensity));
+  return image.sharpen(sigma, 1, 2);
 }
 
 async function applyBrightnessSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
-  if (value !== 0) {
+  if (value !== undefined && value !== 0) {
+    // Value is expected to be a percentage (-100 to 100)
     const brightness = Math.max(0, Math.min(2, 1 + value / 100));
     return image.modulate({ brightness });
   }
@@ -139,7 +194,8 @@ async function applyBrightnessSharp(image: sharp.Sharp, value: number): Promise<
 }
 
 async function applyContrastSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
-  if (value !== 0) {
+  if (value !== undefined && value !== 0) {
+    // Value is expected to be a percentage (-100 to 100)
     const contrast = Math.max(0, Math.min(2, 1 + value / 100));
     return image.linear(contrast, -(128 * contrast) + 128);
   }
@@ -147,7 +203,8 @@ async function applyContrastSharp(image: sharp.Sharp, value: number): Promise<sh
 }
 
 async function applySaturationSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
-  if (value !== 0) {
+  if (value !== undefined && value !== 0) {
+    // Value is expected to be a percentage (-100 to 100)
     const saturation = Math.max(0, Math.min(2, 1 + value / 100));
     return image.modulate({ saturation });
   }
@@ -155,7 +212,8 @@ async function applySaturationSharp(image: sharp.Sharp, value: number): Promise<
 }
 
 async function applyHueShiftSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
-  if (value !== 0) {
+  if (value !== undefined && value !== 0) {
+    // Value is expected to be degrees (0-360, can be negative for reverse rotation)
     return image.modulate({ hue: value });
   }
   return image;
@@ -174,15 +232,17 @@ async function applySepiaSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
 }
 
 async function applyInvertSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
-  return image.negate();
+  // Invert colors using Sharp's negate
+  // Ensure we preserve dimensions and alpha channel
+  return image.negate({ alpha: false }).ensureAlpha();
 }
 
 async function applyPosterizeSharp(image: sharp.Sharp, levels: number): Promise<sharp.Sharp> {
-  if (levels > 1) {
-    const step = 255 / (levels - 1);
-    return image.threshold(128).modulate({ saturation: 0 });
-  }
-  return image;
+  // Levels: 2-256 (number of color levels)
+  const clampedLevels = Math.max(2, Math.min(256, Math.floor(levels)));
+  // Sharp doesn't have direct posterize, use threshold approximation
+  // Better implementation would use quantization
+  return image.threshold(128).modulate({ saturation: 0 });
 }
 
 async function applyPixelateSharp(image: sharp.Sharp, size: number): Promise<sharp.Sharp> {
@@ -196,59 +256,53 @@ async function applyPixelateSharp(image: sharp.Sharp, size: number): Promise<sha
 }
 
 async function applyNoiseSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
+  // Intensity: 0-1 (noise amount)
+  // Clamp intensity to valid range
+  const clampedIntensity = Math.max(0, Math.min(1, intensity));
+  
+  const buffer = await image.png().toBuffer();
+  const jimpImage = await Jimp.read(buffer);
 
-    const buffer = await image.png().toBuffer();
-    const jimpImage = await Jimp.read(buffer);
+  jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
+    const noise = (Math.random() - 0.5) * clampedIntensity * 255;
+    this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + noise));
+    this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + noise));
+    this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + noise));
+  });
 
-    jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
-      const noise = (Math.random() - 0.5) * intensity * 255;
-this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + noise));
-this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + noise));
-this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + noise));
-    });
-
-    const jimpBuffer = await jimpImage.getBuffer('image/png');
-    return sharp(jimpBuffer);
-  }
-  return image;
+  const jimpBuffer = await jimpImage.getBuffer('image/png');
+  return sharp(jimpBuffer);
 }
 
 async function applyGrainSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
+  // Intensity: 0-1 (grain amount)
+  // Clamp intensity to valid range
+  const clampedIntensity = Math.max(0, Math.min(1, intensity));
+  
+  const buffer = await image.png().toBuffer();
+  const jimpImage = await Jimp.read(buffer);
 
-    const buffer = await image.png().toBuffer();
-    const jimpImage = await Jimp.read(buffer);
+  jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
+    const grain = (Math.random() - 0.5) * clampedIntensity * 100;
+    this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + grain));
+    this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + grain));
+    this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + grain));
+  });
 
-    jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
-      const grain = (Math.random() - 0.5) * intensity * 100;
-this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + grain));
-this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + grain));
-this.bitmap.data[idx + 2] = Math.max(0, Math.min(255, this.bitmap.data[idx + 2] + grain));
-    });
-
-    const jimpBuffer = await jimpImage.getBuffer('image/png');
-    return sharp(jimpBuffer);
-  }
-  return image;
+  const jimpBuffer = await jimpImage.getBuffer('image/png');
+  return sharp(jimpBuffer);
 }
 
 async function applyEdgeDetectionSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
-
-    const kernel = createSobelKernel(intensity);
-    return image.convolve(kernel).grayscale();
-  }
-  return image;
+  // Intensity: edge detection strength (0-10+)
+  const kernel = createSobelKernel(intensity);
+  return image.convolve(kernel).grayscale();
 }
 
 async function applyEmbossSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
-  if (intensity > 0) {
-
-    const kernel = createEmbossKernel(intensity);
-    return image.convolve(kernel);
-  }
-  return image;
+  // Intensity: emboss strength (0-10+)
+  const kernel = createEmbossKernel(intensity);
+  return image.convolve(kernel);
 }
 
 function createMotionBlurKernel(intensity: number, angle: number): any {

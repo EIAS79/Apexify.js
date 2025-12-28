@@ -584,7 +584,9 @@ function flipCanvas(ctx: SKRSContext2D, width: number, height: number, horizonta
     }
   }
 
-  ctx.putImageData(new ImageData(newData, width, height), 0, 0);
+  const newImageData = ctx.createImageData(width, height);
+  newImageData.data.set(newData);
+  ctx.putImageData(newImageData, 0, 0);
 }
 
 function rotateCanvas(ctx: SKRSContext2D, canvas: Canvas, degrees: number): void {

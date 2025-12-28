@@ -113,28 +113,35 @@ export function applyChromaticAberration(
 ): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  const newPixels = new Uint8ClampedArray(pixels.length);
-const offset = Math.round(intensity * 5);
+  const newImageData = ctx.createImageData(width, height);
+  const newPixels = newImageData.data;
+  
+  // Increased offset for more visible effect (0-1 intensity maps to 0-15 pixels)
+  const offset = Math.round(intensity * 15);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4;
 
+      // Red channel shifted left
       const redX = Math.max(0, Math.min(width - 1, x - offset));
       const redIdx = (y * width + redX) * 4;
       newPixels[idx] = pixels[redIdx];
 
+      // Green channel stays in place
       newPixels[idx + 1] = pixels[idx + 1];
 
+      // Blue channel shifted right
       const blueX = Math.max(0, Math.min(width - 1, x + offset));
       const blueIdx = (y * width + blueX) * 4;
       newPixels[idx + 2] = pixels[blueIdx];
 
+      // Alpha channel unchanged
       newPixels[idx + 3] = pixels[idx + 3];
     }
   }
 
-  ctx.putImageData(new ImageData(newPixels, width, height), 0, 0);
+  ctx.putImageData(newImageData, 0, 0);
 }
 
 /**
@@ -152,16 +159,19 @@ export function applyFilmGrain(
 ): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-const grainAmount = intensity * 30;
+  
+  // Clamp intensity to valid range and increase grain amount for more visible effect
+  const clampedIntensity = Math.max(0, Math.min(1, intensity));
+  const grainAmount = clampedIntensity * 40; // Increased from 30 for more visible grain
 
   for (let i = 0; i < pixels.length; i += 4) {
-
+    // Apply random grain to RGB channels (not alpha)
     const grain = (Math.random() - 0.5) * grainAmount;
-
-pixels[i] = Math.max(0, Math.min(255, pixels[i] + grain));
-pixels[i + 1] = Math.max(0, Math.min(255, pixels[i + 1] + grain));
-pixels[i + 2] = Math.max(0, Math.min(255, pixels[i + 2] + grain));
-
+    
+    pixels[i] = Math.max(0, Math.min(255, Math.round(pixels[i] + grain)));     // Red
+    pixels[i + 1] = Math.max(0, Math.min(255, Math.round(pixels[i + 1] + grain))); // Green
+    pixels[i + 2] = Math.max(0, Math.min(255, Math.round(pixels[i + 2] + grain))); // Blue
+    // Alpha channel (i + 3) remains unchanged
   }
 
   ctx.putImageData(imageData, 0, 0);

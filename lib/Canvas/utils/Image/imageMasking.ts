@@ -389,7 +389,9 @@ export function applyBulgeDistortion(
     }
   }
 
-  tempCtx.putImageData(new ImageData(newPixels, width, height), 0, 0);
+  const newImageData = tempCtx.createImageData(width, height);
+  newImageData.data.set(newPixels);
+  tempCtx.putImageData(newImageData, 0, 0);
   ctx.drawImage(tempCanvas, x, y);
 }
 
@@ -461,7 +463,9 @@ export function applyMeshWarp(
     }
   }
 
-  tempCtx.putImageData(new ImageData(newPixels, width, height), 0, 0);
+  const newImageData = tempCtx.createImageData(width, height);
+  newImageData.data.set(newPixels);
+  tempCtx.putImageData(newImageData, 0, 0);
   ctx.drawImage(tempCanvas, x, y);
 }
 

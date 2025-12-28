@@ -30,9 +30,9 @@ blur?: number;
 export interface ShadowOptions {
   color?: string;          // e.g. 'rgba(0,0,0,1)'
   gradient?: gradient;     // <— gradient-capable shadow
-offsetX?: number;
-offsetY?: number;
-blur?: number;
+  offsetX?: number;
+  offsetY?: number;
+  blur?: number;
   opacity?: number;        // 0..1
   borderRadius?: number | "circular";
   borderPosition?: borderPosition;
@@ -267,8 +267,10 @@ intensity?: number;
 
 /**
  * Group transform options for grouped drawing operations
+ * Includes all transformation and visual properties that apply to the entire group
  */
 export interface GroupTransformOptions {
+  // === TRANSFORMATIONS ===
   /** Rotation in degrees - applies to all elements together */
   rotation?: number;
   /** Translation X - applies to all elements together */
@@ -283,6 +285,64 @@ export interface GroupTransformOptions {
   pivotX?: number;
   /** Pivot point Y for rotation/scale (default: group center) */
   pivotY?: number;
+
+  // === VISUAL PROPERTIES (applied to entire group) ===
+  /** Group opacity (0-1) - affects all elements together */
+  opacity?: number;
+  /** Group blur in pixels - affects all elements together */
+  blur?: number;
+  /** Border radius for the group bounding box */
+  borderRadius?: number | 'circular';
+  /** Border position for the group */
+  borderPosition?: borderPosition;
+
+  // === IMAGE FILTERS (applied to entire group) ===
+  /** Image filters applied to the entire group */
+  filters?: ImageFilter[];
+  /** Global filter intensity multiplier (default: 1) */
+  filterIntensity?: number;
+  /** Filter order: 'pre' (before drawing) or 'post' (after drawing) */
+  filterOrder?: 'pre' | 'post';
+
+  // === IMAGE MASKING ===
+  /** Mask applied to the entire group */
+  mask?: {
+    source: string | Buffer;
+    mode?: 'alpha' | 'luminance' | 'inverse';
+  };
+  /** Clip path for the entire group */
+  clipPath?: Array<{ x: number; y: number }>;
+
+  // === IMAGE DISTORTION/TRANSFORM ===
+  /** Distortion applied to the entire group */
+  distortion?: {
+    type: 'perspective' | 'warp' | 'bulge' | 'pinch';
+    points?: Array<{ x: number; y: number }>;
+    intensity?: number;
+  };
+  /** Mesh warp for the entire group */
+  meshWarp?: {
+    gridX?: number;
+    gridY?: number;
+    controlPoints?: Array<Array<{ x: number; y: number }>>;
+  };
+
+  // === IMAGE EFFECTS STACK (applied to entire group) ===
+  /** Effects applied to the entire group */
+  effects?: {
+    vignette?: { intensity: number; size: number };
+    lensFlare?: { x: number; y: number; intensity: number };
+    chromaticAberration?: { intensity: number };
+    filmGrain?: { intensity: number };
+  };
+
+  // === GROUP STYLING ===
+  /** Shadow for the entire group */
+  shadow?: ShadowOptions;
+  /** Stroke for the entire group */
+  stroke?: StrokeOptions;
+  /** Box background for the entire group */
+  boxBackground?: BoxBackground;
 }
 
 /**
@@ -367,18 +427,76 @@ export interface PixelManipulationOptions {
   intensity?: number;
 }
 
+/**
+ * Image filter configuration interface
+ * 
+ * Filter types and their required/optional parameters:
+ * 
+ * **Sharp-based filters (fast, high quality):**
+ * - `gaussianBlur`: Uses `intensity` (0-100+, blur radius in pixels)
+ * - `sharpen`: Uses `intensity` (0-100+, sharpening strength)
+ * - `brightness`: Uses `value` (-100 to 100, percentage: -100 = black, 0 = no change, 100 = white)
+ * - `contrast`: Uses `value` (-100 to 100, percentage: -100 = no contrast, 0 = no change, 100 = max contrast)
+ * - `saturation`: Uses `value` (-100 to 100, percentage: -100 = grayscale, 0 = no change, 100 = max saturation)
+ * - `hueShift`: Uses `value` (degrees: 0-360, hue rotation angle)
+ * - `grayscale`: No parameters (converts to grayscale)
+ * - `sepia`: No parameters (applies sepia tone)
+ * - `invert`: No parameters (inverts colors)
+ * - `posterize`: Uses `levels` (2-256, number of color levels)
+ * - `pixelate`: Uses `size` (2+, pixel block size)
+ * 
+ * **Convolution kernel filters (Sharp with custom kernels):**
+ * - `motionBlur`: Uses `intensity` (blur strength) and `angle` (0-360 degrees, direction of motion)
+ * - `radialBlur`: Uses `intensity` (blur strength), `centerX` (center X coordinate), `centerY` (center Y coordinate)
+ * - `edgeDetection`: Uses `intensity` (0-10+, edge detection strength)
+ * - `emboss`: Uses `intensity` (0-10+, emboss strength)
+ * 
+ * **Jimp-based filters (pixel manipulation):**
+ * - `noise`: Uses `intensity` (0-1, noise amount: 0 = none, 1 = maximum)
+ * - `grain`: Uses `intensity` (0-1, grain amount: 0 = none, 1 = maximum)
+ */
 export interface ImageFilter {
+  /** Filter type */
   type: 'gaussianBlur' | 'motionBlur' | 'radialBlur' | 'sharpen' | 'noise' | 'grain' |
         'edgeDetection' | 'emboss' | 'invert' | 'grayscale' | 'sepia' | 'pixelate' |
         'brightness' | 'contrast' | 'saturation' | 'hueShift' | 'posterize';
+  
+  /** 
+   * Intensity parameter for: gaussianBlur, sharpen, motionBlur, radialBlur, 
+   * noise, grain, edgeDetection, emboss
+   * - Blur/Sharpen: 0-100+ (pixels/strength)
+   * - Noise/Grain: 0-1 (amount)
+   * - Edge/Emboss: 0-10+ (strength)
+   */
   intensity?: number;
+  
+  /** Radius parameter (currently unused, reserved for future use) */
   radius?: number;
-angle?: number;
-centerX?: number;
-centerY?: number;
-value?: number;
-levels?: number;
-size?: number;
+  
+  /** 
+   * Angle in degrees (0-360) for motionBlur
+   * 0 = right, 90 = down, 180 = left, 270 = up
+   */
+  angle?: number;
+  
+  /** Center X coordinate for radialBlur (defaults to image center if not provided) */
+  centerX?: number;
+  
+  /** Center Y coordinate for radialBlur (defaults to image center if not provided) */
+  centerY?: number;
+  
+  /** 
+   * Value parameter for: brightness, contrast, saturation, hueShift
+   * - Brightness/Contrast/Saturation: -100 to 100 (percentage)
+   * - HueShift: 0-360 (degrees)
+   */
+  value?: number;
+  
+  /** Number of color levels for posterize (2-256, default: 4) */
+  levels?: number;
+  
+  /** Pixel block size for pixelate (2+, default: 10) */
+  size?: number;
 }
 
 /**

@@ -15,7 +15,7 @@ import {
   applyNoise,
 } from "../utils/utils";
 import { EnhancedPatternRenderer } from "../utils/Patterns/enhancedPatternRenderer";
-import { applySimpleProfessionalFilters } from "../utils/Image/simpleProfessionalFilters";
+import { applyProfessionalImageFilters } from "../utils/Image/professionalImageFilters";
 
 export interface CanvasResults {
   buffer: Buffer;
@@ -223,7 +223,7 @@ export class CanvasCreator {
           const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
           if (tempCtx) {
             tempCtx.drawImage(cv, 0, 0);
-            await applySimpleProfessionalFilters(tempCtx, customBg.filters, width, height);
+            await applyProfessionalImageFilters(tempCtx, customBg.filters, width, height);
             ctx.clearRect(0, 0, width, height);
             ctx.globalAlpha = customBg.opacity ?? 1;
             ctx.drawImage(tempCanvas, 0, 0);
