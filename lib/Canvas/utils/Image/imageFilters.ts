@@ -256,15 +256,44 @@ function applyEmboss(ctx: SKRSContext2D, intensity: number): void {
 }
 
 function applyInvert(ctx: SKRSContext2D): void {
-  ctx.filter = 'invert(100%)';
+  // Use pixel manipulation instead of ctx.filter to prevent duplication
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] = 255 - pixels[i];
+    pixels[i + 1] = 255 - pixels[i + 1];
+    pixels[i + 2] = 255 - pixels[i + 2];
+  }
+  ctx.putImageData(imageData, 0, 0);
+  ctx.filter = 'none';
 }
 
 function applyGrayscale(ctx: SKRSContext2D): void {
-  ctx.filter = 'grayscale(100%)';
+  // Use pixel manipulation instead of ctx.filter to prevent duplication
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = avg;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  ctx.filter = 'none';
 }
 
 function applySepia(ctx: SKRSContext2D): void {
-  ctx.filter = 'sepia(100%)';
+  // Use pixel manipulation instead of ctx.filter to prevent duplication
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+    pixels[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+    pixels[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+    pixels[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+  }
+  ctx.putImageData(imageData, 0, 0);
+  ctx.filter = 'none';
 }
 
 function applyPixelate(ctx: SKRSContext2D, size: number): void {

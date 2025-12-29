@@ -507,6 +507,8 @@ export class ImageCreator {
       await applyProfessionalImageFilters(tempCtx, adjustedFilters, dw, dh);
       
       // Draw the filtered result to main canvas
+      // CRITICAL: Reset filter before drawing to prevent duplication
+      ctx.filter = "none";
       ctx.drawImage(tempCanvas, dx, dy);
       ctx.filter = "none";
       ctx.globalAlpha = prevAlpha;
@@ -571,7 +573,10 @@ export class ImageCreator {
         }));
         await applyProfessionalImageFilters(tempCtx, adjustedFilters, box.w, box.h);
         ctx.clearRect(box.x, box.y, box.w, box.h);
+        // CRITICAL: Reset filter before drawing to prevent duplication
+        ctx.filter = 'none';
         ctx.drawImage(tempCanvas, box.x, box.y);
+        ctx.filter = 'none';
       }
       ctx.restore();
     }

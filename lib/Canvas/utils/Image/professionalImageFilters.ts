@@ -1,4 +1,4 @@
-import { SKRSContext2D } from '@napi-rs/canvas';
+import { createCanvas, SKRSContext2D } from '@napi-rs/canvas';
 import { ImageFilter } from '../types';
 import sharp from 'sharp';
 import { Jimp } from 'jimp';
@@ -18,12 +18,17 @@ export async function applyProfessionalImageFilters(
 ): Promise<void> {
   if (!filters || filters.length === 0) return;
 
+  const hasGrayscale = filters.some(f => f.type === 'grayscale');
+  if (hasGrayscale) {
+    applyBasicFilters(ctx, filters, width, height);
+    return;
+  }
+
   try {
 
     const imageData = ctx.getImageData(0, 0, width, height);
     const buffer = Buffer.from(new Uint8Array(imageData.data.buffer));
 
-    // Create Sharp image with exact dimensions, ensuring alpha channel
     let sharpImage = sharp(buffer, {
       raw: {
         width: width,
@@ -78,7 +83,7 @@ export async function applyProfessionalImageFilters(
           }
           break;
         case 'grayscale':
-          sharpImage = await applyGrayscaleSharp(sharpImage);
+          // GRAYSCALE FILTER - Handled in early return above, never reaches here
           break;
         case 'sepia':
           sharpImage = await applySepiaSharp(sharpImage);
@@ -123,6 +128,9 @@ export async function applyProfessionalImageFilters(
       .raw()
       .toBuffer({ resolveWithObject: true });
     
+    // CRITICAL: Reset filter before putting image data back to prevent duplication
+    ctx.filter = 'none';
+    
     // Verify dimensions match
     if (info.width !== width || info.height !== height) {
       // If dimensions don't match, resize to exact dimensions
@@ -147,10 +155,12 @@ export async function applyProfessionalImageFilters(
       newImageData.data.set(new Uint8ClampedArray(data));
       ctx.putImageData(newImageData, 0, 0);
     }
+    
+    // Ensure filter stays reset
+    ctx.filter = 'none';
 
   } catch (error) {
     console.error('Error applying professional filters:', error);
-
     applyBasicFilters(ctx, filters, width, height);
   }
 }
@@ -393,45 +403,114 @@ function createEmbossKernel(intensity: number): any {
 
 function applyBasicFilters(ctx: SKRSContext2D, filters: ImageFilter[], width: number, height: number): void {
   ctx.save();
+  
+  // Get current image data
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const pixels = imageData.data;
 
+  // Apply filters using pixel manipulation to avoid ctx.filter persistence issues
   for (const filter of filters) {
     switch (filter.type) {
       case 'gaussianBlur':
         if (filter.intensity && filter.intensity > 0) {
           ctx.filter = `blur(${filter.intensity}px)`;
+          // Redraw with filter, then reset
+          const tempCanvas = createCanvas(width, height);
+          const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
+          if (tempCtx) {
+            tempCtx.putImageData(imageData, 0, 0);
+            tempCtx.filter = `blur(${filter.intensity}px)`;
+            tempCtx.drawImage(tempCanvas, 0, 0);
+            tempCtx.filter = 'none';
+            const blurredData = tempCtx.getImageData(0, 0, width, height);
+            imageData.data.set(blurredData.data);
+          }
         }
         break;
       case 'brightness':
         if (filter.value !== undefined) {
-          ctx.filter = `brightness(${100 + filter.value}%)`;
+          const brightness = 1 + filter.value / 100;
+          for (let i = 0; i < pixels.length; i += 4) {
+            pixels[i] = Math.max(0, Math.min(255, pixels[i] * brightness));
+            pixels[i + 1] = Math.max(0, Math.min(255, pixels[i + 1] * brightness));
+            pixels[i + 2] = Math.max(0, Math.min(255, pixels[i + 2] * brightness));
+          }
         }
         break;
       case 'contrast':
         if (filter.value !== undefined) {
-          ctx.filter = `contrast(${100 + filter.value}%)`;
+          const contrast = 1 + filter.value / 100;
+          const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
+          for (let i = 0; i < pixels.length; i += 4) {
+            pixels[i] = Math.max(0, Math.min(255, factor * (pixels[i] - 128) + 128));
+            pixels[i + 1] = Math.max(0, Math.min(255, factor * (pixels[i + 1] - 128) + 128));
+            pixels[i + 2] = Math.max(0, Math.min(255, factor * (pixels[i + 2] - 128) + 128));
+          }
         }
         break;
       case 'saturation':
         if (filter.value !== undefined) {
-          ctx.filter = `saturate(${100 + filter.value}%)`;
+          const saturation = 1 + filter.value / 100;
+          for (let i = 0; i < pixels.length; i += 4) {
+            const r = pixels[i];
+            const g = pixels[i + 1];
+            const b = pixels[i + 2];
+            const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+            pixels[i] = Math.max(0, Math.min(255, gray + (r - gray) * saturation));
+            pixels[i + 1] = Math.max(0, Math.min(255, gray + (g - gray) * saturation));
+            pixels[i + 2] = Math.max(0, Math.min(255, gray + (b - gray) * saturation));
+          }
         }
         break;
       case 'hueShift':
         if (filter.value !== undefined) {
-          ctx.filter = `hue-rotate(${filter.value}deg)`;
+          const hueShift = filter.value * Math.PI / 180;
+          for (let i = 0; i < pixels.length; i += 4) {
+            const r = pixels[i] / 255;
+            const g = pixels[i + 1] / 255;
+            const b = pixels[i + 2] / 255;
+            const cos = Math.cos(hueShift);
+            const sin = Math.sin(hueShift);
+            const newR = r * (cos + (1 - cos) / 3) + g * ((1 - cos) / 3 - Math.sqrt(3) * sin / 3) + b * ((1 - cos) / 3 + Math.sqrt(3) * sin / 3);
+            const newG = r * ((1 - cos) / 3 + Math.sqrt(3) * sin / 3) + g * (cos + (1 - cos) / 3) + b * ((1 - cos) / 3 - Math.sqrt(3) * sin / 3);
+            const newB = r * ((1 - cos) / 3 - Math.sqrt(3) * sin / 3) + g * ((1 - cos) / 3 + Math.sqrt(3) * sin / 3) + b * (cos + (1 - cos) / 3);
+            pixels[i] = Math.max(0, Math.min(255, newR * 255));
+            pixels[i + 1] = Math.max(0, Math.min(255, newG * 255));
+            pixels[i + 2] = Math.max(0, Math.min(255, newB * 255));
+          }
         }
         break;
       case 'grayscale':
-        ctx.filter = 'grayscale(100%)';
+        // Use pixel manipulation instead of ctx.filter to prevent duplication
+        for (let i = 0; i < pixels.length; i += 4) {
+          const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+          pixels[i] = pixels[i + 1] = pixels[i + 2] = avg;
+        }
         break;
       case 'sepia':
-        ctx.filter = 'sepia(100%)';
+        // Use pixel manipulation instead of ctx.filter to prevent duplication
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = pixels[i];
+          const g = pixels[i + 1];
+          const b = pixels[i + 2];
+          pixels[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+          pixels[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+          pixels[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+        }
         break;
       case 'invert':
-        ctx.filter = 'invert(100%)';
+        // Use pixel manipulation instead of ctx.filter to prevent duplication
+        for (let i = 0; i < pixels.length; i += 4) {
+          pixels[i] = 255 - pixels[i];
+          pixels[i + 1] = 255 - pixels[i + 1];
+          pixels[i + 2] = 255 - pixels[i + 2];
+        }
         break;
     }
   }
 
+  // Put the modified image data back
+  ctx.putImageData(imageData, 0, 0);
+  ctx.filter = 'none';
   ctx.restore();
 }

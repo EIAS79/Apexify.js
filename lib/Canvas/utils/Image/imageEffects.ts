@@ -167,7 +167,7 @@ export function applyFilmGrain(
   for (let i = 0; i < pixels.length; i += 4) {
     // Apply random grain to RGB channels (not alpha)
     const grain = (Math.random() - 0.5) * grainAmount;
-    
+
     pixels[i] = Math.max(0, Math.min(255, Math.round(pixels[i] + grain)));     // Red
     pixels[i + 1] = Math.max(0, Math.min(255, Math.round(pixels[i + 1] + grain))); // Green
     pixels[i + 2] = Math.max(0, Math.min(255, Math.round(pixels[i + 2] + grain))); // Blue
