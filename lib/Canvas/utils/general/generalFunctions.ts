@@ -1,10 +1,10 @@
 import path from 'path';
 import sharp from 'sharp';
-import { cropOptions, ResizeOptions, GradientConfig, gradient, ImageFilter } from '../types';
+import { cropOptions, ResizeOptions, GradientConfig, ImageFilter } from '../types';
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from '@napi-rs/canvas';
 import fs from "fs";
 import axios from "axios";
-import { getErrorMessage, getCanvasContext } from '../errorUtils';
+import { getErrorMessage, getCanvasContext } from "../core/errorUtils";
 
 export async function loadImages(imagePath: string) {
   try {
@@ -518,7 +518,6 @@ export async function removeColor(inputImagePath: string, colorToRemove: { red: 
           const red = imageData.data[i];
           const green = imageData.data[i + 1];
           const blue = imageData.data[i + 2];
-          const alpha = imageData.data[i + 3];
 
           if (red === colorToRemove.red && green === colorToRemove.green && blue === colorToRemove.blue) {
               imageData.data[i + 3] = 0;
