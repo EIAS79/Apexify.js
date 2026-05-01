@@ -39,6 +39,10 @@ export interface ChartAppearanceExtended {
   axisColor?: string;
   axisWidth?: number;
   arrowSize?: number;
+  /** Optional outer frame drawn on top of the chart (see line chart renderer). */
+  borderRadius?: number;
+  borderWidth?: number;
+  borderColor?: string;
 }
 
 /**
@@ -103,7 +107,7 @@ export async function paintChartCanvasBackground(
   }
 
   if (a.patternBg) {
-    await EnhancedPatternRenderer.renderPattern(ctx, canvas, a.patternBg);
+    await EnhancedPatternRenderer.renderPattern(ctx, { width, height }, a.patternBg);
   }
 
   if (a.noiseBg) {

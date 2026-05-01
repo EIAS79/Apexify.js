@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageProperties, ShapeType, CreateImageOptions } from "../utils/utils";
+import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions } from "../utils/canvasUtils";
 import type { CanvasResults } from "./CanvasCreator";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 import {
   isShapeSource,
   loadImageCached,
@@ -24,7 +24,7 @@ import {
   applyChromaticAberration,
   applyFilmGrain,
   applyProfessionalImageFilters,
-} from "../utils/utils";
+} from "../utils/canvasUtils";
 
 /**
  * Extended class for image creation functionality
@@ -153,7 +153,8 @@ export class ImageCreator {
     style: 'groove' | 'ridge' | 'double',
     width: number,
     color: string,
-    gradient: any
+    gradient: any,
+    rect: { x: number; y: number; w: number; h: number }
   ): void {
     const halfWidth = width / 2;
 
@@ -161,7 +162,7 @@ export class ImageCreator {
       case 'groove':
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
+          const gstroke = createGradientFill(ctx, gradient, rect);
           ctx.strokeStyle = gstroke as any;
         } else {
           ctx.strokeStyle = this.darkenColor(color, 0.3);
@@ -169,7 +170,7 @@ export class ImageCreator {
         ctx.stroke();
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
+          const gstroke = createGradientFill(ctx, gradient, rect);
           ctx.strokeStyle = gstroke as any;
         } else {
           ctx.strokeStyle = this.lightenColor(color, 0.3);
@@ -179,7 +180,7 @@ export class ImageCreator {
       case 'ridge':
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
+          const gstroke = createGradientFill(ctx, gradient, rect);
           ctx.strokeStyle = gstroke as any;
         } else {
           ctx.strokeStyle = this.lightenColor(color, 0.3);
@@ -187,7 +188,7 @@ export class ImageCreator {
         ctx.stroke();
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
+          const gstroke = createGradientFill(ctx, gradient, rect);
           ctx.strokeStyle = gstroke as any;
         } else {
           ctx.strokeStyle = this.darkenColor(color, 0.3);
@@ -197,7 +198,7 @@ export class ImageCreator {
       case 'double':
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
+          const gstroke = createGradientFill(ctx, gradient, rect);
           ctx.strokeStyle = gstroke as any;
         } else {
           ctx.strokeStyle = color;
@@ -205,7 +206,7 @@ export class ImageCreator {
         ctx.stroke();
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          const gstroke = createGradientFill(ctx, gradient, { x: 0, y: 0, w: 100, h: 100 });
+          const gstroke = createGradientFill(ctx, gradient, rect);
           ctx.strokeStyle = gstroke as any;
         } else {
           ctx.strokeStyle = color;
@@ -294,8 +295,9 @@ export class ImageCreator {
 
     createShapePath(ctx, shapeType, x, y, width, height, shapeProps);
 
+    const strokeGradientRect = { x, y, w: width, h: height };
     if (style === 'groove' || style === 'ridge' || style === 'double') {
-      this.applyComplexShapeStroke(ctx, style, strokeWidth, color, gradient);
+      this.applyComplexShapeStroke(ctx, style, strokeWidth, color, gradient, strokeGradientRect);
     } else {
       ctx.stroke();
     }
@@ -338,11 +340,16 @@ export class ImageCreator {
       endAngle?: number;
       centerX?: number;
       centerY?: number;
+      blendMode?: GlobalCompositeOperation;
     }
   ): Promise<void> {
     const box = { x, y, w: width, h: height };
 
     ctx.save();
+
+    if (options.blendMode) {
+      ctx.globalCompositeOperation = options.blendMode;
+    }
 
     if (options.rotation) {
       applyRotation(ctx, options.rotation, box.x, box.y, box.w, box.h);
@@ -399,20 +406,44 @@ export class ImageCreator {
 
     ctx.restore();
 
-    if (options.stroke && this.isComplexShape(shapeType)) {
-      this.applyShapeStroke(ctx, shapeType, x, y, width, height, options.stroke, {
-        radius: options.radius,
-        sides: options.sides,
-        innerRadius: options.innerRadius,
-        outerRadius: options.outerRadius
-      });
-    } else if (options.stroke) {
-      applyStroke(ctx, box, options.stroke);
+    /** Outline follows the actual geometry from {@link createShapePath}, not the image bounding box. */
+    if (options.stroke) {
+      const shapeStrokeProps = this.collectShapeStrokeProps(options);
+      this.applyShapeStroke(ctx, shapeType, x, y, width, height, options.stroke, shapeStrokeProps);
     }
 
     ctx.filter = "none";
     ctx.globalAlpha = 1;
     ctx.restore();
+  }
+
+  /**
+   * Geometry passed to {@link createShapePath} for stroking — must match what {@link drawShape} uses for fills.
+   * @private
+   */
+  private collectShapeStrokeProps(options: {
+      radius?: number;
+      sides?: number;
+      innerRadius?: number;
+      outerRadius?: number;
+      points?: ShapeProperties["points"];
+      startAngle?: number;
+      endAngle?: number;
+      centerX?: number;
+      centerY?: number;
+    }
+  ): ShapeProperties {
+    return {
+      radius: options.radius,
+      sides: options.sides,
+      innerRadius: options.innerRadius,
+      outerRadius: options.outerRadius,
+      points: options.points,
+      startAngle: options.startAngle,
+      endAngle: options.endAngle,
+      centerX: options.centerX,
+      centerY: options.centerY,
+    };
   }
 
   /**
@@ -444,7 +475,8 @@ export class ImageCreator {
       clipPath,
       distortion,
       meshWarp,
-      effects
+      effects,
+      blendMode,
     } = ip;
 
     this.validateImageProperties(ip);
@@ -460,7 +492,8 @@ export class ImageCreator {
         shadow,
         stroke,
         boxBackground,
-        filters
+        filters,
+        blendMode,
       });
       return;
     }
@@ -472,6 +505,10 @@ export class ImageCreator {
     const box = { x, y, w: boxW, h: boxH };
 
     ctx.save();
+
+    if (blendMode) {
+      ctx.globalCompositeOperation = blendMode;
+    }
 
     applyRotation(ctx, rotation, box.x, box.y, box.w, box.h);
     applyShadow(ctx, box, shadow);
@@ -677,6 +714,10 @@ export class ImageCreator {
 
         // Save context state for group
         ctx.save();
+
+        if (groupTransform.blendMode) {
+          ctx.globalCompositeOperation = groupTransform.blendMode;
+        }
 
         // Apply group opacity
         if (groupTransform.opacity !== undefined) {

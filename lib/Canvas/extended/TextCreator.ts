@@ -1,9 +1,8 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import type { TextProperties } from "../utils/utils";
+import type { TextProperties } from "../utils/canvasUtils";
 import type { CanvasResults } from "./CanvasCreator";
 import { EnhancedTextRenderer } from "../utils/Texts/enhancedTextRenderer";
-import { renderTextOnPath } from "../utils/utils";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 
 /**
  * Extended class for text creation functionality
@@ -42,11 +41,10 @@ export class TextCreator {
    * @param textProps - Text properties
    */
   private async renderEnhancedText(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
-
-    if (textProps.path && textProps.textOnPath) {
-      renderTextOnPath(ctx, textProps.text, textProps.path, textProps.path.offset ?? 0);
-    } else {
+    try {
       await EnhancedTextRenderer.renderText(ctx, textProps);
+    } catch (error) {
+      throw new Error(`renderEnhancedText failed: ${getErrorMessage(error)}`);
     }
   }
 

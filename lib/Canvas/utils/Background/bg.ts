@@ -1,6 +1,15 @@
 import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
+import type { Image } from "@napi-rs/canvas";
 import { CanvasConfig, gradient } from "../types";
+import { EnhancedPatternRenderer } from "../Patterns/enhancedPatternRenderer";
 import path from "path";
+
+/** Resolve `source` to an absolute filesystem path when it is not an http(s) URL. */
+export function resolveMediaPath(source: string): string {
+  if (!source) return source;
+  if (/^https?:\/\//i.test(source)) return source;
+  return path.join(process.cwd(), source);
+}
 
 export type AlignMode =
   | 'center' | 'top' | 'bottom' | 'left' | 'right'
@@ -67,10 +76,7 @@ export async function customBackground(
   const cfg = canvas.customBg;
   if (!cfg) return;
 
-  let imagePath = cfg.source;
-  if (!/^https?:\/\//.test(imagePath)) {
-    imagePath = path.join(process.cwd(), imagePath);
-  }
+  const imagePath = resolveMediaPath(cfg.source);
 
   try {
     const img = await loadImage(imagePath);
@@ -84,25 +90,9 @@ export async function customBackground(
 
       ctx.drawImage(img, 0, 0);
     } else {
-
       const fit: FitMode = cfg.fit ?? 'fill';
-      let dx = 0, dy = 0, dw = W, dh = H;
-
-      if (fit === 'contain' || fit === 'cover') {
-        const s = fit === 'contain'
-          ? Math.min(W / img.width, H / img.height)
-          : Math.max(W / img.width, H / img.height);
-        dw = img.width * s;
-        dh = img.height * s;
-
-        const align: AlignMode = cfg.align ?? 'center';
-        ({ dx, dy } = alignInto(W, H, dw, dh, align));
-      } else {
-
-        dx = 0; dy = 0; dw = W; dh = H;
-      }
-
-      ctx.drawImage(img, dx, dy, dw, dh);
+      const align: AlignMode = cfg.align ?? 'center';
+      drawImageFitted(ctx, img, W, H, fit, align);
     }
 
     ctx.filter = 'none';
@@ -127,6 +117,29 @@ function alignInto(
     case 'bottom':       return { dx: cx,  dy: H-h };
     case 'bottom-right': return { dx: W-w, dy: H-h };
     default:             return { dx: cx,  dy: cy };
+  }
+}
+
+/** Draw `img` into the `[0..W]×[0..H]` rect using the same rules as `customBg` (non-inherit). */
+function drawImageFitted(
+  ctx: SKRSContext2D,
+  img: Image,
+  W: number,
+  H: number,
+  fit: FitMode,
+  align: AlignMode
+): void {
+  if (fit === 'contain' || fit === 'cover') {
+    const s =
+      fit === 'contain'
+        ? Math.min(W / img.width, H / img.height)
+        : Math.max(W / img.width, H / img.height);
+    const dw = img.width * s;
+    const dh = img.height * s;
+    const { dx, dy } = alignInto(W, H, dw, dh, align);
+    ctx.drawImage(img, dx, dy, dw, dh);
+  } else {
+    ctx.drawImage(img, 0, 0, W, H);
   }
 }
 
@@ -177,6 +190,7 @@ export function buildPathbg(
 export function applyNoise(ctx: SKRSContext2D, width: number, height: number, intensity = 0.05) {
   const noiseCanvas = createCanvas(width, height);
   const nctx = noiseCanvas.getContext("2d");
+  if (!nctx) return;
   const imageData = nctx.createImageData(width, height);
   for (let i = 0; i < imageData.data.length; i += 4) {
     const v = (Math.random() * 255) | 0;
@@ -195,7 +209,7 @@ export async function drawPattern(
   width: number,
   height: number
 ) {
-  const img = await loadImage(source);
+  const img = await loadImage(resolveMediaPath(source));
   const pattern = ctx.createPattern(img, repeat);
   if (!pattern) return;
   ctx.save();
@@ -332,4 +346,79 @@ function createRepeatingGradientPattern(
   }
 
   return pattern;
+}
+
+/**
+ * Paints `bgLayers` in order (bottom → top) on the current clipped canvas area.
+ * Combine with `colorBg` / `gradientBg` / `customBg` as the base, or use a color layer first in `bgLayers`.
+ */
+export async function drawBackgroundLayers(
+  ctx: SKRSContext2D,
+  canvas: CanvasConfig
+): Promise<void> {
+  const layers = canvas.bgLayers;
+  if (!layers?.length) return;
+
+  const W = canvas.width ?? 500;
+  const H = canvas.height ?? 500;
+
+  for (const layer of layers) {
+    ctx.save();
+    ctx.globalCompositeOperation =
+      layer.blendMode ?? ('source-over' as GlobalCompositeOperation);
+    try {
+      switch (layer.type) {
+        case 'color':
+          ctx.globalAlpha = layer.opacity ?? 1;
+          ctx.fillStyle = layer.value;
+          ctx.fillRect(0, 0, W, H);
+          break;
+        case 'gradient': {
+          ctx.globalAlpha = layer.opacity ?? 1;
+          const grad = buildCanvasGradient(ctx, { gradient: layer.value, width: W, height: H });
+          ctx.fillStyle = grad as CanvasGradient | CanvasPattern;
+          ctx.fillRect(0, 0, W, H);
+          break;
+        }
+        case 'image': {
+          const img = await loadImage(resolveMediaPath(layer.source));
+          ctx.globalAlpha = layer.opacity ?? 1;
+          const fit = layer.fit ?? 'fill';
+          const align = (layer.align ?? 'center') as AlignMode;
+          drawImageFitted(ctx, img, W, H, fit, align);
+          break;
+        }
+        case 'pattern':
+          await drawPattern(
+            ctx,
+            {
+              source: layer.source,
+              repeat: layer.repeat ?? 'repeat',
+              opacity: layer.opacity ?? 1,
+            },
+            W,
+            H
+          );
+          break;
+        case 'presetPattern':
+          ctx.globalAlpha = layer.opacity ?? 1;
+          await EnhancedPatternRenderer.renderPattern(
+            ctx,
+            { width: W, height: H },
+            layer.pattern,
+            { stackedInLayer: true }
+          );
+          break;
+        case 'noise':
+          applyNoise(ctx, W, H, layer.intensity ?? 0.08);
+          break;
+        default:
+          break;
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`drawBackgroundLayers: layer failed (${(layer as { type: string }).type}):`, msg);
+    }
+    ctx.restore();
+  }
 }

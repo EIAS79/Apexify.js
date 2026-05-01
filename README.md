@@ -87,6 +87,7 @@ While other libraries force you to install multiple packages for different tasks
 | **Patterns** | Professional pattern overlays (dots, lines, grids, custom) |
 | **Noise Effects** | Add texture and grain to backgrounds |
 | **Zoom Effects** | Apply zoom transformations to backgrounds |
+| **Layered backgrounds (`bgLayers`)** | Stack color, gradient, image, pattern, or noise passes after the base fill — each layer supports opacity and blend mode |
 
 ### 🖼️ **Image Processing**
 
@@ -105,7 +106,7 @@ While other libraries force you to install multiple packages for different tasks
 | **Color Detection** | Extract dominant colors from images |
 | **Color Removal** | Remove specific colors from images |
 | **Image Rotation** | Rotate images with custom angles |
-| **Image Blending** | 15+ blend modes (multiply, screen, overlay, etc.) |
+| **Image Blending** | 15+ blend modes (multiply, screen, overlay, etc.); **`createImage`** supports per-layer **`blendMode`** (bitmaps & shapes) and **`blendMode`** on grouped **`createImage`** options |
 | **Image Stitching** | Stitch multiple images together (horizontal, vertical, grid) |
 | **Image Collage** | Create collages with grid, masonry, carousel layouts |
 | **Image Compression** | Compress images (JPEG, WebP, AVIF) with quality control |
@@ -154,6 +155,8 @@ While other libraries force you to install multiple packages for different tasks
 | **Bar Charts** | Standard, grouped, stacked, waterfall, lollipop charts |
 | **Horizontal Bar Charts** | All bar chart types in horizontal orientation |
 | **Line Charts** | Multi-series line charts with gradients |
+| **Axis readability** | Tick labels inherit axis colors (readable on dark chart backgrounds); rotated Y-axis titles spaced from tick numbers; X-axis title spaced below tick labels |
+| **Line chart frame** | Optional **`borderRadius` / `borderWidth` / `borderColor`** on line chart appearance — frame drawn after plot content |
 | **Comparison Charts** | Side-by-side comparison of any two chart types |
 | **Chart Customization** | Gradients, custom fonts, legends, labels, titles |
 | **Data Visualization** | Professional charts for data presentation |
@@ -196,15 +199,18 @@ While other libraries force you to install multiple packages for different tasks
 | **LUT Support** | Apply Look-Up Tables for cinematic color grading |
 | **Video Transitions** | 9 transition types (fade, wipe, slide, zoom, rotate, etc.) |
 | **Animated Text** | 8 animation types (fadeIn, slideIn, zoom, bounce, typewriter, etc.) |
-| **Frame-to-Video** | Compile edited frames/images into videos |
+| **Frame-to-Video (`createFromFrames`)** | Encode a sequence of image paths or buffers to MP4/WebM/etc. (requires **FFmpeg** on the host) |
 
 ### 🎞️ **GIF Creation**
 
 | Feature | Description |
 |---------|-------------|
 | **GIF Generation** | Create animated GIFs from image sequences |
+| **Typed frames** | **`GIFInputFrame`** / **`GIFEncodedFrame`** — buffers, paths, URLs, durations, optional per-frame **`dispose`**, **`transparentColor`**, **`watermark`** |
+| **Programmatic frames (`onStart`)** | Build frames in code without passing all frames up front; return an array or **`AsyncIterable`** of encoded frames for streaming / lower peak memory |
+| **Globals & hints** | **`transparentColor`**, **`defaultDispose`**, global watermark, **`skipResizeWhenDimensionsMatch`**, **`delay`** / **`frameCount`** / **`duration`** hints, **`textOverlay`**, **`onEnd`** (post-process final composite) |
 | **Frame Management** | Add frames with custom durations |
-| **GIF Watermarking** | Add watermarks to GIFs |
+| **GIF Watermarking** | Global or per-frame watermarks (**`GIFWatermarkSpec`**) |
 | **Text Overlays** | Add text to GIF frames |
 | **Output Formats** | File, buffer, base64, attachment output |
 | **Quality Control** | Adjust GIF quality and optimization |

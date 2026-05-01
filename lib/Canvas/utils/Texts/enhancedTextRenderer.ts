@@ -7,6 +7,8 @@ import path from 'path';
  * Enhanced text renderer with comprehensive styling options
  */
 export class EnhancedTextRenderer {
+  /** Vertical offset from `textBaseline: 'middle'` to alphabetic baseline (em-relative, Latin text). */
+  private static readonly MIDDLE_TO_ALPHABETIC = 0.38;
   /**
    * Renders text with all enhanced features
    * @param ctx - Canvas 2D context
@@ -30,7 +32,9 @@ export class EnhancedTextRenderer {
 
       this.setupAlignment(ctx, textProps);
 
-      if (textProps.maxWidth) {
+      if (textProps.textOnCurve) {
+        await this.renderCurvedLines(ctx, textProps);
+      } else if (textProps.maxWidth) {
         await this.renderWrappedText(ctx, textProps);
       } else {
         await this.renderSingleLine(ctx, textProps);
@@ -48,7 +52,7 @@ export class EnhancedTextRenderer {
    */
   private static async registerCustomFont(fontPath: string, fontName: string): Promise<void> {
     try {
-      const fullPath = path.join(process.cwd(), fontPath);
+      const fullPath = path.isAbsolute(fontPath) ? fontPath : path.join(process.cwd(), fontPath);
       GlobalFonts.registerFromPath(fullPath, fontName);
     } catch (error) {
       console.warn(`Failed to register font from path: ${fontPath}`, error);
@@ -109,6 +113,229 @@ export class EnhancedTextRenderer {
   private static setupAlignment(ctx: SKRSContext2D, textProps: TextProperties): void {
     ctx.textAlign = textProps.textAlign || 'left';
     ctx.textBaseline = textProps.textBaseline || 'alphabetic';
+  }
+
+  /**
+   * One or more lines, each drawn on its own circular arc (stacked vertically by line height).
+   */
+  private static async renderCurvedLines(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
+    const fontSize = textProps.font?.size || textProps.fontSize || 16;
+    const lineHeight = (textProps.lineHeight || 1.4) * fontSize;
+    const lines = textProps.text.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const y = textProps.y + i * lineHeight;
+      await this.renderCurvedLine(ctx, line, { ...textProps, y }, textProps.textOnCurve!);
+    }
+  }
+
+  /**
+   * Renders a single string on a circular arc. Anchor `(x, y)` is the center of the baseline (middle glyph).
+   */
+  private static async renderCurvedLine(
+    ctx: SKRSContext2D,
+    line: string,
+    textProps: TextProperties,
+    curve: NonNullable<TextProperties['textOnCurve']>
+  ): Promise<void> {
+    const sweepDeg = curve.sweepAngle;
+    if (!line || sweepDeg <= 0 || sweepDeg >= 360) {
+      await this.renderTextLine(ctx, line, textProps.x, textProps.y, textProps);
+      return;
+    }
+
+    // Full-line width: ctx already has font, letterSpacing, wordSpacing from setupFont — same as straight text.
+    // Arc positions use those advances, so extra letter/word space is stretched along the arc with the glyphs.
+    const totalWidth = ctx.measureText(line).width;
+    if (totalWidth <= 0) {
+      return;
+    }
+
+    const θ = (sweepDeg * Math.PI) / 180;
+    const up = curve.up !== false;
+    const R = curve.radius ?? totalWidth / θ;
+
+    const cx = textProps.x;
+    const cy = up ? textProps.y + R : textProps.y - R;
+
+    const chars = Array.from(line);
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      // Kerned positions: per-glyph sums ignore kerning and break spacing on arcs.
+      const leftStr = chars.slice(0, i).join('');
+      const rightStr = chars.slice(0, i + 1).join('');
+      const left = ctx.measureText(leftStr).width;
+      const right = ctx.measureText(rightStr).width;
+      const centerDist = (left + right) / 2;
+
+      // Arc length from string start to this glyph's center = centerDist → angle = centerDist / R
+      const α = up
+        ? -Math.PI / 2 - θ / 2 + centerDist / R
+        : Math.PI / 2 + θ / 2 - centerDist / R;
+
+      const px = cx + R * Math.cos(α);
+      const py = cy + R * Math.sin(α);
+      const rotation = up
+        ? α + Math.PI / 2
+        : Math.atan2(-Math.cos(α), Math.sin(α));
+
+      this.renderRotatedGlyph(ctx, ch, px, py, rotation, textProps);
+    }
+  }
+
+  /**
+   * Single glyph with glow, shadow, stroke, fill; gradient uses local horizontal span of the glyph.
+   */
+  private static renderRotatedGlyph(
+    ctx: SKRSContext2D,
+    char: string,
+    x: number,
+    y: number,
+    rotation: number,
+    textProps: TextProperties
+  ): void {
+    const w = ctx.measureText(char).width;
+    const fontSize = textProps.font?.size || textProps.fontSize || 16;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // With textAlign 'center', (0,0) is the glyph center — same point as kerned arc math.
+    // Using -w/2 here shifted every letter left by half its width and destroyed spacing on curves.
+    const lx = 0;
+    const ly = 0;
+
+    if (textProps.highlight) {
+      this.renderHighlightLocal(ctx, w, fontSize, textProps.highlight);
+    }
+
+    if (textProps.glow) {
+      this.renderGlow(ctx, char, lx, ly, textProps.glow, true);
+    }
+
+    if (textProps.shadow) {
+      this.renderShadow(ctx, char, lx, ly, textProps.shadow, true);
+    }
+
+    if (textProps.stroke) {
+      this.renderStroke(ctx, char, lx, ly, textProps.stroke, true);
+    }
+
+    this.renderFill(ctx, char, lx, ly, textProps, true);
+
+    if (textProps.underline || textProps.overline || textProps.strikethrough) {
+      this.renderDecorationsLocal(ctx, w, fontSize, textProps);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Highlight behind a single glyph in local space (origin = em middle, x along tangent).
+   * Matches {@link renderHighlight} placement relative to alphabetic baseline.
+   */
+  private static renderHighlightLocal(
+    ctx: SKRSContext2D,
+    width: number,
+    fontSize: number,
+    highlight: NonNullable<TextProperties['highlight']>
+  ): void {
+    const baseline = fontSize * this.MIDDLE_TO_ALPHABETIC;
+    const height = fontSize;
+    const top = baseline - height * 0.8;
+    const left = -width / 2;
+
+    ctx.save();
+
+    const opacity = highlight.opacity !== undefined ? highlight.opacity : 0.3;
+    ctx.globalAlpha = opacity;
+
+    if (highlight.gradient) {
+      ctx.fillStyle = this.createGradient(ctx, highlight.gradient, left, top, left + width, top + height);
+    } else {
+      ctx.fillStyle = highlight.color || '#ffff00';
+    }
+
+    ctx.fillRect(left, top, width, height);
+
+    ctx.restore();
+  }
+
+  /**
+   * Underline / overline / strikethrough for one glyph in local space (same offsets as {@link renderDecorations}).
+   */
+  private static renderDecorationsLocal(
+    ctx: SKRSContext2D,
+    width: number,
+    fontSize: number,
+    textProps: TextProperties
+  ): void {
+    const hasDecorations = textProps.underline || textProps.overline || textProps.strikethrough;
+    if (!hasDecorations) {
+      return;
+    }
+
+    const baseline = fontSize * this.MIDDLE_TO_ALPHABETIC;
+    const xLeft = -width / 2;
+    const xRight = width / 2;
+    const defaultColor = textProps.color || '#000000';
+
+    ctx.save();
+
+    const renderDecorationLine = (
+      decorationY: number,
+      decoration: boolean | { color?: string; gradient?: gradient; width?: number } | undefined
+    ) => {
+      if (!decoration) return;
+
+      ctx.save();
+
+      let decorationColor = defaultColor;
+      let decorationWidth = Math.max(1, fontSize * 0.05);
+
+      if (typeof decoration === 'object') {
+        decorationColor = decoration.color || defaultColor;
+        decorationWidth = decoration.width || decorationWidth;
+
+        if (decoration.gradient) {
+          ctx.strokeStyle = this.createGradient(ctx, decoration.gradient, xLeft, decorationY, xRight, decorationY);
+        } else {
+          ctx.strokeStyle = decorationColor;
+        }
+      } else {
+        ctx.strokeStyle = decorationColor;
+      }
+
+      ctx.lineWidth = decorationWidth;
+
+      ctx.beginPath();
+      ctx.moveTo(xLeft, decorationY);
+      ctx.lineTo(xRight, decorationY);
+      ctx.stroke();
+
+      ctx.restore();
+    };
+
+    if (textProps.underline) {
+      const underlineY = baseline + fontSize * 0.1;
+      renderDecorationLine(underlineY, textProps.underline);
+    }
+
+    if (textProps.overline) {
+      const overlineY = baseline - fontSize * 0.8;
+      renderDecorationLine(overlineY, textProps.overline);
+    }
+
+    if (textProps.strikethrough) {
+      const strikethroughY = baseline - fontSize * 0.3;
+      renderDecorationLine(strikethroughY, textProps.strikethrough);
+    }
+
+    ctx.restore();
   }
 
   /**
@@ -273,12 +500,17 @@ const highlightY = y - height * 0.8;
     text: string,
     x: number,
     y: number,
-    glow: { color?: string; gradient?: gradient; intensity?: number; opacity?: number }
+    glow: { color?: string; gradient?: gradient; intensity?: number; opacity?: number },
+    /** When true, `x` is horizontal center and linear gradients span ±half advance. */
+    centerGlyph?: boolean
   ): void {
     ctx.save();
 
     const intensity = glow.intensity || 10;
     const opacity = glow.opacity !== undefined ? glow.opacity : 0.8;
+    const w = ctx.measureText(text).width;
+    const gx0 = centerGlyph ? x - w / 2 : x;
+    const gx1 = centerGlyph ? x + w / 2 : x + w;
 
     if (glow.gradient) {
 
@@ -289,7 +521,7 @@ ctx.shadowColor = '#ffffff';
 
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
-      ctx.fillStyle = this.createGradient(ctx, glow.gradient, x, y, x + ctx.measureText(text).width, y);
+      ctx.fillStyle = this.createGradient(ctx, glow.gradient, gx0, y, gx1, y);
       ctx.fillText(text, x, y);
     } else {
       ctx.shadowColor = glow.color || '#ffffff';
@@ -314,20 +546,46 @@ ctx.shadowColor = '#ffffff';
     text: string,
     x: number,
     y: number,
-    shadow: { color?: string; offsetX?: number; offsetY?: number; blur?: number; opacity?: number }
+    shadow: { color?: string; gradient?: gradient; offsetX?: number; offsetY?: number; blur?: number; opacity?: number },
+    centerGlyph?: boolean
   ): void {
     ctx.save();
 
-    ctx.shadowColor = shadow.color || 'rgba(0, 0, 0, 0.5)';
+    const blur = shadow.blur || 4;
+    const opacity = shadow.opacity !== undefined ? shadow.opacity : 1;
+    const w = ctx.measureText(text).width;
+    const gx0 = centerGlyph ? x - w / 2 : x;
+    const gx1 = centerGlyph ? x + w / 2 : x + w;
+
     ctx.shadowOffsetX = shadow.offsetX || 2;
     ctx.shadowOffsetY = shadow.offsetY || 2;
-    ctx.shadowBlur = shadow.blur || 4;
 
-    if (shadow.opacity !== undefined) {
-      ctx.globalAlpha = shadow.opacity;
+    if (shadow.gradient) {
+      const gradientFill = this.createGradient(
+        ctx,
+        shadow.gradient,
+        gx0,
+        y,
+        gx1,
+        y
+      );
+
+      const shadowTint = (shadow.gradient.colors && shadow.gradient.colors[0] && shadow.gradient.colors[0].color) || shadow.color || 'rgba(0, 0, 0, 0.5)';
+
+      ctx.fillStyle = gradientFill;
+      ctx.shadowColor = shadowTint;
+      ctx.shadowBlur = blur;
+      ctx.globalAlpha = opacity;
+      ctx.fillText(text, x, y);
+    } else {
+      ctx.shadowColor = shadow.color || 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = blur;
+      if (shadow.opacity !== undefined) {
+        ctx.globalAlpha = shadow.opacity;
+      }
+
+      ctx.fillText(text, x, y);
     }
-
-    ctx.fillText(text, x, y);
 
     ctx.restore();
   }
@@ -345,17 +603,21 @@ ctx.shadowColor = '#ffffff';
     text: string,
     x: number,
     y: number,
-    stroke: { color?: string; width?: number; gradient?: gradient; opacity?: number; style?: 'solid' | 'dashed' | 'dotted' | 'groove' | 'ridge' | 'double' }
+    stroke: { color?: string; width?: number; gradient?: gradient; opacity?: number; style?: 'solid' | 'dashed' | 'dotted' | 'groove' | 'ridge' | 'double' },
+    centerGlyph?: boolean
   ): void {
     ctx.save();
 
     const strokeWidth = stroke.width || 1;
     const strokeStyle = stroke.style || 'solid';
+    const w = ctx.measureText(text).width;
+    const gx0 = centerGlyph ? x - w / 2 : x;
+    const gx1 = centerGlyph ? x + w / 2 : x + w;
 
     ctx.lineWidth = strokeWidth;
 
     if (stroke.gradient) {
-      ctx.strokeStyle = this.createGradient(ctx, stroke.gradient, x, y, x + ctx.measureText(text).width, y);
+      ctx.strokeStyle = this.createGradient(ctx, stroke.gradient, gx0, y, gx1, y);
     } else {
       ctx.strokeStyle = stroke.color || '#000000';
     }
@@ -367,7 +629,7 @@ ctx.shadowColor = '#ffffff';
     this.applyTextStrokeStyle(ctx, strokeStyle, strokeWidth);
 
     if (strokeStyle === 'groove' || strokeStyle === 'ridge' || strokeStyle === 'double') {
-      this.renderComplexTextStroke(ctx, text, x, y, strokeStyle, strokeWidth, stroke.color, stroke.gradient);
+      this.renderComplexTextStroke(ctx, text, x, y, strokeStyle, strokeWidth, stroke.color, stroke.gradient, centerGlyph);
     } else {
       ctx.strokeText(text, x, y);
     }
@@ -388,12 +650,17 @@ ctx.shadowColor = '#ffffff';
     text: string,
     x: number,
     y: number,
-    textProps: TextProperties
+    textProps: TextProperties,
+    centerGlyph?: boolean
   ): void {
     ctx.save();
 
+    const w = ctx.measureText(text).width;
+    const gx0 = centerGlyph ? x - w / 2 : x;
+    const gx1 = centerGlyph ? x + w / 2 : x + w;
+
     if (textProps.gradient) {
-      ctx.fillStyle = this.createGradient(ctx, textProps.gradient, x, y, x + ctx.measureText(text).width, y);
+      ctx.fillStyle = this.createGradient(ctx, textProps.gradient, gx0, y, gx1, y);
     } else {
       ctx.fillStyle = textProps.color || '#000000';
     }
@@ -415,11 +682,11 @@ ctx.shadowColor = '#ffffff';
    */
   private static renderDecorations(
     ctx: SKRSContext2D,
-    text: string,
+    _text: string,
     x: number,
     y: number,
     width: number,
-    height: number,
+    _height: number,
     textProps: TextProperties
   ): void {
     const hasDecorations = textProps.underline || textProps.overline || textProps.strikethrough;
@@ -435,7 +702,7 @@ ctx.shadowColor = '#ffffff';
     const renderDecorationLine = (
       decorationY: number,
       decoration: boolean | { color?: string; gradient?: gradient; width?: number } | undefined,
-      lineName: string
+      _lineName: string
     ) => {
       if (!decoration) return;
 
@@ -648,10 +915,13 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
     style: 'groove' | 'ridge' | 'double',
     width: number,
     color?: string,
-    gradient?: gradient
+    gradient?: gradient,
+    centerGlyph?: boolean
   ): void {
     const halfWidth = width / 2;
     const textWidth = ctx.measureText(text).width;
+    const gx0 = centerGlyph ? x - textWidth / 2 : x;
+    const gx1 = centerGlyph ? x + textWidth / 2 : x + textWidth;
 
     switch (style) {
       case 'groove':
@@ -659,7 +929,7 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
         ctx.lineWidth = halfWidth;
 
         if (gradient) {
-          ctx.strokeStyle = this.createGradient(ctx, gradient, x, y, x + textWidth, y);
+          ctx.strokeStyle = this.createGradient(ctx, gradient, gx0, y, gx1, y);
         } else {
           ctx.strokeStyle = this.darkenColor(color || '#000000', 0.3);
         }
@@ -667,7 +937,7 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
 
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          ctx.strokeStyle = this.createGradient(ctx, gradient, x, y, x + textWidth, y);
+          ctx.strokeStyle = this.createGradient(ctx, gradient, gx0, y, gx1, y);
         } else {
           ctx.strokeStyle = this.lightenColor(color || '#000000', 0.3);
         }
@@ -679,7 +949,7 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
         ctx.lineWidth = halfWidth;
 
         if (gradient) {
-          ctx.strokeStyle = this.createGradient(ctx, gradient, x, y, x + textWidth, y);
+          ctx.strokeStyle = this.createGradient(ctx, gradient, gx0, y, gx1, y);
         } else {
           ctx.strokeStyle = this.lightenColor(color || '#000000', 0.3);
         }
@@ -687,7 +957,7 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
 
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          ctx.strokeStyle = this.createGradient(ctx, gradient, x, y, x + textWidth, y);
+          ctx.strokeStyle = this.createGradient(ctx, gradient, gx0, y, gx1, y);
         } else {
           ctx.strokeStyle = this.darkenColor(color || '#000000', 0.3);
         }
@@ -699,7 +969,7 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
         ctx.lineWidth = halfWidth;
 
         if (gradient) {
-          ctx.strokeStyle = this.createGradient(ctx, gradient, x, y, x + textWidth, y);
+          ctx.strokeStyle = this.createGradient(ctx, gradient, gx0, y, gx1, y);
         } else {
           ctx.strokeStyle = color || '#000000';
         }
@@ -707,7 +977,7 @@ let decorationWidth = Math.max(1, fontSize * 0.05);
 
         ctx.lineWidth = halfWidth;
         if (gradient) {
-          ctx.strokeStyle = this.createGradient(ctx, gradient, x, y, x + textWidth, y);
+          ctx.strokeStyle = this.createGradient(ctx, gradient, gx0, y, gx1, y);
         } else {
           ctx.strokeStyle = color || '#000000';
         }

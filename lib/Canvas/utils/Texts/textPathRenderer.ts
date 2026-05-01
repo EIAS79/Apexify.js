@@ -53,7 +53,7 @@ export function renderTextOnPath(
  * Creates a path based on configuration
  */
 function createPath(
-  ctx: SKRSContext2D,
+  _ctx: SKRSContext2D,
   pathConfig: {
     type: 'line' | 'arc' | 'bezier' | 'quadratic';
     points: Array<{ x: number; y: number }>;
@@ -217,10 +217,7 @@ function getAngleOnPath(
   },
   distance: number
 ): number {
-  const pathLength = getPathLength(path, pathConfig);
-  const t = Math.min(1, distance / pathLength);
   const epsilon = 0.01;
-  const t2 = Math.min(1, (distance + epsilon) / pathLength);
 
   const p1 = getPointOnPath(path, pathConfig, distance);
   const p2 = getPointOnPath(path, pathConfig, distance + epsilon);

@@ -1,6 +1,6 @@
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import { TextProperties, TextMetrics } from "../utils/types";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 import { GlobalFonts } from "@napi-rs/canvas";
 import path from "path";
 
@@ -25,7 +25,7 @@ export class TextMetricsCreator {
         canvasWidth = textProps.measurementCanvas.width ?? canvasWidth;
         canvasHeight = textProps.measurementCanvas.height ?? canvasHeight;
       } else {
-const estimatedCharWidth = fontSize * 0.6;
+        const estimatedCharWidth = fontSize * 0.6;
         const maxTextWidth = textProps.text.length * estimatedCharWidth;
         const letterSpacing = textProps.letterSpacing ?? 0;
         const spacingWidth = textProps.text.length * letterSpacing;
@@ -53,9 +53,10 @@ const estimatedCharWidth = fontSize * 0.6;
 
       if (fontPath) {
         try {
-          const fullPath = path.join(process.cwd(), fontPath);
+          const fullPath = path.isAbsolute(fontPath) ? fontPath : path.join(process.cwd(), fontPath);
           GlobalFonts.registerFromPath(fullPath, fontName || 'customFont');
         } catch (error) {
+          console.warn(`measureText: failed to register font from path: ${fontPath}`, error);
         }
       }
 
@@ -160,6 +161,20 @@ const estimatedCharWidth = fontSize * 0.6;
         metrics.lines = lineMetrics;
         metrics.totalHeight = lineMetrics.length * lineHeight;
         metrics.lineCount = lineMetrics.length;
+      }
+
+      if (textProps.textOnCurve) {
+        const c = textProps.textOnCurve;
+        const sweepDeg = c.sweepAngle;
+        if (sweepDeg > 0 && sweepDeg < 360) {
+          const sweepRad = (sweepDeg * Math.PI) / 180;
+          const W = metrics.width;
+          const R = c.radius ?? (sweepRad > 0 ? W / sweepRad : W);
+          const chord = 2 * R * Math.sin(sweepRad / 2);
+          const sagitta = R * (1 - Math.cos(sweepRad / 2));
+          metrics.width = chord;
+          metrics.height = fontSize + sagitta;
+        }
       }
 
       return metrics as TextMetrics;

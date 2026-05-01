@@ -1,8 +1,7 @@
-import { createCanvas, SKRSContext2D, loadImage } from "@napi-rs/canvas";
-import fs from "fs";
+import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../types";
 import { createGradientFill } from "../Image/imageProperties";
-import { EnhancedTextRenderer } from "../Texts/enhancedTextRenderer";
+import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
 
 /**
  * Enhanced text styling for chart labels
@@ -310,14 +309,7 @@ height?: number;
     };
   };
 
-  appearance?: {
-backgroundColor?: string;
-backgroundGradient?: gradient;
-backgroundImage?: string;
-axisColor?: string;
-axisWidth?: number;
-arrowSize?: number;
-  };
+  appearance?: ChartAppearanceExtended;
 
   axes?: {
 x?: AxisConfig;
@@ -453,10 +445,11 @@ function drawYAxisTicks(
     let lastLabelY = Infinity;
 const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 30;
 
-    customValues.forEach((value) => {
+    customValues.forEach((value, index) => {
       const y = originY - ((value - actualMin) / range) * chartHeight;
+      const isLastCustom = index === customValues.length - 1;
 
-      if (Math.abs(y - lastLabelY) < minLabelSpacing) {
+      if (Math.abs(y - lastLabelY) < minLabelSpacing && !isLastCustom) {
 
         ctx.beginPath();
         ctx.moveTo(originX - 5, y);
@@ -483,8 +476,9 @@ const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 30;
 
     for (let value = minValue; value <= maxValue; value += step) {
       const y = originY - ((value - minValue) / range) * chartHeight;
+      const isLastStepTick = value + step > maxValue + 1e-9;
 
-      if (Math.abs(y - lastLabelY) < minLabelSpacing && value > minValue) {
+      if (Math.abs(y - lastLabelY) < minLabelSpacing && value > minValue && !isLastStepTick) {
 
         ctx.beginPath();
         ctx.moveTo(originX - 5, y);
@@ -508,6 +502,9 @@ lastLabelY = y;
   ctx.restore();
 }
 
+/** `marks` = tick strokes only; `labels` = numeric labels only; `both` = default */
+type XAxisTickPhase = 'marks' | 'labels' | 'both';
+
 /**
  * Draws X-axis ticks and labels with custom values
  */
@@ -521,67 +518,53 @@ function drawXAxisTicks(
   step: number,
   tickFontSize: number,
   customValues?: number[],
-  valueSpacing?: number
+  valueSpacing?: number,
+  phase: XAxisTickPhase = 'both',
+  tickLabelColor: string = '#000000'
 ): void {
   ctx.save();
-  ctx.fillStyle = '#000000';
   ctx.font = `${tickFontSize}px Arial`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
   const chartWidth = axisEndX - originX;
+  const drawMarks = phase === 'both' || phase === 'marks';
+  const drawLabels = phase === 'both' || phase === 'labels';
 
   if (customValues && customValues.length > 0) {
 
-    if (valueSpacing && valueSpacing > 0) {
+    const actualMin = Math.min(...customValues);
+    const actualMax = Math.max(...customValues);
+    const range = actualMax - actualMin || 1;
+    let lastLabelX = -Infinity;
+const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 40;
 
-      let currentX = originX;
-      customValues.forEach((value, index) => {
-        if (index === 0) {
-          currentX = originX;
-        } else {
-currentX += valueSpacing;
-        }
+    customValues.forEach((value, index) => {
 
-        if (currentX >= originX && currentX <= axisEndX) {
+      const x = originX + ((value - actualMin) / range) * chartWidth;
+      const labelText = value.toString();
+      const labelWidth = ctx.measureText(labelText).width;
+      const isLastCustom = index === customValues.length - 1;
 
-          ctx.beginPath();
-          ctx.moveTo(currentX, originY);
-          ctx.lineTo(currentX, originY + 5);
-          ctx.stroke();
+      if (x - lastLabelX < minLabelSpacing && index > 0 && !isLastCustom) {
 
-          ctx.fillText(value.toString(), currentX, originY + 10);
-        }
-      });
-    } else {
+        return;
+      }
 
-      const totalValues = customValues.length;
-      const divisor = totalValues > 1 ? totalValues - 1 : 1;
-
-      let lastLabelX = -Infinity;
-const minLabelSpacing = 40;
-
-      customValues.forEach((value, index) => {
-
-        const x = originX + (index / divisor) * chartWidth;
-        const labelText = value.toString();
-        const labelWidth = ctx.measureText(labelText).width;
-
-        if (x - lastLabelX < minLabelSpacing && index > 0) {
-
-          return;
-        }
-
+      if (drawMarks) {
         ctx.beginPath();
         ctx.moveTo(x, originY);
         ctx.lineTo(x, originY + 5);
         ctx.stroke();
+      }
 
+      if (drawLabels) {
+        ctx.fillStyle = tickLabelColor;
         ctx.fillText(labelText, x, originY + 10);
+      }
 
 lastLabelX = x + labelWidth / 2;
-      });
-    }
+    });
   } else {
 
     const range = maxValue - minValue;
@@ -593,12 +576,17 @@ lastLabelX = x + labelWidth / 2;
 
       while (currentX <= axisEndX && currentValue <= maxValue) {
 
-        ctx.beginPath();
-        ctx.moveTo(currentX, originY);
-        ctx.lineTo(currentX, originY + 5);
-        ctx.stroke();
+        if (drawMarks) {
+          ctx.beginPath();
+          ctx.moveTo(currentX, originY);
+          ctx.lineTo(currentX, originY + 5);
+          ctx.stroke();
+        }
 
-        ctx.fillText(currentValue.toString(), currentX, originY + 10);
+        if (drawLabels) {
+          ctx.fillStyle = tickLabelColor;
+          ctx.fillText(currentValue.toString(), currentX, originY + 10);
+        }
 
         currentX += valueSpacing;
         currentValue += step;
@@ -612,18 +600,24 @@ const minLabelSpacing = 40;
         const x = originX + ((value - minValue) / range) * chartWidth;
         const labelText = value.toString();
         const labelWidth = ctx.measureText(labelText).width;
+        const isLastStepTick = value + step > maxValue + 1e-9;
 
-        if (x - lastLabelX < minLabelSpacing && value > minValue) {
+        if (x - lastLabelX < minLabelSpacing && value > minValue && !isLastStepTick) {
 
           continue;
         }
 
-        ctx.beginPath();
-        ctx.moveTo(x, originY);
-        ctx.lineTo(x, originY + 5);
-        ctx.stroke();
+        if (drawMarks) {
+          ctx.beginPath();
+          ctx.moveTo(x, originY);
+          ctx.lineTo(x, originY + 5);
+          ctx.stroke();
+        }
 
-        ctx.fillText(labelText, x, originY + 10);
+        if (drawLabels) {
+          ctx.fillStyle = tickLabelColor;
+          ctx.fillText(labelText, x, originY + 10);
+        }
 
 lastLabelX = x + labelWidth / 2;
       }
@@ -846,100 +840,6 @@ textHeight = wrappedLines.length * fontSize * 1.2;
 }
 
 /**
- * Draws legend/key showing colors and their meanings (legacy function for compatibility)
- */
-async function drawLegend(
-  ctx: SKRSContext2D,
-  legend: LegendEntry[],
-  position: 'top' | 'bottom' | 'right' | 'left',
-  width: number,
-  height: number,
-  padding: { top: number; right: number; bottom: number; left: number },
-  fontSize: number,
-  backgroundColor: string = '#FFFFFF',
-  legendSpacing: number = 20
-): Promise<void> {
-  if (!legend || legend.length === 0) return;
-
-  ctx.save();
-
-  const boxSize = 15;
-  const spacing = 10;
-  const paddingBox = 8;
-
-  ctx.font = `${fontSize}px Arial`;
-  const maxLabelWidth = Math.max(...legend.map(e => ctx.measureText(e.label).width));
-  const legendWidth = boxSize + spacing + maxLabelWidth + paddingBox * 2;
-  const legendHeight = legend.length * (boxSize + spacing) + paddingBox * 2;
-
-  let legendX: number, legendY: number;
-
-  switch (position) {
-    case 'top':
-      legendX = width - padding.right - legendWidth - legendSpacing;
-      legendY = padding.top + legendSpacing;
-      break;
-    case 'bottom':
-      legendX = width - padding.right - legendWidth - legendSpacing;
-      legendY = height - padding.bottom - legendHeight - legendSpacing;
-      break;
-    case 'right':
-      legendX = width - padding.right - legendWidth - legendSpacing;
-      legendY = padding.top + legendSpacing;
-      break;
-    case 'left':
-      legendX = padding.left + legendSpacing;
-      legendY = padding.top + legendSpacing;
-      break;
-    default:
-      legendX = width - padding.right - legendWidth - legendSpacing;
-      legendY = padding.top + legendSpacing;
-  }
-
-  const isDarkBackground = backgroundColor === '#000000' || backgroundColor.toLowerCase() === 'black';
-  const textColor = isDarkBackground ? '#FFFFFF' : '#000000';
-  const bgColor = isDarkBackground ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.9)';
-  const borderColor = isDarkBackground ? '#FFFFFF' : '#000000';
-
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(legendX, legendY, legendWidth, legendHeight);
-
-  ctx.strokeStyle = borderColor;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(legendX, legendY, legendWidth, legendHeight);
-
-  ctx.font = `${fontSize}px Arial`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-
-  for (let index = 0; index < legend.length; index++) {
-    const entry = legend[index];
-    const y = legendY + paddingBox + index * (boxSize + spacing) + boxSize / 2;
-    const x = legendX + paddingBox;
-
-    ctx.beginPath();
-    ctx.rect(x, y - boxSize / 2, boxSize, boxSize);
-    fillWithGradientOrColor(
-      ctx,
-      entry.gradient,
-      entry.color || '#4A90E2',
-      '#4A90E2',
-      { x, y: y - boxSize / 2, w: boxSize, h: boxSize }
-    );
-    ctx.fill();
-
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y - boxSize / 2, boxSize, boxSize);
-
-    ctx.fillStyle = textColor;
-    ctx.fillText(entry.label, x + boxSize + spacing, y);
-  }
-
-  ctx.restore();
-}
-
-/**
  * Draws grid lines on the chart
  */
 function drawGrid(
@@ -968,11 +868,12 @@ ctx.setLineDash([2, 2]);
   const chartHeight = originY - axisEndY;
 
   if (xAxisCustomValues && xAxisCustomValues.length > 0) {
-    const totalValues = xAxisCustomValues.length;
-    const divisor = totalValues > 1 ? totalValues - 1 : 1;
+    const actualMin = Math.min(...xAxisCustomValues);
+    const actualMax = Math.max(...xAxisCustomValues);
+    const xRange = actualMax - actualMin || 1;
 
-    xAxisCustomValues.forEach((_, index) => {
-      const x = originX + (index / divisor) * chartWidth;
+    xAxisCustomValues.forEach((value) => {
+      const x = originX + ((value - actualMin) / xRange) * chartWidth;
       ctx.beginPath();
       ctx.moveTo(x, axisEndY);
       ctx.lineTo(x, originY);
@@ -1072,6 +973,15 @@ export function drawAxes(
   const originY = height - paddingBottom;
   const axisEndX = width - paddingRight;
   const axisEndY = paddingTop;
+  const tickFontSize = options.axes?.x?.tickFontSize ?? options.axes?.y?.tickFontSize ?? 12;
+  const yArrowTipY = Math.max(
+    paddingTop + 2,
+    axisEndY - Math.ceil(tickFontSize * 0.55 + arrowSize * 0.5 + 10)
+  );
+  const xArrowTipX = Math.min(
+    width - paddingRight - 2,
+    axisEndX + Math.ceil(tickFontSize * 0.6 + arrowSize * 0.5 + 10)
+  );
 
   ctx.strokeStyle = axisColor;
   ctx.fillStyle = axisColor;
@@ -1088,9 +998,9 @@ export function drawAxes(
   ctx.lineTo(axisEndX, originY);
   ctx.stroke();
 
-  drawArrow(ctx, originX, axisEndY, -Math.PI / 2, arrowSize);
+  drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
 
-  drawArrow(ctx, axisEndX, originY, 0, arrowSize);
+  drawArrow(ctx, xArrowTipX, originY, 0, arrowSize);
 
   return { buffer: canvas.toBuffer('image/png'), ctx, canvas };
 }
@@ -1110,8 +1020,6 @@ export async function createBarChart(
   const padding = options.dimensions?.padding || {};
 
   const backgroundColor = options.appearance?.backgroundColor ?? '#FFFFFF';
-  const backgroundGradient = options.appearance?.backgroundGradient;
-  const backgroundImage = options.appearance?.backgroundImage;
   const axisColor = options.appearance?.axisColor ?? options.axes?.x?.color ?? options.axes?.y?.color ?? '#000000';
   const axisWidth = options.appearance?.axisWidth ?? options.axes?.x?.width ?? options.axes?.y?.width ?? 2;
   const arrowSize = options.appearance?.arrowSize ?? 10;
@@ -1150,9 +1058,7 @@ const legendPosition = options.legend?.position ?? 'right';
   const gridWidth = options.grid?.width ?? 1;
 
   const minBarWidth = options.bars?.minWidth ?? 20;
-  const barSpacing = options.bars?.spacing;
   const groupSpacing = options.bars?.groupSpacing ?? 10;
-  const segmentSpacing = options.bars?.segmentSpacing ?? 2;
   const lollipopLineWidth = options.bars?.lineWidth ?? 2;
   const lollipopDotSize = options.bars?.dotSize ?? 8;
   const globalBarOpacity = options.bars?.opacity;
@@ -1260,25 +1166,7 @@ let estimatedYAxisLabelWidth = 60;
   const canvas = createCanvas(width, adjustedHeight);
   const ctx: SKRSContext2D = canvas.getContext('2d');
 
-  if (backgroundImage) {
-    try {
-      const bgImage = await loadImage(backgroundImage);
-
-      ctx.drawImage(bgImage, 0, 0, width, adjustedHeight);
-    } catch (error) {
-      console.warn(`Failed to load background image: ${backgroundImage}`, error);
-
-      fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
-        x: 0, y: 0, w: width, h: adjustedHeight
-      });
-      ctx.fillRect(0, 0, width, adjustedHeight);
-    }
-  } else {
-    fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
-      x: 0, y: 0, w: width, h: adjustedHeight
-    });
-    ctx.fillRect(0, 0, width, adjustedHeight);
-  }
+  await paintChartCanvasBackground(ctx, canvas, width, adjustedHeight, options.appearance);
 
   const titleHeight = chartTitle ? chartTitleFontSize + 30 : 0;
   const axisLabelHeight = (xAxisLabel || yAxisLabel) ? axisLabelFontSize + 20 : 0;
@@ -1344,8 +1232,14 @@ let actualYAxisLabelWidth = 60;
 
   const originX = chartAreaLeft;
   const originY = chartAreaBottom - axisLabelHeight;
-  const axisEndX = chartAreaRight;
-  const axisEndY = chartAreaTop;
+  /** Plot bounds: keep max tick under tip and rightmost tick left of tip. */
+  const yTickHeadroom = Math.ceil(tickFontSize * 0.45 + 6);
+  const xTickTailroom = Math.ceil(tickFontSize * 0.65 + 8);
+  const axisEndY = chartAreaTop + yTickHeadroom;
+  const minPlotWidth = 80;
+  const axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xTickTailroom);
+  const yArrowTipY = Math.max(chartAreaTop + 2, axisEndY - arrowSize);
+  const xArrowTipX = Math.min(chartAreaRight - 2, axisEndX + arrowSize);
 
   if (chartTitle) {
     ctx.save();
@@ -1374,10 +1268,10 @@ let actualYAxisLabelWidth = 60;
 
   ctx.beginPath();
   ctx.moveTo(originX, originY);
-  ctx.lineTo(originX, axisEndY);
+  ctx.lineTo(originX, yArrowTipY + arrowSize);
   ctx.stroke();
 
-  drawArrow(ctx, originX, axisEndY, -Math.PI / 2, arrowSize);
+  drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
 
   let allValues: number[] = [];
   if (chartType === 'grouped' || chartType === 'stacked' || chartType === 'waterfall') {
@@ -1479,6 +1373,25 @@ yStep = 1;
     yStep = Math.ceil((maxValue - minValue) / 10);
   }
 
+  let yScaleMin = minValue;
+  const yScaleMax = maxValue;
+  const preliminaryChartAreaHeight = originY - axisEndY;
+  const baselineSpanPre = yScaleMax - yScaleMin || 1;
+  const baselineRef = baseline !== undefined ? baseline : 0;
+  if (baselineRef > yScaleMin && preliminaryChartAreaHeight > 1e-6) {
+    const belowBaselinePx = ((baselineRef - yScaleMin) / baselineSpanPre) * preliminaryChartAreaHeight;
+    const reserveBelowBaselinePx =
+      tickFontSize +
+      22 +
+      (xAxisLabel ? axisLabelFontSize + 16 : 0) +
+      (showBarLabels && barLabelPosition === 'bottom' ? axisLabelFontSize + 10 : 0);
+    if (belowBaselinePx < reserveBelowBaselinePx) {
+      const gapPx = reserveBelowBaselinePx - belowBaselinePx;
+      yScaleMin -= (gapPx / preliminaryChartAreaHeight) * baselineSpanPre;
+    }
+  }
+  const ySpan = yScaleMax - yScaleMin || 1;
+
   if (hasExplicitXRange || xAxisCustomValues) {
     const effectiveXMin = xAxisCustomValues ? Math.min(...xAxisCustomValues) : xAxisRange!.min!;
     const effectiveXMax = xAxisCustomValues ? Math.max(...xAxisCustomValues) : xAxisRange!.max!;
@@ -1560,23 +1473,50 @@ yStep = 1;
     });
   }
 
-  drawYAxisTicks(ctx, originX, originY, axisEndY, minValue, maxValue, yStep, tickFontSize, yAxisCustomValues, yAxisValueSpacing);
+  // Measure Y tick label width so the rotated Y-axis title keeps a safe, flexible distance.
+  let maxYTickLabelWidth = 0;
+  {
+    const measureCanvas = createCanvas(1, 1);
+    const measureCtx = measureCanvas.getContext('2d') as SKRSContext2D;
+    if (measureCtx) {
+      measureCtx.font = `${tickFontSize}px Arial`;
+      const labels: string[] = [];
+      if (yAxisCustomValues && yAxisCustomValues.length > 0) {
+        for (const v of yAxisCustomValues) labels.push(v.toFixed(1));
+      } else {
+        // Guard against runaway loops if user passes an extremely small/invalid step.
+        const safeStep = Number.isFinite(yStep) && yStep > 0 ? yStep : 1;
+        let guard = 0;
+        for (let v = yScaleMin; v <= yScaleMax + 1e-9 && guard < 2000; v += safeStep) {
+          labels.push(v.toFixed(1));
+          guard++;
+        }
+      }
+      for (const txt of labels) {
+        maxYTickLabelWidth = Math.max(maxYTickLabelWidth, measureCtx.measureText(txt).width);
+      }
+    }
+  }
+
+  const xTickLabelColor = options.axes?.x?.color ?? axisLabelColor;
+
+  drawYAxisTicks(ctx, originX, originY, axisEndY, yScaleMin, yScaleMax, yStep, tickFontSize, yAxisCustomValues, yAxisValueSpacing);
 
   const chartAreaHeight = originY - axisEndY;
 
-  const baselineY = originY - ((baseline - minValue) / (maxValue - minValue)) * chartAreaHeight;
+  const baselineY = originY - ((baseline - yScaleMin) / ySpan) * chartAreaHeight;
 
   const xAxisY = baselineY;
   ctx.beginPath();
   ctx.moveTo(originX, xAxisY);
-  ctx.lineTo(axisEndX, xAxisY);
+  ctx.lineTo(xArrowTipX - arrowSize, xAxisY);
   ctx.stroke();
 
-  drawArrow(ctx, axisEndX, xAxisY, 0, arrowSize);
+  drawArrow(ctx, xArrowTipX, xAxisY, 0, arrowSize);
 
   const xStep = xAxisRange?.step ?? Math.ceil((xMax - xMin) / 10);
 
-  drawXAxisTicks(ctx, originX, xAxisY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing);
+  drawXAxisTicks(ctx, originX, xAxisY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, 'marks', xTickLabelColor);
 
   if (showGrid) {
     drawGrid(
@@ -1588,25 +1528,14 @@ yStep = 1;
       xMin,
       xMax,
       xStep,
-      minValue,
-      maxValue,
+      yScaleMin,
+      yScaleMax,
       yStep,
       xAxisCustomValues,
       yAxisCustomValues,
       gridColor,
       gridWidth
     );
-  }
-
-  if (xAxisLabel) {
-    ctx.save();
-    ctx.fillStyle = axisLabelColor;
-    ctx.font = `${axisLabelFontSize}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-
-    ctx.fillText(xAxisLabel, (originX + axisEndX) / 2, xAxisY + 25);
-    ctx.restore();
   }
 
   if (yAxisLabel) {
@@ -1616,7 +1545,12 @@ yStep = 1;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
 
-    const labelX = originX - 30;
+    // Includes +2px per request to increase spacing from values.
+    const yAxisTitleGap = Math.max(
+      36,
+      Math.ceil(maxYTickLabelWidth + 10 + axisLabelFontSize * 0.75 + 2)
+    );
+    const labelX = originX - yAxisTitleGap;
     const labelY = (originY + axisEndY) / 2;
     ctx.translate(labelX, labelY);
     ctx.rotate(-Math.PI / 2);
@@ -1625,7 +1559,6 @@ yStep = 1;
   }
 
   if (showLegend && legend && legend.length > 0) {
-    const legendSpacing = options.legend?.spacing ?? 20;
     const legendFontSize = options.legend?.fontSize ?? 16;
     const legendTextColor = options.legend?.textColor;
     const legendBorderColor = options.legend?.borderColor;
@@ -1636,7 +1569,6 @@ yStep = 1;
 
     let legendX: number, legendY: number;
     const chartAreaHeight = originY - axisEndY;
-    const chartAreaWidth = axisEndX - originX;
 
     switch (legendPosition) {
       case 'top':
@@ -1645,7 +1577,17 @@ legendX = (width - legendWidth) / 2;
         break;
       case 'bottom':
 legendX = (width - legendWidth) / 2;
-        legendY = adjustedHeight - paddingBottom - legendHeight - minLegendSpacing;
+        {
+          const naturalBottomLegendY =
+            adjustedHeight - paddingBottom - legendHeight - minLegendSpacing;
+          const xTickLabelBottom = xAxisY + tickFontSize + 10;
+          const xAxisTitleGap = Math.max(26, tickFontSize + 16);
+          const xAxisTitleBottom = xAxisLabel
+            ? xAxisY + xAxisTitleGap + axisLabelFontSize
+            : xTickLabelBottom;
+          const minLegendTop = xAxisTitleBottom + Math.max(8, minLegendSpacing);
+          legendY = Math.max(naturalBottomLegendY, minLegendTop);
+        }
         break;
       case 'left':
 
@@ -1695,7 +1637,7 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
   const valueLabelPositions: Map<number, { y: number; fontSize: number; baseline: CanvasTextBaseline }> = new Map();
 
-  data.forEach((item, itemIndex) => {
+  data.forEach((item) => {
 
     let barXStart: number, barXEnd: number;
 
@@ -1703,22 +1645,9 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
       const actualMin = Math.min(...xAxisCustomValues);
       const actualMax = Math.max(...xAxisCustomValues);
-      const xRange = actualMax - actualMin;
-
-      const startIndex = xAxisCustomValues.indexOf(item.xStart);
-      const endIndex = xAxisCustomValues.indexOf(item.xEnd);
-
-      if (startIndex !== -1 && endIndex !== -1) {
-
-        const totalValues = xAxisCustomValues.length;
-        const divisor = totalValues > 1 ? totalValues - 1 : 1;
-        barXStart = originX + (startIndex / divisor) * chartAreaWidth;
-        barXEnd = originX + (endIndex / divisor) * chartAreaWidth;
-      } else {
-
-        barXStart = originX + ((item.xStart - actualMin) / xRange) * chartAreaWidth;
-        barXEnd = originX + ((item.xEnd - actualMin) / xRange) * chartAreaWidth;
-      }
+      const xRange = actualMax - actualMin || 1;
+      barXStart = originX + ((item.xStart - actualMin) / xRange) * chartAreaWidth;
+      barXEnd = originX + ((item.xEnd - actualMin) / xRange) * chartAreaWidth;
     } else {
 
       const xRange = xMax - xMin;
@@ -1750,12 +1679,12 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
           let barY: number, barHeight: number;
           if (segment.value >= baseline) {
 
-            const positiveRatio = (segment.value - baseline) / (maxValue - minValue);
+            const positiveRatio = (segment.value - baseline) / ySpan;
             barHeight = positiveRatio * chartAreaHeight;
             barY = baselineY - barHeight;
           } else {
 
-            const negativeRatio = (baseline - segment.value) / (maxValue - minValue);
+            const negativeRatio = (baseline - segment.value) / ySpan;
             barHeight = negativeRatio * chartAreaHeight;
             barY = baselineY;
           }
@@ -1814,7 +1743,7 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
           }
         }
 
-        const cumulativeBaselineY = originY - ((cumulativeValue - minValue) / (maxValue - minValue)) * chartAreaHeight;
+        const cumulativeBaselineY = originY - ((cumulativeValue - yScaleMin) / ySpan) * chartAreaHeight;
 
         const positiveSegments: typeof segments = [];
         const negativeSegments: typeof segments = [];
@@ -1829,7 +1758,7 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
         let accumulatedPositiveHeight = 0;
         positiveSegments.forEach((segment) => {
-          const positiveRatio = segment.value / (maxValue - minValue);
+          const positiveRatio = segment.value / ySpan;
           const segmentHeight = positiveRatio * chartAreaHeight;
           const barY = cumulativeBaselineY - accumulatedPositiveHeight - segmentHeight;
 
@@ -1878,7 +1807,7 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
         let accumulatedNegativeHeight = 0;
         negativeSegments.forEach((segment) => {
-          const negativeRatio = Math.abs(segment.value) / (maxValue - minValue);
+          const negativeRatio = Math.abs(segment.value) / ySpan;
           const segmentHeight = negativeRatio * chartAreaHeight;
           const barY = cumulativeBaselineY + accumulatedNegativeHeight;
 
@@ -1939,7 +1868,7 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
         let accumulatedPositiveHeight = 0;
         positiveSegments.forEach((segment) => {
-          const positiveRatio = (segment.value - baseline) / (maxValue - minValue);
+          const positiveRatio = (segment.value - baseline) / ySpan;
           const segmentHeight = positiveRatio * chartAreaHeight;
           const barY = baselineY - accumulatedPositiveHeight - segmentHeight;
 
@@ -1977,7 +1906,7 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
         let accumulatedNegativeHeight = 0;
         negativeSegments.forEach((segment) => {
-          const negativeRatio = (baseline - segment.value) / (maxValue - minValue);
+          const negativeRatio = (baseline - segment.value) / ySpan;
           const segmentHeight = negativeRatio * chartAreaHeight;
           const barY = baselineY + accumulatedNegativeHeight;
 
@@ -2043,11 +1972,11 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
       let valueY: number;
       if (value >= baseline) {
 
-        const positiveRatio = (value - baseline) / (maxValue - minValue);
+        const positiveRatio = (value - baseline) / ySpan;
         valueY = baselineY - positiveRatio * chartAreaHeight;
       } else {
 
-        const negativeRatio = (baseline - value) / (maxValue - minValue);
+        const negativeRatio = (baseline - value) / ySpan;
         valueY = baselineY + negativeRatio * chartAreaHeight;
       }
 
@@ -2138,12 +2067,12 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
       if (value >= baseline) {
 
-        const positiveRatio = (value - baseline) / (maxValue - minValue);
+        const positiveRatio = (value - baseline) / ySpan;
         barHeight = positiveRatio * chartAreaHeight;
         barY = baselineY - barHeight;
       } else {
 
-        const negativeRatio = (baseline - value) / (maxValue - minValue);
+        const negativeRatio = (baseline - value) / ySpan;
         barHeight = negativeRatio * chartAreaHeight;
         barY = baselineY;
       }
@@ -2201,18 +2130,18 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         if (chartType === 'stacked') {
 
           const totalValue = item.values.reduce((sum, seg) => sum + seg.value, 0);
-          const totalHeight = ((totalValue - minValue) / (maxValue - minValue)) * chartAreaHeight;
+          const totalHeight = ((totalValue - yScaleMin) / ySpan) * chartAreaHeight;
           barCenterY = originY - totalHeight / 2;
         } else {
 
           const maxSegValue = Math.max(...item.values.map(seg => seg.value));
-          const maxHeight = ((maxSegValue - minValue) / (maxValue - minValue)) * chartAreaHeight;
+          const maxHeight = ((maxSegValue - yScaleMin) / ySpan) * chartAreaHeight;
           barCenterY = originY - maxHeight / 2;
         }
       } else {
 
         const value = item.value ?? 0;
-        const barHeight = ((value - minValue) / (maxValue - minValue)) * chartAreaHeight;
+        const barHeight = ((value - yScaleMin) / ySpan) * chartAreaHeight;
         barCenterY = originY - barHeight / 2;
       }
 
@@ -2222,16 +2151,16 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
       if ((chartType === 'grouped' || chartType === 'stacked') && item.values && item.values.length > 0) {
         if (chartType === 'stacked') {
           const totalValue = item.values.reduce((sum, seg) => sum + seg.value, 0);
-          const totalHeight = ((totalValue - minValue) / (maxValue - minValue)) * chartAreaHeight;
+          const totalHeight = ((totalValue - yScaleMin) / ySpan) * chartAreaHeight;
           topBarY = originY - totalHeight;
         } else {
           const maxSegValue = Math.max(...item.values.map(seg => seg.value));
-          const maxHeight = ((maxSegValue - minValue) / (maxValue - minValue)) * chartAreaHeight;
+          const maxHeight = ((maxSegValue - yScaleMin) / ySpan) * chartAreaHeight;
           topBarY = originY - maxHeight;
         }
       } else {
         const value = item.value ?? 0;
-        const barHeight = ((value - minValue) / (maxValue - minValue)) * chartAreaHeight;
+        const barHeight = ((value - yScaleMin) / ySpan) * chartAreaHeight;
         topBarY = originY - barHeight;
       }
 
@@ -2308,6 +2237,41 @@ const spacing = 5;
     }
   });
 
+  // Re-stroke main axes above bars so bars can touch zero-lines without visually covering them.
+  ctx.save();
+  ctx.strokeStyle = axisColor;
+  ctx.fillStyle = axisColor;
+  ctx.lineWidth = axisWidth;
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(originX, originY);
+  ctx.lineTo(originX, yArrowTipY + arrowSize);
+  ctx.stroke();
+  drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
+
+  ctx.beginPath();
+  ctx.moveTo(originX, xAxisY);
+  ctx.lineTo(xArrowTipX - arrowSize, xAxisY);
+  ctx.stroke();
+  drawArrow(ctx, xArrowTipX, xAxisY, 0, arrowSize);
+  ctx.restore();
+
+  ctx.strokeStyle = axisColor;
+  drawXAxisTicks(ctx, originX, xAxisY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, 'labels', xTickLabelColor);
+
+  if (xAxisLabel) {
+    ctx.save();
+    ctx.fillStyle = axisLabelColor;
+    ctx.font = `${axisLabelFontSize}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    const xAxisTitleGap = Math.max(26, tickFontSize + 16);
+    ctx.fillText(xAxisLabel, (originX + axisEndX) / 2, xAxisY + xAxisTitleGap);
+    ctx.restore();
+  }
+
   for (const label of labelsToDraw) {
     ctx.save();
     ctx.textAlign = label.align;
@@ -2340,115 +2304,3 @@ const spacing = 5;
   return canvas.toBuffer('image/png');
 }
 
-(async () => {
-  const chart = await createBarChart([
-    {
-      label: 'Day 25',
-      value: 1,
-      xStart: 25,
-      xEnd: 29,
-      color: '#50C878',
-      labelColor: 'black',
-      labelPosition: 'top',
-      valueColor: '#000000',
-      showValue: true
-    },
-    {
-      label: 'Day 12',
-      value: 13,
-      xStart: 10,
-      xEnd: 14,
-      color: '#50C878',
-      labelColor: 'black',
-      labelPosition: 'inside',
-      valueColor: '#FFFFFF',
-      showValue: true
-    },
-    {
-      label: 'Day 13',
-      value: 4,
-      xStart: 17,
-      xEnd: 22,
-      color: '#50C878',
-      labelColor: 'black',
-      labelPosition: 'right',
-      valueColor: '#000000',
-      showValue: true
-    }
-  ], {
-
-type: 'standard',
-
-    dimensions: {
-      height: 600,
-      padding: {
-        top: 60,
-        right: 80,
-        bottom: 80,
-        left: 100
-      }
-    },
-
-    appearance: {
-      backgroundColor: 'white',
-
-      axisColor: '#000000',
-      axisWidth: 2,
-      arrowSize: 10
-    },
-
-    axes: {
-      x: {
-        label: 'Day',
-        labelColor: 'black',
-        values: [24, 25, 26, 27, 28, 29, 30, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
-
-        tickFontSize: 10,
-valueSpacing: 5
-      },
-      y: {
-        label: 'Count',
-        labelColor: 'black',
-        values: [0, 2, 4, 6, 8, 10, 12, 14],
-
-        tickFontSize: 10,
-valueSpacing: 3
-      }
-    },
-
-    labels: {
-      title: {
-        text: 'Joined Members',
-        fontSize: 18,
-        color: '#000000'
-      },
-      barLabelDefaults: {
-show: true,
-defaultPosition: 'bottom',
-        fontSize: 12,
-defaultColor: '#000000'
-      },
-      valueLabelDefaults: {
-show: true,
-        fontSize: 11,
-defaultColor: '#000000'
-      }
-    },
-
-    legend: {
-      show: true,
-      entries: [
-        { color: '#50C878', label: 'Members' },
-        { color: '#4A90E2', label: 'Bots' }
-      ]
-    },
-
-    grid: {
-      show: true,
-      color: '#E0E0E0',
-      width: 1
-    }
-  });
-
-  fs.writeFileSync('./chart.png', chart);
-})();

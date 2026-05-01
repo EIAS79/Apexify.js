@@ -4,7 +4,7 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import type { CanvasResults } from "./CanvasCreator";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 
 const execAsync = promisify(exec);
 
@@ -601,9 +601,11 @@ export class VideoCreator {
             fs.writeFileSync(tempPath, options.source);
             videoPath = tempPath;
           } else {
-            let resolvedPath = options.source;
+            let resolvedPath = options.source as string;
             if (!/^https?:\/\//.test(resolvedPath)) {
-              resolvedPath = path.join(process.cwd(), resolvedPath);
+              resolvedPath = path.isAbsolute(resolvedPath)
+                ? resolvedPath
+                : path.join(process.cwd(), resolvedPath);
             }
             videoPath = resolvedPath;
           }

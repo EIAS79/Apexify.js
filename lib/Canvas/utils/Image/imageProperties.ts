@@ -2,6 +2,161 @@ import type { SKRSContext2D } from "@napi-rs/canvas";
 import { createCanvas } from "@napi-rs/canvas";
 import type { borderPosition, gradient as GradientType } from "../types";
 
+/** Corner radii (px) for a rounded rect from the same mask rules as clip paths. */
+function computeCornerRadii(
+  borderPos: borderPosition,
+  br: number,
+  w: number,
+  h: number
+): { tl: number; tr: number; brR: number; bl: number } {
+  const sel = new Set(borderPos.toLowerCase().split(",").map(s => s.trim()));
+  const has = (name: string) =>
+    sel.has("all") || sel.has(name) ||
+    (name === "top-left"     && (sel.has("top") || sel.has("left"))) ||
+    (name === "top-right"    && (sel.has("top") || sel.has("right"))) ||
+    (name === "bottom-right" && (sel.has("bottom") || sel.has("right"))) ||
+    (name === "bottom-left"  && (sel.has("bottom") || sel.has("left")));
+  const R = Math.min(br, w / 2, h / 2);
+  return {
+    tl: has("top-left") ? R : 0,
+    tr: has("top-right") ? R : 0,
+    brR: has("bottom-right") ? R : 0,
+    bl: has("bottom-left") ? R : 0,
+  };
+}
+
+type RectEdge = "top" | "right" | "bottom" | "left";
+
+/** Parses `stroke.borderPosition`: which edges to stroke (not corner rounding). */
+function parseStrokeSideSet(edgeSpec: borderPosition | undefined): Set<RectEdge> | "all" {
+  const raw = (edgeSpec ?? "all").toString().toLowerCase().trim();
+  if (!raw || raw === "all") return "all";
+
+  const EDGE = new Set(["top", "right", "bottom", "left"]);
+  const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+  const out = new Set<RectEdge>();
+  for (const p of parts) {
+    if (EDGE.has(p)) out.add(p as RectEdge);
+    else if (p === "top-left") {
+      out.add("top");
+      out.add("left");
+    } else if (p === "top-right") {
+      out.add("top");
+      out.add("right");
+    } else if (p === "bottom-right") {
+      out.add("bottom");
+      out.add("right");
+    } else if (p === "bottom-left") {
+      out.add("bottom");
+      out.add("left");
+    }
+  }
+  return out.size > 0 ? out : "all";
+}
+
+const CLOCKWISE_EDGES: RectEdge[] = ["top", "right", "bottom", "left"];
+
+/**
+ * Open path(s) stroking only selected edges. Adjacent sides (e.g. left + top) share one continuous
+ * subpath with the same corner arcs as {@link buildPath}; non-adjacent selections use separate subpaths.
+ */
+function buildPartialRectStrokeEdges(
+  ctx: SKRSContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  roundedCorners: borderPosition,
+  sides: Set<RectEdge>
+): void {
+  const br = radius > 0 ? Math.min(radius, w / 2, h / 2) : 0;
+  const { tl, tr, brR, bl } = computeCornerRadii(roundedCorners, br, w, h);
+  const has = (e: RectEdge) => sides.has(e);
+
+  if (CLOCKWISE_EDGES.every(has)) {
+    buildPath(ctx, x, y, w, h, radius, roundedCorners);
+    return;
+  }
+
+  ctx.beginPath();
+
+  const starts: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    if (has(CLOCKWISE_EDGES[i]) && !has(CLOCKWISE_EDGES[(i + 3) % 4])) starts.push(i);
+  }
+
+  const collectRun = (startIdx: number): RectEdge[] => {
+    const run: RectEdge[] = [];
+    let i = startIdx;
+    while (has(CLOCKWISE_EDGES[i])) {
+      run.push(CLOCKWISE_EDGES[i]);
+      i = (i + 1) % 4;
+      if (i === startIdx) break;
+      if (run.length >= 4) break;
+    }
+    return run;
+  };
+
+  if (starts.length === 0) return;
+
+  for (const s of starts) {
+    const run = collectRun(s);
+    if (run.length === 0) continue;
+
+    const e0 = run[0];
+    switch (e0) {
+      case "top":
+        ctx.moveTo(x + tl, y);
+        break;
+      case "right":
+        ctx.moveTo(x + w, y + tr);
+        break;
+      case "bottom":
+        ctx.moveTo(x + w - brR, y + h);
+        break;
+      case "left":
+        ctx.moveTo(x, y + h - bl);
+        break;
+    }
+
+    for (let r = 0; r < run.length; r++) {
+      const e = run[r];
+      const next = run[r + 1];
+      switch (e) {
+        case "top":
+          ctx.lineTo(x + w - tr, y);
+          if (next === "right") {
+            if (tr > 0) ctx.arcTo(x + w, y, x + w, y + tr, tr);
+            else ctx.lineTo(x + w, y);
+          }
+          break;
+        case "right":
+          ctx.lineTo(x + w, y + h - brR);
+          if (next === "bottom") {
+            if (brR > 0) ctx.arcTo(x + w, y + h, x + w - brR, y + h, brR);
+            else ctx.lineTo(x + w, y + h);
+          }
+          break;
+        case "bottom":
+          ctx.lineTo(x + bl, y + h);
+          if (next === "left") {
+            if (bl > 0) ctx.arcTo(x, y + h, x, y + h - bl, bl);
+            else ctx.lineTo(x, y + h);
+          }
+          break;
+        case "left":
+          ctx.lineTo(x, y + tl);
+          if (next === "top") {
+            if (tl > 0) ctx.arcTo(x, y, x + tl, y, tl);
+            else ctx.lineTo(x, y);
+          }
+          break;
+      }
+    }
+  }
+}
+
 export function buildPath(
   ctx: SKRSContext2D,
   x: number, y: number, w: number, h: number,
@@ -24,19 +179,7 @@ export function buildPath(
   }
 
   const br = Math.min(radius, w / 2, h / 2);
-  const sel = new Set(borderPos.toLowerCase().split(",").map(s => s.trim()));
-
-  const has = (name: string) =>
-    sel.has("all") || sel.has(name) ||
-    (name === "top-left"     && (sel.has("top") || sel.has("left"))) ||
-    (name === "top-right"    && (sel.has("top") || sel.has("right"))) ||
-    (name === "bottom-right" && (sel.has("bottom") || sel.has("right"))) ||
-    (name === "bottom-left"  && (sel.has("bottom") || sel.has("left")));
-
-  const tl = has("top-left")     ? br : 0;
-  const tr = has("top-right")    ? br : 0;
-  const brR= has("bottom-right") ? br : 0;
-  const bl = has("bottom-left")  ? br : 0;
+  const { tl, tr, brR, bl } = computeCornerRadii(borderPos, br, w, h);
 
   ctx.moveTo(x + tl, y);
   ctx.lineTo(x + w - tr, y);
@@ -231,7 +374,7 @@ export function loadImageCached(src: string | Buffer): Promise<Image> {
   return cache.get(key)!;
 }
 
-import type { BoxBackground, ShadowOptions, StrokeOptions, gradient } from "../types";
+import type { BoxBackground, ShadowOptions, StrokeOptions } from "../types";
 
 /** Shadow pass (independent) — supports solid color or gradient fill */
 
@@ -271,13 +414,13 @@ export function applyShadow(
     rect = a as Rect;
     shadow = b as ShadowOptions | undefined;
     radius = shadow?.borderRadius ?? 0;
-    borderPos = shadow?.borderPosition ?? "all";
+    borderPos = shadow?.roundedCorners ?? shadow?.borderPosition ?? "all";
   } else {
 
     shadow = a as ShadowOptions | undefined;
     rect = { x: b as number, y: c as number, w: d as number, h: e as number };
     radius = (f as number | "circular") ?? shadow?.borderRadius ?? 0;
-    borderPos = (g as borderPosition) ?? shadow?.borderPosition ?? "all";
+    borderPos = shadow?.roundedCorners ?? (g as borderPosition | undefined) ?? shadow?.borderPosition ?? "all";
   }
 
   if (!shadow) return;
@@ -327,7 +470,8 @@ export function applyStroke(
   stroke: StrokeOptions | undefined,
   x: number, y: number, width: number, height: number,
   borderRadius?: number | "circular",
-  borderPosition?: borderPosition
+  /** @deprecated Prefer `stroke.roundedCorners`. Optional override for which corners use `borderRadius`. */
+  roundedCornersOverride?: borderPosition
 ): void;
 
 export function applyStroke(
@@ -339,20 +483,22 @@ export function applyStroke(
   let rect: Rect;
   let stroke: StrokeOptions | undefined;
   let radius: number | "circular" | undefined;
-  let borderPos: borderPosition | undefined;
+  /** Which corners use `borderRadius` on the stroke outline. */
+  let roundedCornersMask: borderPosition;
 
   if (typeof a === "object" && "x" in a && "w" in a) {
 
     rect = a as Rect;
     stroke = b as StrokeOptions | undefined;
     radius = stroke?.borderRadius ?? 0;
-    borderPos = stroke?.borderPosition ?? "all";
+    roundedCornersMask = stroke?.roundedCorners ?? "all";
   } else {
 
     stroke = a as StrokeOptions | undefined;
     rect = { x: b as number, y: c as number, w: d as number, h: e as number };
     radius = (f as number | "circular") ?? stroke?.borderRadius ?? 0;
-    borderPos = (g as borderPosition) ?? stroke?.borderPosition ?? "all";
+    roundedCornersMask =
+      stroke?.roundedCorners ?? (g as borderPosition | undefined) ?? "all";
   }
 
   if (!stroke) return;
@@ -374,11 +520,33 @@ export function applyStroke(
     h: rect.h + position * 2
   };
 
+  const strokeSides = parseStrokeSideSet(stroke.borderPosition);
+
+  const buildStrokePath = (): void => {
+    if (radius === "circular") {
+      buildPath(ctx, r.x, r.y, r.w, r.h, radius, roundedCornersMask);
+    } else if (strokeSides === "all") {
+      buildPath(ctx, r.x, r.y, r.w, r.h, radius!, roundedCornersMask);
+    } else {
+      const n = typeof radius === "number" && radius > 0 ? radius : 0;
+      buildPartialRectStrokeEdges(
+        ctx,
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        n,
+        roundedCornersMask,
+        strokeSides
+      );
+    }
+  };
+
   ctx.save();
   if (blur > 0) ctx.filter = `blur(${blur}px)`;
   ctx.globalAlpha = opacity;
 
-  buildPath(ctx, r.x, r.y, r.w, r.h, radius!, borderPos!);
+  buildStrokePath();
 
   ctx.lineWidth = width;
 
@@ -556,8 +724,6 @@ function applyComplexStrokeStyle(
       break;
 
     case 'double':
-
-      const gap = Math.max(1, width / 4);
 
       ctx.lineWidth = halfWidth;
       if (gradient) {

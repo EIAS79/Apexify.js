@@ -1,6 +1,6 @@
 import { ApexPainter } from '../../ApexPainter';
 import { BatchOperation, ChainOperation, CanvasConfig, ImageProperties, TextProperties } from '../types';
-import { getErrorMessage } from '../errorUtils';
+import { getErrorMessage } from "../core/errorUtils";
 
 /**
  * Processes multiple operations in parallel

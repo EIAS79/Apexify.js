@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
-import { getCanvasContext } from '../errorUtils';
+import { getCanvasContext } from "../core/errorUtils";
 
 /**
  * Applies a mask to an image
@@ -111,8 +111,8 @@ export function applyPerspectiveDistortion(
   ctx: SKRSContext2D,
   image: Image,
   points: Array<{ x: number; y: number }>,
-  x: number,
-  y: number,
+  _x: number,
+  _y: number,
   width: number,
   height: number
 ): void {

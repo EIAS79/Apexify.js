@@ -33,9 +33,12 @@ function checkUpdates() {
 }
 checkUpdates();
 
-import { ApexPainter } from "./utils";
+import { ApexPainter } from "./Canvas/ApexPainter";
 
-import * as CanvasUtils from "./Canvas/utils/utils";
+import * as CanvasUtils from "./Canvas/utils/canvasUtils";
 import * as CanvasTypes from "./Canvas/utils/types";
 
-export { CanvasUtils, CanvasTypes, ApexPainter };
+export { ApexPainter };
+export { CanvasUtils, CanvasTypes };
+/** Flat re-exports so consumers can `import { ApexPainter, CanvasConfig, url, … } from 'apexify.js'`. */
+export * from "./Canvas/utils/canvasUtils";

@@ -1,6 +1,7 @@
-import { createCanvas, SKRSContext2D, loadImage } from "@napi-rs/canvas";
+import { createCanvas, SKRSContext2D, loadImage, Image } from "@napi-rs/canvas";
 import type { gradient } from "../types";
 import { createGradientFill } from "../Image/imageProperties";
+import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
 import type { PieSlice, PieChartOptions } from "./piechart";
 import type { BarChartData, BarChartOptions } from "./barchart";
 import type { HorizontalBarChartData, HorizontalBarChartOptions } from "./horizontalbarchart";
@@ -107,11 +108,8 @@ export interface ComparisonChartOptions {
 layout?: ComparisonLayout;
 spacing?: number;
 
-  appearance?: {
-    backgroundColor?: string;
-    backgroundGradient?: gradient;
-    backgroundImage?: string;
-  };
+  /** Same background options as standalone charts (`customBg`, `bgLayers`, `patternBg`, `noiseBg`, etc.). */
+  appearance?: ChartAppearanceExtended;
 
   generalTitle?: {
     text: string;
@@ -210,21 +208,73 @@ async function renderEnhancedText(
   ctx.restore();
 }
 
-/**
- * Helper function to fill with gradient or color
- */
-function fillWithGradientOrColor(
+/** Uniform scale + center so chart buffers are not stretched in their cells. */
+function drawChartImageContain(
   ctx: SKRSContext2D,
-  gradient?: gradient,
-  color?: string,
-  defaultColor: string = '#000000',
-  rect?: { x: number; y: number; w: number; h: number }
+  img: Image,
+  cellX: number,
+  cellY: number,
+  cellW: number,
+  cellH: number
 ): void {
-  if (gradient && rect) {
-    ctx.fillStyle = createGradientFill(ctx, gradient, rect) as any;
-  } else {
-    ctx.fillStyle = color || defaultColor;
+  const iw = img.width;
+  const ih = img.height;
+  if (iw <= 0 || ih <= 0) return;
+  const scale = Math.min(cellW / iw, cellH / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = cellX + (cellW - dw) / 2;
+  const dy = cellY + (cellH - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+/**
+ * Padding inside each cell scales with cell size (avoids huge inner margins that shrink plots,
+ * and avoids the old 0.7× heuristic that still forced large minimums).
+ */
+function paddingForCell(
+  original: { top?: number; right?: number; bottom?: number; left?: number } | undefined,
+  cellW: number,
+  cellH: number
+): { top: number; right: number; bottom: number; left: number } {
+  const m = Math.min(cellW, cellH);
+  if (!original) {
+    const p = Math.max(24, Math.min(52, Math.floor(m * 0.07)));
+    return { top: p, right: p, bottom: p, left: p };
   }
+  const ref = 850;
+  const scale = Math.min(1.15, Math.max(0.5, m / ref));
+  const sc = (v: number) => Math.max(22, Math.round(v * scale));
+  return {
+    top: sc(original.top ?? 56),
+    right: sc(original.right ?? 56),
+    bottom: sc(original.bottom ?? 56),
+    left: sc(original.left ?? 64),
+  };
+}
+
+/** Merge panel `appearance` into a sub-chart so backgrounds/axis styling inherit when omitted. */
+function mergeInheritedChartAppearance(
+  parent: ChartAppearanceExtended | undefined,
+  child: IndividualChartOptions
+): ChartAppearanceExtended {
+  const c = (child as { appearance?: ChartAppearanceExtended }).appearance ?? {};
+  const p = parent ?? {};
+  return {
+    ...p,
+    ...c,
+    backgroundColor: c.backgroundColor ?? p.backgroundColor ?? "#FFFFFF",
+    backgroundGradient: c.backgroundGradient ?? p.backgroundGradient,
+    backgroundImage: c.backgroundImage ?? p.backgroundImage,
+    customBg: c.customBg ?? p.customBg,
+    bgLayers: c.bgLayers ?? p.bgLayers,
+    patternBg: c.patternBg ?? p.patternBg,
+    noiseBg: c.noiseBg ?? p.noiseBg,
+    blur: c.blur ?? p.blur,
+    axisColor: c.axisColor ?? p.axisColor,
+    axisWidth: c.axisWidth ?? p.axisWidth,
+    arrowSize: c.arrowSize ?? p.arrowSize,
+  };
 }
 
 /**
@@ -245,10 +295,6 @@ export async function createComparisonChart(
   const layout = options.layout ?? 'sideBySide';
   const spacing = options.spacing ?? 40;
 
-  const backgroundColor = options.appearance?.backgroundColor ?? '#FFFFFF';
-  const backgroundGradient = options.appearance?.backgroundGradient;
-  const backgroundImage = options.appearance?.backgroundImage;
-
   const generalTitle = options.generalTitle;
   const generalTitleFontSize = generalTitle?.fontSize ?? 28;
   const generalTitleHeight = generalTitle ? generalTitleFontSize + 40 : 0;
@@ -256,23 +302,7 @@ export async function createComparisonChart(
   const canvas = createCanvas(width, height);
   const ctx: SKRSContext2D = canvas.getContext('2d');
 
-  if (backgroundImage) {
-    try {
-      const bgImage = await loadImage(backgroundImage);
-      ctx.drawImage(bgImage, 0, 0, width, height);
-    } catch (error) {
-      console.warn(`Failed to load background image: ${backgroundImage}`, error);
-      fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
-        x: 0, y: 0, w: width, h: height
-      });
-      ctx.fillRect(0, 0, width, height);
-    }
-  } else {
-    fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
-      x: 0, y: 0, w: width, h: height
-    });
-    ctx.fillRect(0, 0, width, height);
-  }
+  await paintChartCanvasBackground(ctx, canvas, width, height, options.appearance);
 
   if (generalTitle) {
     ctx.save();
@@ -328,25 +358,6 @@ export async function createComparisonChart(
   let chart1Buffer: Buffer;
   let chart2Buffer: Buffer;
 
-  const getOptimizedPadding = (originalPadding?: { top?: number; right?: number; bottom?: number; left?: number }) => {
-    if (!originalPadding) {
-
-      return {
-        top: 50,
-        right: 50,
-        bottom: 50,
-        left: 60
-      };
-    }
-
-    return {
-      top: Math.max(40, Math.floor((originalPadding.top ?? 60) * 0.7)),
-      right: Math.max(40, Math.floor((originalPadding.right ?? 80) * 0.7)),
-      bottom: Math.max(40, Math.floor((originalPadding.bottom ?? 80) * 0.7)),
-      left: Math.max(50, Math.floor((originalPadding.left ?? 100) * 0.7))
-    };
-  };
-
   const getLegendProps = (chartType: ComparisonChartType, chartOptions: IndividualChartOptions) => {
     const props: any = {};
     if (chartType === 'pie' || chartType === 'donut') {
@@ -370,24 +381,23 @@ export async function createComparisonChart(
       width: chart1Width,
       height: chart1Height,
 
-      padding: getOptimizedPadding(options.chart1.options.dimensions?.padding)
+      padding: paddingForCell(options.chart1.options.dimensions?.padding, chart1Width, chart1Height)
     },
     labels: {
       ...options.chart1.options.labels,
-      title: options.chart1.title ? {
+      title: {
         ...options.chart1.options.labels?.title,
-        ...options.chart1.title
-      } : options.chart1.options.labels?.title
+        ...options.chart1.title,
+        textStyle:
+          options.chart1.options.labels?.title?.textStyle
+          ?? options.chart1.title?.textStyle
+          ?? options.generalTitle?.textStyle
+      }
     },
 
     ...getLegendProps(options.chart1.type, options.chart1.options),
 
-    appearance: {
-      ...options.chart1.options.appearance,
-      backgroundColor: 'transparent',
-      backgroundGradient: undefined,
-      backgroundImage: undefined
-    }
+    appearance: mergeInheritedChartAppearance(options.appearance, options.chart1.options)
   };
 
   if (options.chart1.type === 'bar' && options.chart1.barType) {
@@ -418,24 +428,23 @@ export async function createComparisonChart(
       width: chart2Width,
       height: chart2Height,
 
-      padding: getOptimizedPadding(options.chart2.options.dimensions?.padding)
+      padding: paddingForCell(options.chart2.options.dimensions?.padding, chart2Width, chart2Height)
     },
     labels: {
       ...options.chart2.options.labels,
-      title: options.chart2.title ? {
+      title: {
         ...options.chart2.options.labels?.title,
-        ...options.chart2.title
-      } : options.chart2.options.labels?.title
+        ...options.chart2.title,
+        textStyle:
+          options.chart2.options.labels?.title?.textStyle
+          ?? options.chart2.title?.textStyle
+          ?? options.generalTitle?.textStyle
+      }
     },
 
     ...getLegendProps(options.chart2.type, options.chart2.options),
 
-    appearance: {
-      ...options.chart2.options.appearance,
-      backgroundColor: 'transparent',
-      backgroundGradient: undefined,
-      backgroundImage: undefined
-    }
+    appearance: mergeInheritedChartAppearance(options.appearance, options.chart2.options)
   };
 
   if (options.chart2.type === 'bar' && options.chart2.barType) {
@@ -506,8 +515,8 @@ export async function createComparisonChart(
   const chart1Image = await loadImage(chart1Buffer);
   const chart2Image = await loadImage(chart2Buffer);
 
-  ctx.drawImage(chart1Image, chart1X, chart1Y, chart1Width, chart1Height);
-  ctx.drawImage(chart2Image, chart2X, chart2Y, chart2Width, chart2Height);
+  drawChartImageContain(ctx, chart1Image, chart1X, chart1Y, chart1Width, chart1Height);
+  drawChartImageContain(ctx, chart2Image, chart2X, chart2Y, chart2Width, chart2Height);
 
   return canvas.toBuffer('image/png');
 }

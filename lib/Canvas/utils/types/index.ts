@@ -18,12 +18,21 @@ export type FitMode = 'fill' | 'contain' | 'cover';
 export interface StrokeOptions {
   color?: string;
   gradient?: gradient;
-width?: number;
-position?: number;
-blur?: number;
+  width?: number;
+  position?: number;
+  blur?: number;
   opacity?: number;      // 0..1
   borderRadius?: number | 'circular';
+  /**
+   * Which **edges** are stroked (`'top'`, `'right'`, `'bottom'`, `'left'`, or comma-separated).
+   * Default `'all'` = full outline. This is **not** which corners are rounded; use `roundedCorners` for that.
+   */
   borderPosition?: borderPosition;
+  /**
+   * Which corners use `borderRadius` (same values as canvas clip: `'all'`, `'top-left'`, `'top'`, …).
+   * Default `'all'`. Ignored when `borderRadius` is 0 or `'circular'`.
+   */
+  roundedCorners?: borderPosition;
   style?: 'solid' | 'dashed' | 'dotted' | 'groove' | 'ridge' | 'double';
 }
 
@@ -35,6 +44,9 @@ export interface ShadowOptions {
   blur?: number;
   opacity?: number;        // 0..1
   borderRadius?: number | "circular";
+  /** Which corners use `borderRadius` on the shadow shape. Default `'all'`. */
+  roundedCorners?: borderPosition;
+  /** @deprecated Use `roundedCorners` — same meaning (corner rounding only). */
   borderPosition?: borderPosition;
 }
 
@@ -51,14 +63,14 @@ export type gradient =
       startX?: number; startY?: number;
       endX?: number;   endY?: number;
       rotate?: number;           // degrees, rotation around pivot (default: canvas center)
-pivotX?: number; pivotY?: number;
+      pivotX?: number; pivotY?: number;
       repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for gradient (default: 'no-repeat')
       colors: GradientStop[];
     }
   | {
       type: 'radial';
       // two circles (default to center-based radial if not supplied)
-startX?: number; startY?: number; startRadius?: number;
+      startX?: number; startY?: number; startRadius?: number;
       endX?: number;   endY?: number;   endRadius?: number;   // outer circle
       // rotation is NOP for perfectly concentric radial, but supported if centers aren't equal
       rotate?: number; pivotX?: number; pivotY?: number;
@@ -71,9 +83,50 @@ startX?: number; startY?: number; startRadius?: number;
       centerX?: number; centerY?: number; // Center point (default: canvas center)
       startAngle?: number; // Starting angle in degrees (default: 0)
       rotate?: number; // Rotation around center in degrees (default: 0)
-pivotX?: number; pivotY?: number;
+      pivotX?: number; pivotY?: number;
       colors: GradientStop[];
     };
+
+/** Repeat mode for tiled image patterns in {@link BackgroundLayer}. */
+export type BackgroundPatternRepeat = 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat';
+
+/** Alignment for {@link BackgroundLayer} image `contain` / `cover` (same as `customBg.align`). */
+export type BackgroundImageAlign =
+  | 'center' | 'top' | 'bottom' | 'left' | 'right'
+  | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+/**
+ * One entry in {@link CanvasConfig.bgLayers}, painted in order (bottom → top) after the primary background fill.
+ * Use `opacity` and `blendMode` per layer for tints and compositing without changing the whole canvas `blendMode`.
+ *
+ * - **`pattern`** — tiled **bitmap** fill via `createPattern` (`source` = image path/URL).
+ * - **`presetPattern`** — built‑in meshes ({@link PatternOptions}: crosses, dots, grid, …), same vocabulary as top‑level `patternBg`.
+ */
+export type BackgroundLayer =
+  | { type: 'color'; value: string; opacity?: number; blendMode?: GlobalCompositeOperation }
+  | { type: 'gradient'; value: gradient; opacity?: number; blendMode?: GlobalCompositeOperation }
+  | {
+      type: 'image';
+      source: string;
+      opacity?: number;
+      fit?: 'fill' | 'contain' | 'cover';
+      align?: BackgroundImageAlign;
+      blendMode?: GlobalCompositeOperation;
+    }
+  | {
+      type: 'pattern';
+      source: string;
+      repeat?: BackgroundPatternRepeat;
+      opacity?: number;
+      blendMode?: GlobalCompositeOperation;
+    }
+  | {
+      type: 'presetPattern';
+      pattern: PatternOptions;
+      opacity?: number;
+      blendMode?: GlobalCompositeOperation;
+    }
+  | { type: 'noise'; intensity?: number; blendMode?: GlobalCompositeOperation };
 
 export type borderPosition = 'all' | 'top' | 'left' | 'right' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | string;
 
@@ -98,15 +151,15 @@ export interface CanvasConfig {
       fit?: 'fill' | 'contain' | 'cover';
       align?: 'center' | 'top' | 'bottom' | 'left' | 'right'
       | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-filters?: ImageFilter[];
-opacity?: number;
+      filters?: ImageFilter[];
+      opacity?: number;
     };
     videoBg?: {
       source: string | Buffer; // Video file path, URL, or Buffer
       frame?: number; // Extract specific frame number (default: 0)
       time?: number; // Extract frame at specific time in seconds (overrides frame if provided)
       loop?: boolean; // Loop video (default: false)
-autoplay?: boolean;
+      autoplay?: boolean;
       opacity?: number; // Video opacity (default: 1)
       format?: 'jpg' | 'png'; // Output format (default: 'jpg')
       quality?: number; // JPEG quality 1-31, lower = better (default: 2)
@@ -116,13 +169,13 @@ autoplay?: boolean;
     gradientBg?: gradient;
     patternBg?: PatternOptions;
     noiseBg?: { intensity?: number };
-    bgLayers?: Array<
-      { type: "color"; value: string } |
-      { type: "gradient"; value: gradient } |
-      { type: "image"; source: string; opacity?: number } |
-      { type: "pattern"; source: string; repeat?: string; opacity?: number } |
-      { type: "noise"; intensity?: number }
-    >;
+    /**
+     * When `true`, skip the default opaque black fill if you did **not** set `colorBg`, `gradientBg`, `customBg`, or `videoBg`.
+     * Use with {@link bgLayers} (or pattern/noise only) so the stack starts from a transparent base instead of `#000`.
+     */
+    transparentBase?: boolean;
+    /** Stacked overlays after the main `colorBg` / `gradientBg` / `customBg` / `videoBg` pass (or after transparent base). */
+    bgLayers?: BackgroundLayer[];
     blendMode?: GlobalCompositeOperation;
 
     opacity?: number;
@@ -133,31 +186,14 @@ autoplay?: boolean;
     borderPosition?: borderPosition;
 
     zoom?: {
-scale?: number;
+      scale?: number;
       centerX?: number;
       centerY?: number;
    };
 
 
-    stroke?: {
-        color?: string;
-        blur?: number;
-        width?: number;
-        position?: number;
-        borderRadius?: number | "circular";
-        borderPosition?: borderPosition;
-        gradient?: gradient;
-        style?: 'solid' | 'dashed' | 'dotted' | 'groove' | 'ridge' | 'double';
-    };
-    shadow?: {
-        color?: string;
-        offsetX?: number;
-        offsetY?: number;
-        blur?: number;
-        opacity?: number;
-        borderRadius?: number | "circular";
-        gradient?: gradient;
-    };
+    stroke?: StrokeOptions;
+    shadow?: ShadowOptions;
 };
 
 /**
@@ -191,11 +227,11 @@ export interface ShapeProperties {
   fill?: boolean;
   color?: string;
   gradient?: gradient;
-points?: { x: number; y: number }[];
-radius?: number;
-sides?: number;
-innerRadius?: number;
-outerRadius?: number;
+  points?: { x: number; y: number }[];
+  radius?: number;
+  sides?: number;
+  innerRadius?: number;
+  outerRadius?: number;
 
   startAngle?: number; // Start angle in radians (default: 0, for arc/pieSlice)
   endAngle?: number; // End angle in radians (default: 2*PI, for arc/pieSlice)
@@ -215,33 +251,38 @@ export interface ImageProperties {
   inherit?: boolean;
 
   // fitting
-fit?: FitMode;
-align?: AlignMode;
+  fit?: FitMode;
+  align?: AlignMode;
 
   // visuals
   rotation?: number;       // deg around box center
   opacity?: number;        // bitmap alpha
   blur?: number;           // bitmap blur px
+  /**
+   * Porter–Duff / blend mode when compositing this layer onto the canvas.
+   * Default is `source-over`. Use `screen`, `overlay`, `soft-light`, etc. for atmospheric shapes.
+   */
+  blendMode?: GlobalCompositeOperation;
   borderRadius?: number | 'circular';
   borderPosition?: string;
 
   // image filters
   filters?: ImageFilter[];
   filterIntensity?: number; // Global filter intensity multiplier (default: 1)
-filterOrder?: 'pre' | 'post';
+  filterOrder?: 'pre' | 'post';
 
   // image masking
   mask?: {
     source: string | Buffer; // Mask image
     mode?: 'alpha' | 'luminance' | 'inverse'; // Mask mode (default: 'alpha')
   };
-clipPath?: Array<{ x: number; y: number }>;
+  clipPath?: Array<{ x: number; y: number }>;
 
   // image distortion/transform
   distortion?: {
     type: 'perspective' | 'warp' | 'bulge' | 'pinch';
     points?: Array<{ x: number; y: number }>; // Control points for perspective/warp
-intensity?: number;
+    intensity?: number;
   };
   meshWarp?: {
     gridX?: number; // Grid divisions X (default: 10)
@@ -291,6 +332,8 @@ export interface GroupTransformOptions {
   opacity?: number;
   /** Group blur in pixels - affects all elements together */
   blur?: number;
+  /** Blend mode for the whole group when compositing onto the canvas */
+  blendMode?: GlobalCompositeOperation;
   /** Border radius for the group bounding box */
   borderRadius?: number | 'circular';
   /** Border position for the group */
@@ -618,6 +661,8 @@ export interface TextProperties {
   shadow?: {
     /** Shadow color */
     color?: string;
+    /** Gradient Shadow */
+    gradient?: gradient;
     /** Horizontal shadow offset */
     offsetX?: number;
     /** Vertical shadow offset */
@@ -645,15 +690,24 @@ export interface TextProperties {
   /** Text rotation in degrees */
   rotation?: number;
 
-  // === TEXT PATH/CURVE FOLLOWING ===
-  /** Path for text to follow */
-  path?: {
-    type: 'line' | 'arc' | 'bezier' | 'quadratic';
-    points: Array<{ x: number; y: number }>;
-    offset?: number; // Distance from path (default: 0)
+  /**
+   * Draw the line on a circular arc (banner / badge). `(x, y)` is the **center** of the string:
+   * the middle glyph sits on the arc apex; `sweepAngle` controls how strongly the ends bend away.
+   * Ignores `maxWidth` (use a single visual line; newlines become separate stacked arcs).
+   * Highlight, underline, overline, and strikethrough are drawn per glyph in the arc’s tangent plane.
+   * `letterSpacing` / `wordSpacing` are respected via the same 2D context as straight text (included in `measureText` widths used for arc layout).
+   */
+  textOnCurve?: {
+    /** Total angle in degrees covered by the full string at the circle center (e.g. 40–120). */
+    sweepAngle: number;
+    /** Circle radius in px. If omitted, `radius ≈ textWidth / sweepRadians` so arc length matches measured width. */
+    radius?: number;
+    /**
+     * If true (default), the arc bulges **upward** (smile / ∩). If false, bulges **downward** (∪).
+     */
+    up?: boolean;
   };
-  /** Render text along path */
-  textOnPath?: boolean;
+
   /** Include character-level metrics in measureText (optional) */
   includeCharMetrics?: boolean;
   /** Optional: Canvas size for text measurement (default: auto-calculated based on text size) */
@@ -674,6 +728,58 @@ export interface TextObject extends TextProperties {
   outlined?: boolean;
 }
 
+/** GIF Graphic Control Extension disposal — forwarded to `gifencoder.setDispose`. */
+export type GIFDisposalMethod = 0 | 1 | 2 | 3;
+
+/**
+ * Optional watermark for one frame (path/URL image). When set, overrides {@link GIFOptions.watermark} for that frame.
+ */
+export interface GIFWatermarkSpec {
+    /** When false, skips watermark on this frame even if a global watermark is set. */
+    enable?: boolean;
+    url: string;
+    x?: number;
+    y?: number;
+}
+
+/**
+ * One raster frame for {@link createGIF} when supplying paths/buffers up-front (`gifFrames`).
+ * Use either `buffer` or `background` (not both required by type; provide one).
+ */
+export interface GIFInputFrame {
+    /** Delay before the next frame, in milliseconds (GIF frame delay). */
+    duration: number;
+    /** Raster image buffer (PNG/JPEG/WebP). Preferred name for programmatic frames. */
+    buffer?: Buffer;
+    /**
+     * Filesystem path, `http(s)` URL, or legacy buffer alias (`background` as Buffer).
+     * Kept for backward compatibility with older examples that used `background` only.
+     */
+    background?: string | Buffer;
+    /** Overrides {@link GIFOptions.defaultDispose} for this frame. */
+    dispose?: GIFDisposalMethod;
+    /**
+     * Single RGB color (no alpha) treated as transparent after quantization — `#RRGGBB`, `"RRGGBB"`, or `0xRRGGBB`.
+     * Overrides {@link GIFOptions.transparentColor} for this frame. Use `null` to force no transparency on this frame.
+     */
+    transparentColor?: number | string | null;
+    /** Overrides global watermark for this frame only. */
+    watermark?: GIFWatermarkSpec;
+}
+
+/**
+ * One frame returned from {@link GIFOptions.onStart} — already-rendered pixels for encoding.
+ * Also used as chunks when streaming frames via {@link AsyncIterable}.
+ */
+export interface GIFEncodedFrame {
+    buffer: Buffer;
+    /** Per-frame delay (ms). Falls back to {@link GIFOptions.delay}, then `100`. */
+    duration?: number;
+    dispose?: GIFDisposalMethod;
+    transparentColor?: number | string | null;
+    watermark?: GIFWatermarkSpec;
+}
+
 /**
  * Options for creating a GIF.
  * @param outputFormat The format of the output ('file', 'base64', 'attachment', or 'buffer').
@@ -682,12 +788,15 @@ export interface TextObject extends TextProperties {
  * @param height The height of the GIF.
  * @param repeat The number of times the GIF should repeat.
  * @param quality The quality of the GIF.
- * @param delay The delay between frames in milliseconds.
- * @param watermark The watermark settings.
- * @param textOverlay The text overlay settings.
- * @param basDir The base directory for files.
- * @param onStart Frame generation callback - generates frames using Apexify.js APIs (returns Buffer array)
- * @param onEnd Callback after GIF creation - receives final frame buffer and can return static image buffer
+ * @param delay Default delay between frames in milliseconds (when a frame omits `duration`).
+ * @param watermark Global watermark drawn on each frame unless a frame overrides with its own `watermark`.
+ * @param transparentColor Default chroma key (`#RRGGBB` / `0xRRGGBB`) for transparency; frames may override.
+ * @param defaultDispose Default GIF disposal when a frame omits `dispose`.
+ * @param textOverlay Same overlay text on every frame (simple canvas text — not Apexify rich text).
+ * @param basDir Reserved / legacy.
+ * @param onStart Programmatic frame generation — runs instead of `gifFrames`.
+ * @param onEnd Post-process last composite frame (e.g. export a still PNG alongside the GIF).
+ * @param skipResizeWhenDimensionsMatch Skip bitmap scaling when a frame already matches `width`×`height` (faster).
  */
 export interface GIFOptions {
     outputFormat: 'file' | 'base64' | 'attachment' | 'buffer' | string;
@@ -700,7 +809,15 @@ export interface GIFOptions {
     watermark?: {
         enable: boolean;
         url: string;
+        /** Left edge (default `10`). */
+        x?: number;
+        /** Top edge; default pins watermark near the bottom: `canvasHeight - imageHeight - 10`. */
+        y?: number;
     };
+    /** Applies to any frame that does not set `transparentColor`. `null` disables chroma transparency globally unless a frame sets its own. */
+    transparentColor?: number | string | null;
+    /** Applies when a frame omits `dispose`. */
+    defaultDispose?: GIFDisposalMethod;
     textOverlay?: {
         text: string;
         fontName?: string;
@@ -712,37 +829,39 @@ export interface GIFOptions {
     };
     basDir?: any;
     /**
-     * Frame generation callback - called before GIF creation
-     * Receives frame count and painter instance, returns array of frame buffers
-     * If provided, overrides gifFrames parameter
-     * @param frameCount - Estimated frame count (based on duration/delay or default 30)
-     * @param painter - ApexPainter instance for using Apexify.js APIs
-     * @returns Array of frame objects with buffer and duration
+     * When true or omitted, frames that already match `width` × `height` are copied without an extra resize pass.
+     * Set to `false` to always scale (e.g. force exact filtering behavior).
+     */
+    skipResizeWhenDimensionsMatch?: boolean;
+    /**
+     * Build frames in code (animations, games, charts, cached-layer compositing).
+     * **Overrides** the `gifFrames` argument when provided.
+     *
+     * Return either:
+     * - **`GIFEncodedFrame[]`** — all frames in memory, or
+     * - **`AsyncIterable<GIFEncodedFrame>`** — yield frames one at a time (lower peak memory for long GIFs).
+     *
+     * `frameCountHint` is derived from `frameCount`, or `duration`/`delay`, or defaults — streaming ignores fixed length.
      */
     onStart?: (
-        frameCount: number,
-painter: any
-    ) => Promise<Array<{ buffer: Buffer; duration: number }>>;
+        frameCountHint: number,
+        painter: any
+    ) => Promise<GIFEncodedFrame[] | AsyncIterable<GIFEncodedFrame>>;
     /**
-     * Frame count for animation (used when onStart is provided)
-     * If not provided, defaults to 30 frames
+     * Target number of frames passed into `onStart` as the first argument (hint only).
      */
     frameCount?: number;
     /**
-     * Animation duration in milliseconds (used to calculate frame count if frameCount not provided)
-     * Defaults to 3000ms (3 seconds)
+     * Used with `delay` to estimate `frameCountHint` when `frameCount` is omitted: `floor(duration / delay)`.
      */
     duration?: number;
     /**
-     * Callback after GIF creation - receives final frame buffer
-     * Can return a static image buffer (e.g., final frame) that will be included in result
-     * @param finalFrameBuffer - Buffer of the last frame
-     * @param painter - ApexPainter instance
-     * @returns Optional static image buffer (will be added to result if provided)
+     * Callback after GIF creation — receives the **last encoded composite** (after watermark/text overlay).
+     * Return an extra static asset buffer if needed (packaged with `gif` when both are returned).
      */
     onEnd?: (
         finalFrameBuffer: Buffer,
-painter: any
+        painter: any
     ) => Promise<Buffer | undefined>;
 }
 
@@ -776,16 +895,16 @@ export interface CustomOptions {
 
     path?: {
         type: 'smooth' | 'bezier' | 'catmull-rom';
-tension?: number;
+        tension?: number;
         closed?: boolean; // Close the path (default: false)
     };
 
     arrow?: {
-start?: boolean;
-end?: boolean;
-size?: number;
-style?: 'filled' | 'outline';
-color?: string;
+        start?: boolean;
+        end?: boolean;
+        size?: number;
+        style?: 'filled' | 'outline';
+        color?: string;
     };
 
     markers?: Array<{
@@ -809,7 +928,7 @@ color?: string;
         // Line patterns
         pattern?: {
             type: 'dots' | 'dashes' | 'custom';
-segments?: number[];
+            segments?: number[];
             offset?: number; // Pattern offset
         };
         texture?: string | Buffer; // Texture image for line
@@ -841,10 +960,10 @@ export interface cropOptions {
     coordinates: cropCoordinate[];
     imageSource: string;
     crop: 'inner' | 'outer';
-    radius: number | "circular"
+    radius: number | "circular";
 }
 
-export interface GradientConfig{
+export interface GradientConfig {
     type: 'linear' | 'radial' | 'conic';
     startX?: number;
     startY?: number;
@@ -853,17 +972,17 @@ export interface GradientConfig{
     startRadius?: number;
     endRadius?: number;
     angle?: number;
-centerX?: number;
-centerY?: number;
-startAngle?: number;
+    centerX?: number;
+    centerY?: number;
+    startAngle?: number;
     repeat?: 'repeat' | 'reflect' | 'no-repeat'; // Repeat mode for linear and radial gradients
     colors: {
       stop: number;
       color: string;
     }[];
-  };
+}
 
-  export interface Frame{
+export interface Frame {
     backgroundColor?: string;
     gradient?: GradientConfig;
     pattern?: {
@@ -883,13 +1002,12 @@ startAngle?: number;
     width?: number;
     height?: number;
     onDrawCustom?: (ctx: SKRSContext2D, canvas: Canvas) => void;
-  };
+}
 
-
-  /**
-   * Enhanced pattern options supporting all pattern types
-   */
-  export interface PatternOptions {
+/**
+ * Enhanced pattern options supporting all pattern types
+ */
+export interface PatternOptions {
     // === PATTERN TYPE ===
     /** Pattern type: built-in patterns or custom image */
     type: 'grid' | 'dots' | 'diagonal' | 'stripes' | 'waves' | 'crosses' |
@@ -898,9 +1016,12 @@ startAngle?: number;
     // === PATTERN COLORS ===
     /** Primary pattern color (default: '#ffffff') */
     color?: string;
-    /** Secondary pattern color for two-color patterns (default: 'transparent') */
+    /**
+     * Second ink for two-tone drawing: `checkerboard`; horizontal vs vertical lines in `grid` and `crosses`;
+     * alternating bands in `stripes` when set (otherwise stripes use `color` only).
+     */
     secondaryColor?: string;
-    /** Pattern opacity (0-1, default: 0.3) */
+    /** Pattern opacity (0–1); multiplied with the context/canvas alpha (default: 0.3) */
     opacity?: number;
 
     // === PATTERN SIZING ===
@@ -930,8 +1051,7 @@ startAngle?: number;
     blendMode?: GlobalCompositeOperation;
     /** Pattern gradient (overrides color) */
     gradient?: GradientConfig;
-  }
-
+}
 
 // Batch operation types
 export interface BatchOperation {

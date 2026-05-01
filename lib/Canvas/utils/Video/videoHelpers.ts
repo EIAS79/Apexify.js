@@ -4,14 +4,14 @@
  * to keep the main class cleaner and more maintainable.
  */
 
-import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { exec } from "child_process";
 import { promisify } from "util";
 import axios from 'axios';
 import fs from "fs";
 import path from "path";
 import type { CanvasResults } from "../../extended/CanvasCreator";
-import { getCanvasContext } from "../errorUtils";
+import { getCanvasContext } from "../core/errorUtils";
 
 const execAsync = promisify(exec);
 
@@ -144,7 +144,7 @@ export class VideoHelpers {
     }
 
     const duration = videoInfo.duration;
-const interval = duration / (count + 1);
+    const interval = duration / (count + 1);
 
     const frames: Buffer[] = [];
     for (let i = 1; i <= count; i++) {
@@ -198,7 +198,6 @@ const interval = duration / (count + 1);
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    const format = options.format || 'mp4';
     const qualityPresets: Record<string, string> = {
       low: '-crf 28',
       medium: '-crf 23',
@@ -642,7 +641,7 @@ timeout: 300000,
       const escapedPaths = videoPaths.map(vp => vp.replace(/"/g, '\\"'));
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1] || escapedPaths[0]}" -filter_complex "[0:v][1:v]hstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else if (mode === 'grid') {
-      const grid = options.grid || { cols: 2, rows: 2 };
+      void (options.grid ?? { cols: 2, rows: 2 });
       const escapedPaths = videoPaths.map(vp => vp.replace(/"/g, '\\"'));
 
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1] || escapedPaths[0]}" -filter_complex "[0:v][1:v]hstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
@@ -1076,7 +1075,6 @@ timeout: 300000,
 
     const timestamp = Date.now();
     const fps = options.fps || 30;
-    const format = options.format || 'mp4';
     const qualityPresets: Record<string, string> = {
       low: '-crf 28',
       medium: '-crf 23',
@@ -1325,7 +1323,6 @@ timeout: 600000,
     const timestamp = Date.now();
     const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
 
-    const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
     const concatFile = path.join(frameDir, `loop-${timestamp}.txt`);
@@ -1685,7 +1682,7 @@ timeout: 600000,
     } else if (layout === 'top-bottom' && videoPaths.length >= 2) {
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1]}" -filter_complex "[0:v][1:v]vstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else if (layout === 'grid' && videoPaths.length >= 4) {
-      const grid = options.grid || { cols: 2, rows: 2 };
+      void (options.grid ?? { cols: 2, rows: 2 });
 
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1]}" -i "${escapedPaths[2]}" -i "${escapedPaths[3]}" -filter_complex "[0:v][1:v]hstack=inputs=2[top];[2:v][3:v]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else {
@@ -1929,7 +1926,7 @@ timeout: 600000,
   async exportVideoPreset(
     videoSource: string | Buffer,
     options: { preset: string; outputPath: string },
-    onProgress?: (progress: { percent: number; time: number; speed: number }) => void
+    _onProgress?: (progress: { percent: number; time: number; speed: number }) => void
   ): Promise<{ outputPath: string; success: boolean }> {
     const presets: Record<string, { resolution: { width: number; height: number }; fps: number; bitrate: number; format: string }> = {
       youtube: { resolution: { width: 1920, height: 1080 }, fps: 30, bitrate: 8000, format: 'mp4' },
@@ -2030,7 +2027,6 @@ timeout: 600000,
       throw new Error(`LUT file not found: ${options.lutPath}`);
     }
 
-    const intensity = options.intensity ?? 1.0;
     const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedLutPath = lutPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
@@ -2209,7 +2205,6 @@ timeout: 600000,
     const fontColor = options.fontColor || 'white';
     const bgColor = options.backgroundColor || 'black@0.5';
     const animation = options.animation || 'none';
-    const duration = options.endTime - options.startTime;
 
     let positionStr: string;
     if (typeof options.position === 'string') {

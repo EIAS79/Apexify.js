@@ -27,7 +27,8 @@ export async function applyProfessionalImageFilters(
   try {
 
     const imageData = ctx.getImageData(0, 0, width, height);
-    const buffer = Buffer.from(new Uint8Array(imageData.data.buffer));
+    // Buffer.from(view) respects byteOffset/length on ImageData's Uint8ClampedArray
+    const buffer = Buffer.from(imageData.data);
 
     let sharpImage = sharp(buffer, {
       raw: {
@@ -229,10 +230,6 @@ async function applyHueShiftSharp(image: sharp.Sharp, value: number): Promise<sh
   return image;
 }
 
-async function applyGrayscaleSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
-  return image.grayscale();
-}
-
 async function applySepiaSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
   return image.recomb([
     [0.393, 0.769, 0.189],
@@ -247,9 +244,7 @@ async function applyInvertSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
   return image.negate({ alpha: false }).ensureAlpha();
 }
 
-async function applyPosterizeSharp(image: sharp.Sharp, levels: number): Promise<sharp.Sharp> {
-  // Levels: 2-256 (number of color levels)
-  const clampedLevels = Math.max(2, Math.min(256, Math.floor(levels)));
+async function applyPosterizeSharp(image: sharp.Sharp, _levels: number): Promise<sharp.Sharp> {
   // Sharp doesn't have direct posterize, use threshold approximation
   // Better implementation would use quantization
   return image.threshold(128).modulate({ saturation: 0 });
@@ -273,7 +268,7 @@ async function applyNoiseSharp(image: sharp.Sharp, intensity: number): Promise<s
   const buffer = await image.png().toBuffer();
   const jimpImage = await Jimp.read(buffer);
 
-  jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
+  jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, _x: number, _y: number, idx: number) {
     const noise = (Math.random() - 0.5) * clampedIntensity * 255;
     this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + noise));
     this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + noise));
@@ -292,7 +287,7 @@ async function applyGrainSharp(image: sharp.Sharp, intensity: number): Promise<s
   const buffer = await image.png().toBuffer();
   const jimpImage = await Jimp.read(buffer);
 
-  jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, x: number, y: number, idx: number) {
+  jimpImage.scan(0, 0, jimpImage.width, jimpImage.height, function (this: any, _x: number, _y: number, idx: number) {
     const grain = (Math.random() - 0.5) * clampedIntensity * 100;
     this.bitmap.data[idx] = Math.max(0, Math.min(255, this.bitmap.data[idx] + grain));
     this.bitmap.data[idx + 1] = Math.max(0, Math.min(255, this.bitmap.data[idx + 1] + grain));
@@ -341,7 +336,7 @@ function createMotionBlurKernel(intensity: number, angle: number): any {
   };
 }
 
-function createRadialBlurKernel(intensity: number, centerX: number, centerY: number): any {
+function createRadialBlurKernel(intensity: number, _centerX: number, _centerY: number): any {
   const size = Math.max(3, Math.floor(intensity));
   const kernel = Array(size * size).fill(0);
   const center = Math.floor(size / 2);

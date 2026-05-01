@@ -1,4 +1,4 @@
-import { SKRSContext2D, Image } from '@napi-rs/canvas';
+import type { SKRSContext2D } from '@napi-rs/canvas';
 
 /**
  * Applies vignette effect to the canvas

@@ -7,6 +7,8 @@
         "declarationMap": true,
         "sourceMap": true,
         "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
@@ -20,6 +22,6 @@
             "moduleResolution": "node"
         }
     },
-    "include": ["lib/**/*", "./types/**/*", "./test-collage.ts"],
+    "include": ["lib/**/*", "./types/**/*"],
     "exclude": ["node_modules"]
 }

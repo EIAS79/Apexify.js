@@ -106,29 +106,6 @@ export function WrappedText(
   }
 
 /**
- * Draws a single line with correct alignment. Then uses `drawStrokeAndFill` to apply stroke, fill, etc.
- */
-function drawLine(
-  ctx: SKRSContext2D,
-  lineText: string,
-  startX: number,
-  startY: number,
-  maxWidth: number,
-  options: TextObject
-) {
-  let xOffset = startX;
-
-  const measuredWidth = ctx.measureText(lineText).width;
-  if (options.textAlign === 'center') {
-    xOffset = startX + (maxWidth / 2) - (measuredWidth / 2);
-  } else if (options.textAlign === 'right') {
-    xOffset = startX + maxWidth - measuredWidth;
-  }
-
-  drawStrokeAndFill(ctx, lineText, xOffset, startY, options);
-}
-
-/**
  * Actually draws stroke (if any) and fill for the given text & position.
  */
 function drawStrokeAndFill(

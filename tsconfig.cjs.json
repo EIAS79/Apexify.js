@@ -1,7 +1,10 @@
 {
-    "extends": "./tsconfig.json",
-    "compilerOptions": {
-      "module": "NodeNext",
-      "outDir": "./dist/cjs"
-    }
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": "./dist/cjs",
+    "declaration": false,
+    "declarationMap": false
   }
+}

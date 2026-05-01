@@ -1,8 +1,8 @@
-import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
+import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
 import { StitchOptions, CollageLayout } from '../types';
-import { getCanvasContext } from '../errorUtils';
+import { getCanvasContext } from "../core/errorUtils";
 
 /**
  * Stitches multiple images together

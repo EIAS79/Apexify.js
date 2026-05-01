@@ -1,14 +1,13 @@
 import { createCanvas, loadImage, Image, SKRSContext2D  } from "@napi-rs/canvas";
 import GIFEncoder from "gifencoder";
-import { PassThrough} from "stream";
-import { exec, execSync } from "child_process";
+import { exec } from "child_process";
 import { promisify } from "util";
 import axios from 'axios';
 import fs, { PathLike } from "fs";
 import path from "path";
 
 const execAsync = promisify(exec);
-import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions, GIFResults, CustomOptions, cropOptions,
+import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions, GIFResults, GIFInputFrame, CustomOptions, cropOptions,
     customLines,
     converter, resizingImg, applyColorFilters, imgEffects, cropInner, cropOuter, bgRemoval, detectColors, removeColor, dataURL,
     base64, arrayBuffer, blob, url, GradientConfig, Frame,
@@ -19,22 +18,26 @@ import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions
     compressImage, extractPalette as extractPaletteUtil,
     BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions,
     SaveOptions, SaveResult,
-    CreateImageOptions, GroupTransformOptions,
+    CreateImageOptions,
     TextMetrics, PixelData, PixelManipulationOptions,
 
     PathCommand, Path2DDrawOptions, HitRegion, HitDetectionOptions, HitDetectionResult,
     getErrorMessage, getCanvasContext
-    } from "./utils/utils";
-    import { CanvasCreator, type CanvasResults } from "./extended/CanvasCreator";
-    import { ImageCreator } from "./extended/ImageCreator";
-    import { TextCreator } from "./extended/TextCreator";
-    import { GIFCreator } from "./extended/GIFCreator";
-    import { ChartCreator } from "./extended/ChartCreator";
-    import { VideoCreator, VideoCreationOptions } from "./extended/VideoCreator";
-    import { TextMetricsCreator } from "./extended/TextMetricsCreator";
-    import { PixelDataCreator } from "./extended/PixelDataCreator";
-    import { Path2DCreator } from "./extended/Path2DCreator";
-    import { HitDetectionCreator } from "./extended/HitDetectionCreator";
+    } from "./utils/canvasUtils";
+import {
+    CanvasCreator,
+    type CanvasResults,
+    ImageCreator,
+    TextCreator,
+    GIFCreator,
+    ChartCreator,
+    VideoCreator,
+    type VideoCreationOptions,
+    TextMetricsCreator,
+    PixelDataCreator,
+    Path2DCreator,
+    HitDetectionCreator,
+} from "./extended";
     import { VideoHelpers } from "./utils/Video/videoHelpers";
 import type { PieSlice, PieChartOptions } from "./utils/Charts/piechart";
 import type { BarChartData, BarChartOptions } from "./utils/Charts/barchart";
@@ -66,7 +69,7 @@ export class ApexPainter {
     this.imageCreator = new ImageCreator();
     this.textCreator = new TextCreator();
     this.gifCreator = new GIFCreator();
-this.gifCreator.setPainter(this);
+    this.gifCreator.setPainter(this);
     this.chartCreator = new ChartCreator();
     this.videoCreator = new VideoCreator();
     this.textMetricsCreator = new TextMetricsCreator();
@@ -183,10 +186,13 @@ this.gifCreator.setPainter(this);
    *   - y: Y position offset (default: 0)
    *   - colorBg: Solid color background (hex, rgb, rgba, hsl, etc.)
    *   - gradientBg: Gradient background configuration
-   *   - customBg: Custom background image buffer
+   *   - customBg: Custom background image path/URL + fit/align options
+   *   - videoBg: Video source frame background
    *   - zoom: Canvas zoom level (default: 1)
-   *   - pattern: Pattern background configuration
-   *   - noise: Noise effect configuration
+   *   - patternBg: Built-in procedural pattern overlay (same options as chart `patternBg`)
+   *   - noiseBg: Noise effect configuration
+   *   - transparentBase: Skip default black fill when no color/gradient/custom/video base (compose from bgLayers only)
+   *   - bgLayers: Stack after base — color, gradient, image, pattern (tiled bitmap), presetPattern (built‑ins), noise
    *
    * @returns Promise<CanvasResults> - Object containing canvas buffer and configuration
    *
@@ -290,6 +296,7 @@ this.gifCreator.setPainter(this);
    *   - shadow: Text shadow effect with color, offset, blur, and opacity
    *   - stroke: Text stroke/outline with color, width, gradient, and opacity
    *   - rotation: Text rotation in degrees
+   *   - textOnCurve: Circular arc text — `sweepAngle` (degrees) bends the line; `(x,y)` is the center of the string; optional `radius`, `up` (default true, smile-shaped)
    *
    * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
    *
@@ -608,7 +615,7 @@ this.gifCreator.setPainter(this);
       }
 
       const canvas = createCanvas(existingImage.width, existingImage.height);
-      const ctx = canvas.getContext("2d");
+      const ctx = getCanvasContext(canvas);
 
       ctx.drawImage(existingImage, 0, 0);
 
@@ -621,7 +628,7 @@ this.gifCreator.setPainter(this);
   }
 
   async createGIF(
-    gifFrames: { background: string; duration: number }[] | undefined,
+    gifFrames: GIFInputFrame[] | undefined,
     options: GIFOptions
   ): Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | { gif: Buffer | string; static: Buffer } | undefined> {
     return this.gifCreator.createGIF(gifFrames, options);
@@ -886,7 +893,6 @@ this.gifCreator.setPainter(this);
 
   private _ffmpegAvailable: boolean | null = null;
   private _ffmpegChecked: boolean = false;
-  private _ffmpegPath: string | null = null;
 
   /**
    * Gets comprehensive FFmpeg installation instructions based on OS
@@ -982,7 +988,6 @@ this.gifCreator.setPainter(this);
       });
       this._ffmpegAvailable = true;
       this._ffmpegChecked = true;
-      this._ffmpegPath = 'ffmpeg';
       return true;
     } catch {
 
@@ -1005,7 +1010,6 @@ this.gifCreator.setPainter(this);
           });
           this._ffmpegAvailable = true;
           this._ffmpegChecked = true;
-          this._ffmpegPath = ffmpegPath;
           return true;
         } catch {
           continue;
@@ -1180,7 +1184,9 @@ this.gifCreator.setPainter(this);
         // Resolve relative paths (similar to customBackground)
         let resolvedPath = videoSource;
         if (!/^https?:\/\//i.test(resolvedPath)) {
-          resolvedPath = path.join(process.cwd(), resolvedPath);
+          resolvedPath = path.isAbsolute(resolvedPath)
+            ? resolvedPath
+            : path.join(process.cwd(), resolvedPath);
         }
 
         if (!fs.existsSync(resolvedPath)) {
@@ -1310,22 +1316,32 @@ this.gifCreator.setPainter(this);
       }
 
       const timestamp = Date.now();
-      const videoPath = typeof videoSource === 'string' ? videoSource : path.join(frameDir, `temp-video-${timestamp}.mp4`);
+      const tempVideoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
+      let videoPath: string;
       let shouldCleanupVideo = false;
 
       if (Buffer.isBuffer(videoSource)) {
+        videoPath = tempVideoPath;
         fs.writeFileSync(videoPath, videoSource);
         shouldCleanupVideo = true;
-      } else if (typeof videoSource === 'string' && videoSource.startsWith('http')) {
+      } else if (typeof videoSource === 'string' && /^https?:\/\//i.test(videoSource)) {
         const response = await axios({
           method: 'get',
           url: videoSource,
           responseType: 'arraybuffer'
         });
+        videoPath = tempVideoPath;
         fs.writeFileSync(videoPath, Buffer.from(response.data));
         shouldCleanupVideo = true;
-      } else if (!fs.existsSync(videoPath)) {
-        throw new Error("Video file not found at specified path.");
+      } else if (typeof videoSource === 'string') {
+        videoPath = path.isAbsolute(videoSource)
+          ? videoSource
+          : path.join(process.cwd(), videoSource);
+        if (!fs.existsSync(videoPath)) {
+          throw new Error("Video file not found at specified path.");
+        }
+      } else {
+        throw new Error("extractFrames: videoSource must be a string path/URL or Buffer.");
       }
 
       const escapedVideoPath = videoPath.replace(/"/g, '\\"');
@@ -1373,7 +1389,6 @@ this.gifCreator.setPainter(this);
         // Collect all extracted frame files
         const actualFrameCount = endFrame - startFrame + 1;
         for (let i = 0; i < actualFrameCount; i++) {
-          const frameNumber = startFrame + i;
           const framePath = path.join(frameDir, `frame-${String(i + 1).padStart(3, '0')}.${outputFormat}`);
 
           if (fs.existsSync(framePath)) {
@@ -1515,7 +1530,6 @@ this.gifCreator.setPainter(this);
       videoPath = resolvedPath;
     }
 
-    const format = options.format || 'mp4';
     const qualityPresets: Record<string, string> = {
       low: '-crf 28',
       medium: '-crf 23',
@@ -2060,7 +2074,7 @@ this.gifCreator.setPainter(this);
       const escapedPaths = videoPaths.map(vp => vp.replace(/"/g, '\\"'));
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1] || escapedPaths[0]}" -filter_complex "[0:v][1:v]hstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else if (mode === 'grid') {
-      const grid = options.grid || { cols: 2, rows: 2 };
+      void (options.grid ?? { cols: 2, rows: 2 });
       const escapedPaths = videoPaths.map(vp => vp.replace(/"/g, '\\"'));
       // Simplified grid - would need more complex filter for full grid
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1] || escapedPaths[0]}" -filter_complex "[0:v][1:v]hstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
@@ -2114,14 +2128,11 @@ this.gifCreator.setPainter(this);
 
     const timestamp = Date.now();
     const tempFiles: string[] = [];
-    let shouldCleanupMain = false;
-    let shouldCleanupReplacement = false;
 
     let mainVideoPath: string;
     if (Buffer.isBuffer(mainVideoSource)) {
       mainVideoPath = path.join(frameDir, `main-video-${timestamp}.mp4`);
       fs.writeFileSync(mainVideoPath, mainVideoSource);
-      shouldCleanupMain = true;
       tempFiles.push(mainVideoPath);
     } else {
       let resolvedPath = mainVideoSource;
@@ -2179,7 +2190,6 @@ this.gifCreator.setPainter(this);
         if (Buffer.isBuffer(options.replacementVideo)) {
           replacementVideoPath = path.join(frameDir, `replacement-video-${timestamp}.mp4`);
           fs.writeFileSync(replacementVideoPath, options.replacementVideo);
-          shouldCleanupReplacement = true;
           tempFiles.push(replacementVideoPath);
         } else {
           let resolvedPath = options.replacementVideo;
@@ -2714,7 +2724,6 @@ this.gifCreator.setPainter(this);
       videoPath = resolvedPath;
     }
 
-    const escapedVideoPath = videoPath.replace(/"/g, '\\"');
     const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
 
     const concatFile = path.join(frameDir, `loop-${timestamp}.txt`);
@@ -3162,7 +3171,7 @@ this.gifCreator.setPainter(this);
     } else if (layout === 'top-bottom' && videoPaths.length >= 2) {
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1]}" -filter_complex "[0:v][1:v]vstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else if (layout === 'grid' && videoPaths.length >= 4) {
-      const grid = options.grid || { cols: 2, rows: 2 };
+      void (options.grid ?? { cols: 2, rows: 2 });
       // Simplified 2x2 grid
       command = `ffmpeg -i "${escapedPaths[0]}" -i "${escapedPaths[1]}" -i "${escapedPaths[2]}" -i "${escapedPaths[3]}" -filter_complex "[0:v][1:v]hstack=inputs=2[top];[2:v][3:v]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2[v]" -map "[v]" -y "${escapedOutputPath}"`;
     } else {
@@ -3262,7 +3271,7 @@ this.gifCreator.setPainter(this);
       throw new Error('Failed to get video information for partial mute');
     }
 
-    const volumeFilters = options.ranges.map((range, index) => {
+    const volumeFilters = options.ranges.map((range) => {
       return `volume=enable='between(t,${range.start},${range.end})':volume=0`;
     }).join(',');
 
@@ -3361,7 +3370,6 @@ this.gifCreator.setPainter(this);
 
     const timestamp = Date.now();
     const fps = options.fps || 30;
-    const format = options.format || 'mp4';
     const qualityPresets: Record<string, string> = {
       low: '-crf 28',
       medium: '-crf 23',
@@ -4451,15 +4459,15 @@ break;
    */
   async createChart<T extends 'pie' | 'bar' | 'horizontalBar' | 'line'>(
     chartType: T,
-    data: T extends 'pie' ? PieSlice[] | any[]
-      : T extends 'bar' ? BarChartData[] | any[]
-      : T extends 'horizontalBar' ? HorizontalBarChartData[] | any[]
-      : T extends 'line' ? LineSeries[] | any[]
+    data: T extends 'pie' ? PieSlice[]
+      : T extends 'bar' ? BarChartData[]
+      : T extends 'horizontalBar' ? HorizontalBarChartData[]
+      : T extends 'line' ? LineSeries[]
       : never,
-    options?: T extends 'pie' ? PieChartOptions | any
-      : T extends 'bar' ? BarChartOptions | any
-      : T extends 'horizontalBar' ? HorizontalBarChartOptions | any
-      : T extends 'line' ? LineChartOptions | any
+    options?: T extends 'pie' ? PieChartOptions
+      : T extends 'bar' ? BarChartOptions
+      : T extends 'horizontalBar' ? HorizontalBarChartOptions
+      : T extends 'line' ? LineChartOptions
       : never
   ): Promise<Buffer> {
     switch (chartType) {
@@ -4479,6 +4487,10 @@ break;
   /**
    * Creates a comparison chart with two charts side by side or top/bottom.
    * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
+   *
+   * Panel appearance supports the same building blocks as canvas backgrounds: solid/gradient fill,
+   * optional `customBg`, `bgLayers` overlays, and optional default axis styling inherited by sub-charts.
+   * Rendered chart buffers are scaled uniformly into their cells (no non-uniform stretching).
    *
    * @param options - Comparison chart configuration
    * @returns Promise<Buffer> - Comparison chart image buffer

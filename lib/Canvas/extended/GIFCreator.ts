@@ -1,10 +1,26 @@
-import { createCanvas, loadImage, SKRSContext2D, Image } from "@napi-rs/canvas";
+import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
 import GIFEncoder from "gifencoder";
 import { PassThrough } from "stream";
 import fs from "fs";
-import type { GIFOptions, GIFResults } from "../utils/utils";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import type {
+  GIFOptions,
+  GIFResults,
+  GIFInputFrame,
+  GIFEncodedFrame,
+  GIFWatermarkSpec,
+  GIFDisposalMethod,
+} from "../utils/canvasUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 import type { ApexPainter } from "../ApexPainter";
+
+/** Normalized frame — everything {@link createGIF} needs per encoded GIF frame (inside library only). */
+interface GIFCanonicalFrame {
+  buffer: Buffer;
+  duration: number;
+  dispose?: GIFDisposalMethod;
+  transparentColor?: number | string | null;
+  watermark?: GIFWatermarkSpec;
+}
 
 /**
  * Extended class for GIF creation functionality
@@ -13,11 +29,8 @@ export class GIFCreator {
   /**
    * Validates GIF options and frames.
    * @private
-   * @param gifFrames - GIF frames to validate
-   * @param options - GIF options to validate
    */
-  private validateGIFOptions(gifFrames: { background: string; duration: number }[] | undefined, options: GIFOptions): void {
-    // Skip validation if onStart callback is provided (frames will be generated)
+  private validateGIFOptions(gifFrames: GIFInputFrame[] | undefined, options: GIFOptions): void {
     if (options.onStart) {
       return;
     }
@@ -26,10 +39,16 @@ export class GIFCreator {
       throw new Error("createGIF: At least one frame is required when onStart callback is not provided.");
     }
     for (const frame of gifFrames) {
-      if (!frame.background) {
-        throw new Error("createGIF: Each frame must have a background property.");
+      const hasBuffer = Buffer.isBuffer(frame.buffer);
+      const hasBgBuffer = Buffer.isBuffer(frame.background);
+      const hasPath =
+        typeof frame.background === "string" && frame.background.trim().length > 0;
+      if (!hasBuffer && !hasBgBuffer && !hasPath) {
+        throw new Error(
+          "createGIF: Each frame must include `buffer` and/or `background` (path, URL, or buffer)."
+        );
       }
-      if (typeof frame.duration !== 'number' || frame.duration < 0) {
+      if (typeof frame.duration !== "number" || frame.duration < 0) {
         throw new Error("createGIF: Each frame duration must be a non-negative number.");
       }
     }
@@ -56,6 +75,177 @@ export class GIFCreator {
   }
 
   /**
+   * Loads `buffer` first, then Buffer `background`, then path/URL `background`.
+   * @private
+   */
+  private async resolveFrameToBuffer(frame: GIFInputFrame): Promise<Buffer> {
+    if (Buffer.isBuffer(frame.buffer)) {
+      return frame.buffer;
+    }
+    if (Buffer.isBuffer(frame.background)) {
+      return frame.background;
+    }
+    if (typeof frame.background === "string") {
+      if (frame.background.startsWith("http")) {
+        const axios = require("axios");
+        const response = await axios.get(frame.background, { responseType: "arraybuffer" });
+        return Buffer.from(response.data);
+      }
+      return fs.readFileSync(frame.background);
+    }
+    throw new Error("createGIF: Frame is missing image data (`buffer` or `background`).");
+  }
+
+  /**
+   * Draws a decoded frame onto the encoder canvas, resizing only when needed.
+   * @private
+   */
+  private async drawFrameOntoEncoderCanvas(
+    ctx: SKRSContext2D,
+    frameBuffer: Buffer,
+    targetWidth: number,
+    targetHeight: number,
+    skipResizeWhenDimensionsMatch: boolean
+  ): Promise<void> {
+    const image = await loadImage(frameBuffer);
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    if (
+      skipResizeWhenDimensionsMatch &&
+      image.width === targetWidth &&
+      image.height === targetHeight
+    ) {
+      ctx.drawImage(image, 0, 0);
+      return;
+    }
+    const resized = await this.resizeImage(image, targetWidth, targetHeight);
+    ctx.drawImage(resized, 0, 0);
+  }
+
+  /** `@napi-rs/canvas` loadImage — HTTP fetched when needed. */
+  private async loadRasterUrl(src: string): Promise<Image> {
+    if (src.startsWith("http")) {
+      const axios = require("axios");
+      const response = await axios.get(src, { responseType: "arraybuffer" });
+      return loadImage(Buffer.from(response.data));
+    }
+    return loadImage(src);
+  }
+
+  /**
+   * Hex / `#rgb` → `gifencoder.setTransparent` integer (`null` = none).
+   * @private
+   */
+  private parseTransparentForEncoder(color: number | string | null): number | null {
+    if (color === null) return null;
+    if (typeof color === "number") return color >>> 0;
+    const s = String(color).trim().replace(/^#/, "");
+    if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(s)) {
+      throw new Error(`createGIF: Invalid transparentColor "${color}" (use #RRGGBB or 0xRRGGBB).`);
+    }
+    return parseInt(s.slice(0, 6), 16);
+  }
+
+  private normalizeEncodedFrame(f: GIFEncodedFrame, options: GIFOptions): GIFCanonicalFrame {
+    return {
+      buffer: f.buffer,
+      duration: f.duration ?? options.delay ?? 100,
+      dispose: f.dispose,
+      transparentColor: f.transparentColor,
+      watermark: f.watermark,
+    };
+  }
+
+  private static isAsyncIterable<T>(x: unknown): x is AsyncIterable<T> {
+    return x != null && typeof (x as AsyncIterable<T>)[Symbol.asyncIterator] === "function";
+  }
+
+  /**
+   * Collects frames from `onStart` — supports arrays or async iteration (streaming).
+   * @private
+   */
+  private async collectFramesFromOnStart(
+    options: GIFOptions,
+    frameCountHint: number
+  ): Promise<GIFCanonicalFrame[]> {
+    const generated = await options.onStart!(frameCountHint, this.painter);
+
+    if (GIFCreator.isAsyncIterable<GIFEncodedFrame>(generated)) {
+      const out: GIFCanonicalFrame[] = [];
+      for await (const raw of generated) {
+        out.push(this.normalizeEncodedFrame(raw, options));
+      }
+      if (out.length === 0) {
+        throw new Error("createGIF: AsyncIterable from onStart yielded no frames.");
+      }
+      return out;
+    }
+
+    const arr = generated as GIFEncodedFrame[];
+    if (!arr?.length) {
+      throw new Error("createGIF: onStart callback must return at least one frame.");
+    }
+    return arr.map((f) => this.normalizeEncodedFrame(f, options));
+  }
+
+  /**
+   * Applies {@link GIFWatermarkSpec} / global watermark after the raster frame is drawn.
+   * @private
+   */
+  private async drawWatermarkOverlay(
+    ctx: SKRSContext2D,
+    canvasHeight: number,
+    frame: GIFCanonicalFrame,
+    options: GIFOptions
+  ): Promise<void> {
+    const fw = frame.watermark;
+    if (fw?.enable === false) {
+      return;
+    }
+    if (fw?.url) {
+      const img = await this.loadRasterUrl(fw.url);
+      const x = fw.x ?? options.watermark?.x ?? 10;
+      const y = fw.y ?? options.watermark?.y ?? canvasHeight - img.height - 10;
+      ctx.drawImage(img, x, y);
+      return;
+    }
+    if (options.watermark?.enable && options.watermark.url) {
+      const img = await this.loadRasterUrl(options.watermark.url);
+      const x = options.watermark.x ?? 10;
+      const y = options.watermark.y ?? canvasHeight - img.height - 10;
+      ctx.drawImage(img, x, y);
+    }
+  }
+
+  /**
+   * Sets gifencoder transparency & disposal for the **next** `addFrame` call.
+   * @private
+   */
+  private applyGifEncoderFrameOptions(
+    encoder: InstanceType<typeof GIFEncoder>,
+    frame: GIFCanonicalFrame,
+    options: GIFOptions
+  ): void {
+    /** gifencoder has these methods — typings may be incomplete */
+    const enc = encoder as InstanceType<typeof GIFEncoder> & {
+      setDispose(code: number): void;
+      setTransparent(color: number | null): void;
+    };
+
+    const disp = frame.dispose ?? options.defaultDispose;
+    if (disp !== undefined) {
+      enc.setDispose(disp);
+    }
+
+    const resolvedTransparent =
+      frame.transparentColor !== undefined ? frame.transparentColor : options.transparentColor;
+    enc.setTransparent(
+      resolvedTransparent !== undefined
+        ? this.parseTransparentForEncoder(resolvedTransparent)
+        : null
+    );
+  }
+
+  /**
    * Creates a file output stream
    * @private
    */
@@ -71,7 +261,7 @@ export class GIFCreator {
     const bufferStream = new PassThrough();
     const chunks: Buffer[] = [];
 
-    bufferStream.on('data', (chunk: Buffer) => {
+    bufferStream.on("data", (chunk: Buffer) => {
       chunks.push(chunk);
     });
 
@@ -97,86 +287,59 @@ export class GIFCreator {
   }
 
   /**
-   * Creates a GIF from frames
-   *
-   * @param gifFrames - Array of frames with background and duration (optional if onStart is provided)
-   * @param options - GIF creation options
-   * @returns Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | undefined>
+   * Creates a GIF from frames — supports pre-made buffers/paths, programmatic `onStart`
+   * (`GIFEncodedFrame[]` **or** streaming `AsyncIterable`), per-frame watermark / disposal /
+   * transparency, global defaults, and optional `skipResizeWhenDimensionsMatch`.
    */
   async createGIF(
-    gifFrames: { background: string; duration: number }[] | undefined,
+    gifFrames: GIFInputFrame[] | undefined,
     options: GIFOptions
   ): Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | { gif: Buffer | string; static: Buffer } | undefined> {
     try {
-      let finalFrames: Array<{ buffer: Buffer; duration: number }> = [];
-      let generatedFrames = false;
+      let finalFrames: GIFCanonicalFrame[] = [];
 
-      if (options.onStart && this.painter) {
-
-        let frameCount: number;
+      if (options.onStart) {
+        let frameCountHint: number;
         if (options.frameCount) {
-          frameCount = options.frameCount;
+          frameCountHint = options.frameCount;
         } else if (options.duration && options.delay) {
-
-          frameCount = Math.floor(options.duration / options.delay);
+          frameCountHint = Math.floor(options.duration / options.delay);
         } else if (options.duration) {
-          // Estimate from duration (default 30 fps)
-          frameCount = Math.floor((options.duration / 1000) * 30);
+          frameCountHint = Math.floor((options.duration / 1000) * 30);
         } else {
-
-          frameCount = 30;
+          frameCountHint = 30;
         }
 
-        const generated = await options.onStart(frameCount, this.painter);
-
-        if (!generated || generated.length === 0) {
-          throw new Error("createGIF: onStart callback must return at least one frame.");
-        }
-
-        finalFrames = generated.map(f => ({
-          buffer: f.buffer,
-          duration: f.duration || options.delay || 100
-        }));
-        generatedFrames = true;
+        finalFrames = await this.collectFramesFromOnStart(options, frameCountHint);
       } else {
-        // Use provided frames
         if (!gifFrames || gifFrames.length === 0) {
           throw new Error("createGIF: Either gifFrames array or onStart callback is required.");
         }
         this.validateGIFOptions(gifFrames, options);
 
         finalFrames = await Promise.all(
-          gifFrames.map(async (frame) => {
-            let buffer: Buffer;
-            if (Buffer.isBuffer(frame.background)) {
-              buffer = frame.background;
-            } else if (typeof frame.background === 'string') {
-              if (frame.background.startsWith('http')) {
-                const axios = require('axios');
-                const response = await axios.get(frame.background, { responseType: 'arraybuffer' });
-                buffer = Buffer.from(response.data);
-              } else {
-                buffer = fs.readFileSync(frame.background);
-              }
-            } else {
-              throw new Error(`createGIF: Invalid frame background type: ${typeof frame.background}`);
-            }
-            return {
-              buffer,
-              duration: frame.duration
-            };
-          })
+          gifFrames.map(async (frame) => ({
+            buffer: await this.resolveFrameToBuffer(frame),
+            duration: frame.duration,
+            dispose: frame.dispose,
+            transparentColor: frame.transparentColor,
+            watermark: frame.watermark,
+          }))
         );
       }
 
       const canvasWidth = options.width || 1200;
       const canvasHeight = options.height || 1200;
 
+      const skipResizeWhenDimensionsMatch = options.skipResizeWhenDimensionsMatch !== false;
+
       const encoder = new GIFEncoder(canvasWidth, canvasHeight);
       const useBufferStream = options.outputFormat !== "file";
       const outputStream = useBufferStream
         ? this.createBufferStream()
-        : (options.outputFile ? this.createOutputStream(options.outputFile) : this.createBufferStream());
+        : options.outputFile
+          ? this.createOutputStream(options.outputFile)
+          : this.createBufferStream();
 
       encoder.createReadStream().pipe(outputStream);
 
@@ -191,16 +354,16 @@ export class GIFCreator {
 
       for (let i = 0; i < finalFrames.length; i++) {
         const frame = finalFrames[i];
-        const image = await loadImage(frame.buffer);
-        const resizedImage = await this.resizeImage(image, canvasWidth, canvasHeight);
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(resizedImage, 0, 0);
+        await this.drawFrameOntoEncoderCanvas(
+          ctx,
+          frame.buffer,
+          canvasWidth,
+          canvasHeight,
+          skipResizeWhenDimensionsMatch
+        );
 
-        if (options.watermark?.enable) {
-          const watermark = await loadImage(options.watermark.url);
-          ctx.drawImage(watermark, 10, canvasHeight - watermark.height - 10);
-        }
+        await this.drawWatermarkOverlay(ctx, canvasHeight, frame, options);
 
         if (options.textOverlay) {
           ctx.font = `${options.textOverlay.fontSize || 20}px Arial`;
@@ -208,12 +371,13 @@ export class GIFCreator {
           ctx.fillText(options.textOverlay.text, options.textOverlay.x || 10, options.textOverlay.y || 30);
         }
 
+        this.applyGifEncoderFrameOptions(encoder, frame, options);
+
         encoder.setDelay(frame.duration);
         encoder.addFrame(ctx as unknown as CanvasRenderingContext2D);
 
-        // Store final frame buffer
         if (i === finalFrames.length - 1) {
-          finalFrameBuffer = canvas.toBuffer('image/png');
+          finalFrameBuffer = canvas.toBuffer("image/png");
         }
       }
 
@@ -221,17 +385,16 @@ export class GIFCreator {
 
       let gifResult: Buffer | string | undefined;
 
-
       if (options.outputFormat === "file") {
         outputStream.end();
         await new Promise<void>((resolve) => outputStream.on("finish", () => resolve()));
-gifResult = undefined;
+        gifResult = undefined;
       } else if (options.outputFormat === "base64") {
         await new Promise<void>((resolve) => {
           outputStream.on("end", () => resolve());
           outputStream.end();
         });
-        if ('getBuffer' in outputStream && typeof outputStream.getBuffer === 'function') {
+        if ("getBuffer" in outputStream && typeof outputStream.getBuffer === "function") {
           gifResult = outputStream.getBuffer().toString("base64");
         } else {
           throw new Error("createGIF: Unable to get buffer for base64 output.");
@@ -244,7 +407,7 @@ gifResult = undefined;
           outputStream.on("end", () => resolve());
           outputStream.end();
         });
-        if ('getBuffer' in outputStream && typeof outputStream.getBuffer === 'function') {
+        if ("getBuffer" in outputStream && typeof outputStream.getBuffer === "function") {
           gifResult = outputStream.getBuffer();
         } else {
           throw new Error("createGIF: Unable to get buffer for buffer output.");
@@ -253,16 +416,15 @@ gifResult = undefined;
         throw new Error("Invalid output format. Supported formats are 'file', 'base64', 'attachment', and 'buffer'.");
       }
 
-      // Call onEnd callback if provided
       let staticImage: Buffer | undefined;
-      if (options.onEnd && finalFrameBuffer && this.painter) {
+      if (options.onEnd && finalFrameBuffer) {
         staticImage = await options.onEnd(finalFrameBuffer, this.painter);
       }
 
       if (staticImage && gifResult !== undefined) {
         return {
           gif: gifResult,
-          static: staticImage
+          static: staticImage,
         };
       }
 
@@ -270,11 +432,9 @@ gifResult = undefined;
         return staticImage;
       }
 
-      // Otherwise return just GIF
       return gifResult;
     } catch (error) {
       throw new Error(`createGIF failed: ${getErrorMessage(error)}`);
     }
   }
 }
-

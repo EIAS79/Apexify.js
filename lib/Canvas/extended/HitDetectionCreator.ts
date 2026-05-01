@@ -1,18 +1,18 @@
-import { createCanvas, SKRSContext2D, Path2D as CanvasPath2D } from "@napi-rs/canvas";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
-import type { CanvasResults } from "./CanvasCreator";
-import type { PathCommand } from "./Path2DCreator";
+import { createCanvas } from "@napi-rs/canvas";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import type { PathCommand } from "../utils/core/pathCmd";
+import { buildPath2DFromCommands } from "../utils/core/pathCmd";
 
 /**
  * Region types for hit detection
  */
 export type RegionType =
-| 'rect'
-| 'circle'
-  | 'ellipse' // Ellipse
-| 'polygon'
-| 'path'
-| 'custom';
+  | 'rect'
+  | 'circle'
+  | 'ellipse'
+  | 'polygon'
+  | 'path'
+  | 'custom';
 
 /**
  * Base region configuration
@@ -67,7 +67,7 @@ export interface PolygonRegion extends BaseRegion {
  */
 export interface PathRegion extends BaseRegion {
   type: 'path';
-  path: CanvasPath2D | PathCommand[];
+  path: any | PathCommand[];
   fillRule?: 'nonzero' | 'evenodd';
 }
 
@@ -126,7 +126,7 @@ export class HitDetectionCreator {
    * @returns Hit detection result
    */
   isPointInPath(
-    path: CanvasPath2D | PathCommand[],
+    path: any | PathCommand[],
     x: number,
     y: number,
     options?: HitDetectionOptions
@@ -137,9 +137,7 @@ export class HitDetectionCreator {
       const ctx = getCanvasContext(canvas);
 
 
-      const path2D = Array.isArray(path)
-        ? this.commandsToPath(ctx, path)
-        : path;
+      const path2D = Array.isArray(path) ? buildPath2DFromCommands(path) : path;
 
 
       const fillRule = (options as any)?.fillRule || 'nonzero';
@@ -223,9 +221,10 @@ export class HitDetectionCreator {
           hit = this.isPointInPolygon(x, y, region.points);
           break;
 
-        case 'path':
+        case 'path': {
           const pathOptions: HitDetectionOptions = { ...options };
           return this.isPointInPath(region.path, x, y, pathOptions);
+        }
 
         case 'custom':
           hit = region.check(x, y);
@@ -300,63 +299,6 @@ export class HitDetectionCreator {
   }
 
   // Helper methods
-
-  private commandsToPath(ctx: SKRSContext2D, commands: PathCommand[]): CanvasPath2D {
-    const { Path2D } = require("@napi-rs/canvas");
-    const path = new Path2D();
-
-    for (const cmd of commands) {
-      switch (cmd.type) {
-        case 'moveTo':
-          path.moveTo(cmd.x, cmd.y);
-          break;
-        case 'lineTo':
-          path.lineTo(cmd.x, cmd.y);
-          break;
-        case 'arc':
-          path.arc(cmd.x, cmd.y, cmd.radius, cmd.startAngle, cmd.endAngle, cmd.counterclockwise ?? false);
-          break;
-        case 'arcTo':
-          path.arcTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.radius);
-          break;
-        case 'quadraticCurveTo':
-          path.quadraticCurveTo(cmd.cpx, cmd.cpy, cmd.x, cmd.y);
-          break;
-        case 'bezierCurveTo':
-          path.bezierCurveTo(cmd.cp1x, cmd.cp1y, cmd.cp2x, cmd.cp2y, cmd.x, cmd.y);
-          break;
-        case 'closePath':
-          path.closePath();
-          break;
-        case 'rect':
-          path.rect(cmd.x, cmd.y, cmd.width, cmd.height);
-          break;
-        case 'ellipse':
-          path.ellipse(
-            cmd.x, cmd.y, cmd.radiusX, cmd.radiusY,
-            cmd.rotation ?? 0,
-            cmd.startAngle ?? 0, cmd.endAngle ?? Math.PI * 2,
-            cmd.counterclockwise ?? false
-          );
-          break;
-        case 'circle':
-          path.arc(cmd.x, cmd.y, cmd.radius, 0, Math.PI * 2);
-          break;
-        case 'polygon':
-          if (cmd.points.length > 0) {
-            path.moveTo(cmd.points[0].x, cmd.points[0].y);
-            for (let i = 1; i < cmd.points.length; i++) {
-              path.lineTo(cmd.points[i].x, cmd.points[i].y);
-            }
-            path.closePath();
-          }
-          break;
-
-      }
-    }
-
-    return path;
-  }
 
   private isPointInRect(x: number, y: number, rx: number, ry: number, width: number, height: number): boolean {
     return x >= rx && x <= rx + width && y >= ry && y <= ry + height;

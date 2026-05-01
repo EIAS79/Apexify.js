@@ -1,6 +1,6 @@
 {
   "name": "apexify.js",
-  "version": "5.2.91",
+  "version": "5.3.13",
   "description": "🎨 Advanced Canvas Rendering Library - Professional image processing, shape drawing, text effects, patterns, filters, and charts. Built with TypeScript & Rust for high performance.",
   "author": "zenith-79",
   "license": "MIT",
@@ -20,8 +20,9 @@
   "types": "./dist/esm/index.d.ts",
   "exports": {
     ".": {
-      "require": "./dist/cjs/index.js",
-      "import": "./dist/esm/index.js"
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
     }
   },
   "scripts": {
@@ -29,12 +30,8 @@
     "build:esm": "tsc --build tsconfig.esm.json --force",
     "build:cjs": "tsc --build tsconfig.cjs.json --force",
     "build": "npm run clean && npm run build:esm && npm run build:cjs",
-    "watch": "tsc -w",
-    "start": "node ./dist/cjs/index.js",
-    "dev": "ts-node ./lib/index.ts",
-    "showcase": "ts-node generate-showcase.ts",
-    "publish:prep": "npm run build",
-    "publish": "npm run publish:prep && npm publish"
+    "release": "npm run build && npm publish",
+    "watch": "tsc -w"
   },
   "files": [
     "dist",
@@ -216,7 +213,7 @@
   ],
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
-    "axios": "^1.7.7",
+    "axios": "^1.15.0",
     "fs-extra": "^11.3.1",
     "gifencoder": "^2.0.1",
     "imgur": "^2.5.0",
@@ -233,6 +230,7 @@
   "overrides": {
     "rimraf": "^5.0.0",
     "glob": "^10.3.0",
-    "inflight": "npm:@jsdevtools/inflight@^1.0.6"
+    "inflight": "npm:@jsdevtools/inflight@^1.0.6",
+    "tar": "^7.5.11"
   }
 }

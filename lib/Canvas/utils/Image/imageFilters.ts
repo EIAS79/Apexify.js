@@ -93,7 +93,7 @@ function applyMotionBlur(ctx: SKRSContext2D, intensity: number, angle: number): 
   }
 }
 
-function applyRadialBlur(ctx: SKRSContext2D, intensity: number, centerX: number, centerY: number): void {
+function applyRadialBlur(ctx: SKRSContext2D, intensity: number, _centerX: number, _centerY: number): void {
   if (intensity > 0) {
 
     ctx.filter = `blur(${intensity}px)`;

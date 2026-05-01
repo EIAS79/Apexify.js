@@ -1,7 +1,7 @@
-import { createCanvas, loadImage, SKRSContext2D, Image } from "@napi-rs/canvas";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import { createCanvas, loadImage, Image } from "@napi-rs/canvas";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 import type { CanvasResults } from "./CanvasCreator";
-import type { PixelData, PixelManipulationOptions } from "../utils/types";
+import type { PixelData, PixelManipulationOptions } from "../utils/canvasUtils";
 
 /**
  * Extended class for pixel data functionality
@@ -172,20 +172,25 @@ export class PixelDataCreator {
             const a = pixelData.data[idx + 3];
 
             switch (options.filter) {
-              case 'grayscale':
+              case 'grayscale': {
                 const gray = r * 0.299 + g * 0.587 + b * 0.114;
                 r = g = b = gray;
                 break;
+              }
               case 'invert':
                 r = 255 - r;
                 g = 255 - g;
                 b = 255 - b;
                 break;
-              case 'sepia':
-                r = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
-                g = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
-                b = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+              case 'sepia': {
+                const r0 = r;
+                const g0 = g;
+                const b0 = b;
+                r = Math.min(255, r0 * 0.393 + g0 * 0.769 + b0 * 0.189);
+                g = Math.min(255, r0 * 0.349 + g0 * 0.686 + b0 * 0.168);
+                b = Math.min(255, r0 * 0.272 + g0 * 0.534 + b0 * 0.131);
                 break;
+              }
               case 'brightness':
                 const brightness = (intensity - 0.5) * 255;
                 r = Math.max(0, Math.min(255, r + brightness));

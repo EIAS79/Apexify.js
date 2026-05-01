@@ -1,4 +1,4 @@
-import { createCanvas, SKRSContext2D, Canvas } from "@napi-rs/canvas";
+import type { Canvas, SKRSContext2D } from "@napi-rs/canvas";
 
 /**
  * Extracts error message from unknown error type

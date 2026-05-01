@@ -308,8 +308,8 @@ export function applyLinePattern(
 export async function applyLineTexture(
   ctx: SKRSContext2D,
   textureSource: string | Buffer,
-  lineWidth: number,
-  lineLength: number
+  _lineWidth: number,
+  _lineLength: number
 ): Promise<void> {
   try {
     let textureImage: Image;

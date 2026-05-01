@@ -1,5 +1,5 @@
 import { SKRSContext2D } from '@napi-rs/canvas';
-import { ShapeType, ShapeProperties, gradient } from '../types';
+import { ShapeType, ShapeProperties } from '../types';
 import { createGradientFill } from '../Image/imageProperties';
 
 /**

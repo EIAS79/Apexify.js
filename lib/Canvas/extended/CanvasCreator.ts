@@ -1,8 +1,8 @@
 import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
 import fs from "fs";
-import type { CanvasConfig } from "../utils/utils";
-import { getErrorMessage, getCanvasContext } from "../utils/errorUtils";
+import type { CanvasConfig } from "../utils/canvasUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 import {
   drawBackgroundGradient,
   drawBackgroundColor,
@@ -13,7 +13,9 @@ import {
   applyStroke,
   buildPath,
   applyNoise,
-} from "../utils/utils";
+  drawBackgroundLayers,
+  resolveMediaPath,
+} from "../utils/canvasUtils";
 import { EnhancedPatternRenderer } from "../utils/Patterns/enhancedPatternRenderer";
 import { applyProfessionalImageFilters } from "../utils/Image/professionalImageFilters";
 
@@ -77,6 +79,66 @@ export class CanvasCreator {
     if (canvas.zoom?.scale !== undefined && (typeof canvas.zoom.scale !== 'number' || canvas.zoom.scale <= 0)) {
       throw new Error("createCanvas: zoom.scale must be a positive number.");
     }
+
+    if (canvas.bgLayers !== undefined) {
+      if (!Array.isArray(canvas.bgLayers)) {
+        throw new Error("createCanvas: bgLayers must be an array.");
+      }
+      const allowed = new Set(["color", "gradient", "image", "pattern", "presetPattern", "noise"]);
+      for (let i = 0; i < canvas.bgLayers.length; i++) {
+        const layer = canvas.bgLayers[i];
+        if (!layer || typeof layer !== "object" || !("type" in layer)) {
+          throw new Error(`createCanvas: bgLayers[${i}] must be an object with a type field.`);
+        }
+        if (!allowed.has(layer.type)) {
+          throw new Error(
+            `createCanvas: bgLayers[${i}].type must be one of color, gradient, image, pattern, presetPattern, noise (got "${String((layer as { type: string }).type)}").`
+          );
+        }
+        const layerOpacity =
+          "opacity" in layer ? (layer as { opacity?: number }).opacity : undefined;
+        if (
+          layerOpacity !== undefined &&
+          (typeof layerOpacity !== "number" || layerOpacity < 0 || layerOpacity > 1)
+        ) {
+          throw new Error(`createCanvas: bgLayers[${i}].opacity must be between 0 and 1.`);
+        }
+        if (layer.type === "color" && typeof (layer as { value?: unknown }).value !== "string") {
+          throw new Error(`createCanvas: bgLayers[${i}].value must be a string for color layers.`);
+        }
+        if (layer.type === "gradient") {
+          const g = (layer as { value?: { type?: string } }).value;
+          if (!g || typeof g !== "object" || !g.type) {
+            throw new Error(`createCanvas: bgLayers[${i}].value must be a gradient object with type.`);
+          }
+        }
+        if (layer.type === "image" || layer.type === "pattern") {
+          const src = (layer as { source?: unknown }).source;
+          if (typeof src !== "string" || !src.trim()) {
+            throw new Error(`createCanvas: bgLayers[${i}].source must be a non-empty string.`);
+          }
+        }
+        if (layer.type === "presetPattern") {
+          const pat = (layer as { pattern?: unknown }).pattern;
+          if (
+            !pat ||
+            typeof pat !== "object" ||
+            !("type" in (pat as object)) ||
+            typeof (pat as { type?: unknown }).type !== "string"
+          ) {
+            throw new Error(
+              `createCanvas: bgLayers[${i}].pattern must be a procedural PatternOptions object with string type.`
+            );
+          }
+        }
+        if (layer.type === "noise") {
+          const inten = (layer as { intensity?: unknown }).intensity;
+          if (inten !== undefined && (typeof inten !== "number" || inten < 0 || inten > 1)) {
+            throw new Error(`createCanvas: bgLayers[${i}].intensity must be between 0 and 1.`);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -92,10 +154,7 @@ export class CanvasCreator {
       this.validateCanvasConfig(canvas);
 
       if (canvas.customBg?.inherit) {
-        let p = canvas.customBg.source;
-        if (!/^https?:\/\//.test(p)) {
-          p = path.join(process.cwd(), p);
-        }
+        const p = resolveMediaPath(canvas.customBg.source);
         try {
           const img = await loadImage(p);
           canvas.width = img.width;
@@ -134,7 +193,7 @@ export class CanvasCreator {
         borderRadius = 0,
         borderPosition = 'all',
         opacity = 1,
-        colorBg, customBg, gradientBg, videoBg,
+        customBg, gradientBg, videoBg,
         patternBg, noiseBg, blendMode,
         zoom, stroke, shadow,
         blur
@@ -175,8 +234,8 @@ export class CanvasCreator {
             videoBg.source,
             videoBg.frame ?? 0,
             videoBg.time,
-'png',
-            2
+            videoBg.format || 'jpg',
+            videoBg.quality || 2
           );
           if (frameBuffer && frameBuffer.length > 0) {
             let videoImg;
@@ -238,12 +297,20 @@ export class CanvasCreator {
         }
       } else if (gradientBg) {
         await drawBackgroundGradient(ctx, { ...canvas, blur });
+      } else if (canvas.colorBg !== undefined) {
+        await drawBackgroundColor(ctx, { ...canvas, blur });
+      } else if (canvas.transparentBase === true) {
+        /* Transparent backing — compose via bgLayers / patternBg / noiseBg only */
       } else {
-
-        await drawBackgroundColor(ctx, { ...canvas, blur, colorBg: colorBg ?? '#000' });
+        await drawBackgroundColor(ctx, { ...canvas, blur, colorBg: "#000" });
       }
 
-      if (patternBg) await EnhancedPatternRenderer.renderPattern(ctx, cv, patternBg);
+      if (canvas.bgLayers && canvas.bgLayers.length > 0) {
+        await drawBackgroundLayers(ctx, { ...canvas, width, height });
+      }
+
+      if (patternBg)
+        await EnhancedPatternRenderer.renderPattern(ctx, { width, height }, patternBg);
       if (noiseBg) applyNoise(ctx, width, height, noiseBg.intensity ?? 0.05);
 
       ctx.restore();

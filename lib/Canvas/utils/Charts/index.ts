@@ -2,6 +2,9 @@
  * Unified chart exports
  */
 
+export type { ChartAppearanceExtended } from "./chartBackground";
+export { paintChartCanvasBackground } from "./chartBackground";
+
 export {
   PieSlice,
   LegendEntry as PieLegendEntry,

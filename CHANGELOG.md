@@ -5,6 +5,118 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.1] - 2026-04-29
+
+### ✨ Added
+
+##### `createImage` — layer compositing
+- **`ImageProperties.blendMode`**: Optional `GlobalCompositeOperation` (e.g. `screen`, `overlay`, `soft-light`) applied when drawing each bitmap or vector shape layer onto the existing canvas. Defaults to normal stacking (`source-over`).
+- **`GroupTransformOptions.blendMode`**: Same idea when **`CreateImageOptions.isGrouped`** is used — sets composite mode for the whole group pass.
+
+##### Line charts (`lib/Canvas/utils/Charts/linechart.ts`)
+- **Tick label color**: Y/X tick text follows **`axes.*.color`** (and falls back to **`appearance.axisColor`**) instead of hardcoded black, so light axes stay readable on dark chart backgrounds.
+- **Y-axis layout**: **`computeMaxYTickLabelWidth`** + **`reserveHorizontalForRotatedYAxisTitle`** reserve horizontal space so rotated **Y-axis titles** no longer collide with numeric tick labels; **`originX`** is derived from **`chartAreaLeft` + title reserve + gap + max tick width + gap**.
+- **X-axis title & legend (bottom)**: Axis title Y-position uses shared constants (**`X_AXIS_TICK_TOP_OFFSET`**, **`X_AXIS_TITLE_GAP_BELOW_TICKS`**, etc.) so the title sits **below** tick labels with consistent padding; bottom legend placement uses the same vertical extents.
+
+##### Chart appearance — optional frame (line charts)
+- **`ChartAppearanceExtended`**: Documented optional **`borderRadius`**, **`borderWidth`**, **`borderColor`** for line charts; **`createLineChart`** draws a matching rounded or rectangular frame **after** plot content so typed options match runtime behavior.
+
+##### GIF (`GIFCreator`, `GIFOptions`, types in `canvasUtils`)
+- **`GIFInputFrame`** / **`GIFEncodedFrame`**: Typed inputs for static frame lists vs frames produced by **`onStart`** (raster buffers, **`duration`**, optional **`buffer`** and/or **`background`** path / URL / Buffer).
+- **`GIFOptions.onStart`**: Programmatic generation **without** passing `gifFrames` up front; may return **`GIFEncodedFrame[]`** or **`AsyncIterable<GIFEncodedFrame>`** to stream frames and reduce peak memory on long animations.
+- **Per-frame control**: **`dispose`** (**`GIFDisposalMethod`**), **`transparentColor`**, and **`watermark`** (**`GIFWatermarkSpec`**) on input/encoded frames, aligned with **`gifencoder`** disposal / transparency where supported.
+- **Globals**: **`transparentColor`**, **`defaultDispose`**, optional global **`watermark`**, **`skipResizeWhenDimensionsMatch`**, **`delay`** / **`frameCount`** / **`duration`** hints for **`onStart`**, **`textOverlay`**, **`onEnd`** (post-process final composite).
+- **Encoding**: Helpers normalize frames, optional resize skip when dimensions match canvas, per-frame encoder options before **`addFrame`**.
+
+##### Video (`VideoCreator`, `VideoCreationOptions`)
+- **`createFromFrames`**: Encode a sequence of frame images (**`Array<string | Buffer>`**) to a video file (**`outputPath`**) with **`fps`**, **`format`** (`mp4`, `webm`, …), **`quality`**, **`bitrate`**, **`resolution`** — **FFmpeg** must be available on the host.
+
+### 🔧 Improved
+
+- **`ImageCreator`**: Composites **`blendMode`** inside **`drawImageBitmap`** (raster path) and **`drawShape`** (shape path); grouped mode applies **`groupTransform.blendMode`** after the group **`save`**.
+
+## [5.3.0] - 2026-04-19
+
+### ✨ Added
+
+##### Canvas & backgrounds (see README — *Canvas & Backgrounds*)
+- **`bgLayers` on `CanvasConfig`**: Ordered background stack (bottom → top) after the base fill (`colorBg`, `gradientBg`, `customBg`, etc.). Each entry is a small discriminated union: `color`, `gradient`, `image`, `pattern`, or `noise`, so you can stack tints, photos, patterns, and grain like the README’s layered composition story.
+- **`drawBackgroundLayers` (`lib/Canvas/utils/Background/bg.ts`)**: Renders each layer in sequence with `source-over`, per-layer `save`/`restore`, and guarded `try`/`catch` so one bad asset does not abort the whole canvas.
+
+##### Charts — shared background helper
+- **`chartBackground.ts`**: `paintChartCanvasBackground` and `ChartAppearanceExtended` centralize chart canvas backgrounds (gradient/color, image, `customBg`, `bgLayers`, patterns, noise) aligned with `CanvasCreator`. Re-exported from `lib/Canvas/utils/Charts/index.ts` and used by pie, bar, horizontal bar, line, and comparison charts.
+
+##### Path commands — single implementation
+- **`lib/Canvas/utils/core/pathCmd.ts`**: Shared `PathCommand` type, `appendPathCommands`, and `buildPath2DFromCommands` (rounded rect, star, arrow, etc.) used by **`Path2DCreator`** and **`HitDetectionCreator`** so hit-testing supports the same path vocabulary as drawing.
+
+##### Rectangular stroke & shadow (canvas frame, images, groups — README *Image Processing* / grouped cards)
+- **`StrokeOptions.roundedCorners`**: Same vocabulary as clip/corner masks (`'all'`, `'top-left'`, `'top'`, …). Controls **which corners** use `stroke.borderRadius` on the stroke outline.
+- **`StrokeOptions.borderPosition` (rect strokes)**: Controls **which edges** are stroked (`'top'`, `'right'`, `'bottom'`, `'left'`, comma-separated, or corner shortcuts such as `'top-left'` → two edges). Default `'all'` draws the full outline. This is **not** the same as only rounding corners on one side.
+- **Connected partial strokes**: When multiple sides are selected and they meet along the rectangle (e.g. `'left, top'`), a single clockwise path is built with the same `arcTo` corners as `buildPath`, instead of separate disconnected segments.
+- **`ShadowOptions.roundedCorners`**: Corner rounding mask for the **filled** shadow shape. Existing configs can keep using **`shadow.borderPosition`** for that meaning; it is treated as a fallback when `roundedCorners` is omitted.
+
+### 🗑️ Removed
+
+- **Duplicate / conflicting utils barrel**: Removed the extra `lib/Canvas/utils/utils.ts` barrel that duplicated `canvasUtils` imports and caused TypeScript casing/path conflicts with `./general` vs `./General`.
+- **Legacy filename**: Removed `general functions.ts` (space in name) in favor of a single **`generalFunctions.ts`** under the canonical **`lib/Canvas/utils/general/`** tree.
+
+### 🔧 Improved
+
+##### Module layout & exports
+- **`lib/Canvas/utils/general/`** (lowercase) is the canonical folder for `generalFunctions`, `conversion`, `batchOperations`, `imageStitching`, `imageCompression`; Git history normalized from `General/` to avoid case-only duplicates on Windows.
+- **`canvasUtils.ts`** remains the primary export surface; types come from **`lib/Canvas/utils/types/`** (`types/index.ts`).
+
+##### TypeScript — `CanvasConfig` aligned with shared stroke/shadow types
+- **`CanvasConfig.stroke`** and **`CanvasConfig.shadow`** now use **`StrokeOptions`** and **`ShadowOptions`** directly (replacing narrower inline shapes), so optional fields such as `roundedCorners`, `opacity`, stroke `blur`, shadow `gradient`, etc. match `createImage` / `GroupTransformOptions` and stay consistent across the API.
+
+##### Types file formatting (`lib/Canvas/utils/types/index.ts`)
+- Fixed inconsistent indentation across **`StrokeOptions`**, **`gradient`** variants, **`CanvasConfig`** nested blocks (`customBg`, `videoBg`, `zoom`), **`ShapeProperties`**, **`ImageProperties`**, **`GIFOptions`**, **`CustomOptions`**, **`GradientConfig`**, **`PatternOptions`**, and related interfaces (no API changes—readability only).
+
+##### Path2D drawing (`Path2DCreator`)
+- **Stroke / fill opacity**: `globalAlpha` is applied **before** `stroke()` / `fill()` so fill opacity actually affects the fill; stroke and fill each default alpha to **1** when not specified.
+
+##### Image — professional filters (`professionalImageFilters.ts`)
+- **Sharp input buffer**: Uses `Buffer.from(imageData.data)` so `ImageData`’s `Uint8ClampedArray` view (`byteOffset` / length) is respected.
+
+##### Patterns (`enhancedPatternRenderer.ts`)
+- **Absolute paths**: Local `customPatternImage` paths respect `path.isAbsolute` (no spurious `cwd` join for absolute paths).
+- **Performance**: Cached `canvas.width` / `canvas.height` in tight loops for built-in patterns.
+
+##### Text (`enhancedTextRenderer.ts`, `TextMetricsCreator.ts`)
+- **Font registration**: Resolves `fontPath` with `path.isAbsolute` before `path.join(process.cwd(), …)` so absolute font files load correctly.
+- **Metrics**: `TextMetricsCreator` logs a **warning** if `GlobalFonts.registerFromPath` fails; fixed indentation in measurement sizing branch.
+
+##### Video & `ApexPainter`
+- **`#extractVideoFrame`**: Non-URL file paths use `path.isAbsolute` before joining `cwd`.
+- **`extractFrames`**: HTTP sources are written to a **temp file** under the frames directory (no longer passed to `writeFileSync` as a URL string). Local paths resolve relative to `cwd` only when not absolute.
+- **`VideoCreator` (`detectFormat`)**: Same absolute-path behavior for local video files.
+- **`createCustom`**: Uses **`getCanvasContext`** instead of raw `getContext("2d")` for consistent 2D context handling.
+
+##### Pixels (`PixelDataCreator.ts`)
+- Imports **`PixelData`** / **`PixelManipulationOptions`** from **`canvasUtils`** like other modules.
+- **Sepia** built-in filter: Uses original RGB channels for all three output channels (fixes incorrect chaining after the first assignment).
+- **`grayscale`** case uses a block-scoped `const` for lint/strict compatibility.
+
+##### Hit detection (`HitDetectionCreator.ts`)
+- **`RegionType`**: Normalized union formatting.
+- **`case 'path'`**: Wrapped in a block for `const` scoping.
+- Path regions use **`buildPath2DFromCommands`** (full command set, same as drawing).
+
+##### Charts (`ChartCreator.ts`)
+- Import style aligned with sibling files; JSDoc notes **`createComparisonChart`** for multi-panel layouts.
+
+##### Misc lint / hygiene
+- **`lib/Canvas/utils/errorUtils.ts`**: Removed unused `createCanvas` import.
+- **`textPathRenderer.ts`**: Removed unused parameters/locals in path helpers.
+
+### 🐛 Fixed
+
+- **TS / tooling**: Eliminated **`TS1149` / duplicate module** issues from parallel `utils.ts` + `canvasUtils` and mixed `General` vs `general` paths.
+- **Path command runtime**: Shared **`pathCmd`** module lives next to **`pathUtils`** under **`lib/Canvas/utils/core/`** (fixes broken import when a stray copy existed outside that tree).
+
+##### Text rendering (see README — *Text Rendering*)
+- **Scope clarification**: README still describes **glyph** strokes and glows (`strokeText`, enhanced renderer). Those paths are unchanged. The new **`borderPosition` / `roundedCorners`** split applies to **box** strokes—canvas borders, image bounds, and group strokes—where the stroke follows a rounded rectangle, not individual letter outlines.
+
 ## [5.2.9] - 2025-12-28
 
 

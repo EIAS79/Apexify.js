@@ -1,6 +1,7 @@
-import { createCanvas, SKRSContext2D, loadImage } from "@napi-rs/canvas";
+import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../types";
 import { createGradientFill } from "../Image/imageProperties";
+import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
 
 /**
  * Pie slice data
@@ -69,7 +70,8 @@ opacity?: number;
  * Standard legend configuration (Type 1)
  */
 export interface StandardLegendConfig {
-show?: boolean;
+  /** When omitted, legend is shown; use `false` to hide. */
+  show?: boolean;
 position?: 'top' | 'bottom' | 'left' | 'right';
 fontSize?: number;
 backgroundColor?: string;
@@ -120,11 +122,7 @@ height?: number;
     };
   };
 
-  appearance?: {
-backgroundColor?: string;
-backgroundGradient?: gradient;
-backgroundImage?: string;
-  };
+  appearance?: ChartAppearanceExtended;
 
 type?: 'pie' | 'donut';
 donutInnerRadius?: number;
@@ -360,7 +358,7 @@ async function drawStandardLegend(
   legendSpacing?: number,
   titleHeight?: number
 ): Promise<void> {
-  if (!config.show || !entries || entries.length === 0) return;
+  if (config.show === false || !entries || entries.length === 0) return;
 
   ctx.save();
 
@@ -527,10 +525,10 @@ function drawConnectedLegend(
   centerX: number,
   centerY: number,
   radius: number,
-  innerRadius: number,
+  _innerRadius: number,
   config: ConnectedLegendConfig
 ): void {
-  if (!config.show || !entries || entries.length === 0) return;
+  if (config.show === false || !entries || entries.length === 0) return;
 
   ctx.save();
 
@@ -692,10 +690,6 @@ export async function createPieChart(
   const paddingBottom = padding.bottom ?? 80;
   const paddingLeft = padding.left ?? 80;
 
-  const backgroundColor = options.appearance?.backgroundColor ?? '#FFFFFF';
-  const backgroundGradient = options.appearance?.backgroundGradient;
-  const backgroundImage = options.appearance?.backgroundImage;
-
   const chartType = options.type ?? 'pie';
   const donutInnerRadiusRatio = options.donutInnerRadius ?? 0.6;
 
@@ -710,6 +704,11 @@ const titleHeight = chartTitle ? chartTitleFontSize + 30 : 0;
 
   const standardLegendConfig = options.legends?.standard;
   const connectedLegendConfig = options.legends?.connected;
+  /** `show` omitted ⇒ legend on (DX); only explicit `show: false` disables. */
+  const standardLegendEnabled =
+    standardLegendConfig != null && standardLegendConfig.show !== false;
+  const connectedLegendEnabled =
+    connectedLegendConfig != null && connectedLegendConfig.show !== false;
 
   const globalSliceOpacity = options.slices?.opacity;
   const globalSliceShadow = options.slices?.shadow;
@@ -735,12 +734,11 @@ const titleHeight = chartTitle ? chartTitleFontSize + 30 : 0;
     };
   });
 
-  if (standardLegendConfig?.show && legendEntries.length > 0) {
+  if (standardLegendEnabled && legendEntries.length > 0) {
 const legendFontSize = standardLegendConfig.fontSize ?? 16;
 const legendSpacing = standardLegendConfig.spacing ?? 18;
 const legendPadding = standardLegendConfig.padding ?? 10;
     const legendMaxWidth = standardLegendConfig.maxWidth;
-    const legendWrapText = standardLegendConfig.wrapText !== false;
 
     const { width: legWidth, height: legHeight } = calculateStandardLegendDimensions(
       legendEntries,
@@ -753,7 +751,7 @@ const legendPadding = standardLegendConfig.padding ?? 10;
     standardLegendHeight = legHeight;
   }
 
-  if (connectedLegendConfig?.show && legendEntries.length > 0) {
+  if (connectedLegendEnabled && legendEntries.length > 0) {
     const connectedFontSize = connectedLegendConfig.fontSize ?? 12;
     const connectedMaxWidth = connectedLegendConfig.maxWidth ?? 150;
     const connectedPadding = connectedLegendConfig.padding ?? 5;
@@ -775,7 +773,7 @@ const legendPadding = standardLegendConfig.padding ?? 10;
   let extraWidth = 0;
   let extraHeight = 0;
 
-  if (standardLegendConfig?.show) {
+  if (standardLegendEnabled) {
     if (standardLegendPosition === 'left') {
       extraWidth = standardLegendWidth + legendGap;
     } else if (standardLegendPosition === 'right') {
@@ -798,7 +796,7 @@ const legendPadding = standardLegendConfig.padding ?? 10;
 let chartAreaTop = paddingTop + titleHeight;
   let chartAreaBottom = height - paddingBottom;
 
-  if (standardLegendConfig?.show) {
+  if (standardLegendEnabled) {
     if (standardLegendPosition === 'left') {
 
       chartAreaLeft = paddingLeft + standardLegendWidth + legendGap;
@@ -821,51 +819,26 @@ chartAreaBottom = height - paddingBottom;
   const canvas = createCanvas(adjustedWidth, adjustedHeight);
   const ctx: SKRSContext2D = canvas.getContext('2d');
 
-  if (backgroundImage) {
-    try {
-      const bgImage = await loadImage(backgroundImage);
-      ctx.drawImage(bgImage, 0, 0, adjustedWidth, adjustedHeight);
-    } catch (error) {
-      console.warn(`Failed to load background image: ${backgroundImage}`, error);
-
-      if (backgroundGradient) {
-        fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
-          x: 0, y: 0, w: adjustedWidth, h: adjustedHeight
-        });
-        ctx.fillRect(0, 0, adjustedWidth, adjustedHeight);
-      } else {
-        ctx.fillStyle = backgroundColor;
-        ctx.fillRect(0, 0, adjustedWidth, adjustedHeight);
-      }
-    }
-  } else if (backgroundGradient) {
-    fillWithGradientOrColor(ctx, backgroundGradient, backgroundColor, backgroundColor, {
-      x: 0, y: 0, w: adjustedWidth, h: adjustedHeight
-    });
-    ctx.fillRect(0, 0, adjustedWidth, adjustedHeight);
-  } else {
-    ctx.fillStyle = backgroundColor;
-    ctx.fillRect(0, 0, adjustedWidth, adjustedHeight);
-  }
+  await paintChartCanvasBackground(ctx, canvas, adjustedWidth, adjustedHeight, options.appearance);
 
   if (chartTitle) {
     const titleStyle = options.labels?.title?.textStyle;
     const titleGradient = options.labels?.title?.gradient;
     const titleY = paddingTop + 10;
+    const titleX = (chartAreaLeft + chartAreaRight) / 2;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
     await renderEnhancedText(
       ctx,
       chartTitle,
-      adjustedWidth / 2,
+      titleX,
       titleY,
       titleStyle,
       chartTitleFontSize,
       chartTitleColor,
       titleGradient
     );
-
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
     ctx.restore();
   }
 
@@ -929,7 +902,6 @@ let currentAngle = -Math.PI / 2;
 
     if (slice.gradient) {
 
-      const midAngle = (angles.startAngle + angles.endAngle) / 2;
       const gradientRect = {
         x: centerX - radius,
         y: centerY - radius,
@@ -1018,14 +990,20 @@ ctx.lineWidth = 2;
       ctx.save();
 
 const isSmallSlice = percentage < 5 || sliceAngle < 0.15;
+      const connectedLegendEnabled = connectedLegendConfig?.show === true;
 
       let labelRadius: number;
       let fontSize: number;
 
       if (isSmallSlice) {
-
+        if (connectedLegendEnabled) {
+          // Connected legends already occupy outer ring space. Keep tiny-slice labels inward.
+          labelRadius = chartType === 'donut' ? (radius + innerRadius) / 2 : radius * 0.62;
+          fontSize = 11;
+        } else {
 labelRadius = radius + 15;
 fontSize = 12;
+        }
       } else {
 
         labelRadius = chartType === 'donut' ? (radius + innerRadius) / 2 : radius * 0.7;
@@ -1072,7 +1050,7 @@ ctx.rotate(midAngle + Math.PI / 2);
     }
   }
 
-  if (connectedLegendConfig) {
+  if (connectedLegendEnabled && connectedLegendConfig) {
     drawConnectedLegend(
       ctx,
       legendEntries,
@@ -1085,7 +1063,7 @@ ctx.rotate(midAngle + Math.PI / 2);
     );
   }
 
-  if (standardLegendConfig) {
+  if (standardLegendEnabled && standardLegendConfig) {
 
     await drawStandardLegend(
       ctx,

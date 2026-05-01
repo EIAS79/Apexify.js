@@ -3,7 +3,7 @@ import { createBarChart } from '../utils/Charts/barchart';
 import { createHorizontalBarChart } from '../utils/Charts/horizontalbarchart';
 import { createLineChart } from '../utils/Charts/linechart';
 import { createComparisonChart } from '../utils/Charts/comparisonchart';
-import { getErrorMessage } from '../utils/errorUtils';
+import { getErrorMessage } from '../utils/core/errorUtils';
 
 /**
  * Extended class for chart creation functionality
@@ -11,6 +11,7 @@ import { getErrorMessage } from '../utils/errorUtils';
 export class ChartCreator {
   /**
    * Creates a chart based on the specified type.
+   * For side-by-side or stacked multi-chart layouts, use {@link createComparisonChart} instead.
    *
    * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line')
    * @param data - Chart data (type depends on chartType)
@@ -67,6 +68,7 @@ export class ChartCreator {
   /**
    * Creates a comparison chart with two charts side by side or top/bottom.
    * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
+   * Panel `appearance` supports gradient, `customBg`, `bgLayers`, and inherited axis defaults; charts are drawn with uniform scaling into each cell.
    *
    * @param options - Comparison chart configuration
    * @returns Promise<Buffer> - Comparison chart image buffer
