@@ -2,6 +2,15 @@
  * Unified chart exports
  */
 
+export type { LegendPlacement } from "./legendPlacement";
+export {
+  normalizeLegendPosition,
+  legendConsumesLeftEdge,
+  legendConsumesRightEdge,
+  legendConsumesTopEdge,
+  legendConsumesBottomEdge,
+} from "./legendPlacement";
+
 export type { ChartAppearanceExtended } from "./chartBackground";
 export { paintChartCanvasBackground } from "./chartBackground";
 
@@ -58,6 +67,14 @@ export {
   EnhancedTextStyle as ComparisonEnhancedTextStyle,
   createComparisonChart
 } from './comparisonchart';
+
+export type {
+  ComboBarsType,
+  ComboLineSeries,
+  ComboChartOpacity,
+  ComboChartOptions,
+} from './combochart';
+export { createComboChart } from './combochart';
 
 /**
  * Unified chart type

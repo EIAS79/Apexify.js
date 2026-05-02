@@ -4501,6 +4501,15 @@ break;
     return this.chartCreator.createComparisonChart(options);
   }
 
+  /**
+   * Single canvas with bars (primary Y) and lines (default: secondary Y on the right).
+   */
+  async createComboChart(
+    options: import('./utils/Charts/combochart').ComboChartOptions
+  ): Promise<Buffer> {
+    return this.chartCreator.createComboChart(options);
+  }
+
   public resetSaveCounter(): void {
     this.saveCounter = 1;
   }

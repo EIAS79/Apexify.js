@@ -2,6 +2,12 @@ import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../types";
 import { createGradientFill } from "../Image/imageProperties";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
+import {
+  normalizeLegendPosition,
+  applyLegendChartAreaInset,
+  type LegendPlacement,
+} from "./legendPlacement";
+import { computeChartVerticalStack, resolveOuterPadding } from "./chartPadding";
 
 /**
  * Enhanced text styling for chart labels
@@ -83,6 +89,11 @@ export interface AreaConfig {
 type?: 'none' | 'below' | 'above' | 'between' | 'around';
 color?: string;
 opacity?: number;
+  /**
+   * For `between`: lower/upper boundary pair. Must use aligned `data[].x` with the host series.
+   * Each boundary follows its own {@link LineSeries.smoothness} and `lineStyle` (e.g. host Bézier +
+   * `secondLine` straight segments, or both Bézier).
+   */
 secondLine?: LineSeries;
 upperBound?: number[];
 lowerBound?: number[];
@@ -143,12 +154,17 @@ gradient?: gradient;
 export interface AxisConfig {
 label?: string;
 labelColor?: string;
+  /**
+   * Fixed domain. If much wider than your data, the series occupies only a slice of the plot
+   * (the rest is empty). Omit for automatic bounds from series values (with padding).
+   */
   range?: {
     min?: number;
     max?: number;
     step?: number;
   };
 values?: number[];
+  /** Tick marks + numeric labels; combo charts may infer this from matching series color when unset. */
 color?: string;
 width?: number;
 tickFontSize?: number;
@@ -157,6 +173,10 @@ baseline?: number;
 scale?: 'linear' | 'log';
 dateFormat?: string;
 dateTime?: boolean;
+  /** Unused while Y-axis arrow is disabled. */
+  arrowExtensionPastMaxTickPx?: number;
+  /** Unused while Y-axis arrow is disabled. */
+  arrowTipOffsetY?: number;
 }
 
 /**
@@ -165,8 +185,9 @@ dateTime?: boolean;
 export interface LineChartOptions {
 
   dimensions?: {
-width?: number;
-height?: number;
+    width?: number;
+    height?: number;
+    /** Smaller values give more room to the plot; defaults are generous (~60–100px per side). */
     padding?: {
       top?: number;
       right?: number;
@@ -203,7 +224,8 @@ position?: 'top' | 'bottom' | 'left' | 'right';
   legend?: {
     show?: boolean;
 entries?: LegendEntry[];
-position?: 'top' | 'bottom' | 'left' | 'right';
+/** See {@link LegendPlacement}; aliases like `topLeft`, `bottom_right` accepted. */
+position?: LegendPlacement | string;
 spacing?: number;
 fontSize?: number;
 backgroundColor?: string;
@@ -356,22 +378,6 @@ function logScale(value: number, min: number, max: number): number {
   const logMax = Math.log10(max);
   const logValue = Math.log10(value);
   return (logValue - logMin) / (logMax - logMin);
-}
-
-/**
- * Helper function to draw an arrow
- */
-function drawArrow(ctx: SKRSContext2D, x: number, y: number, angle: number, size: number): void {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-size, -size / 2);
-  ctx.lineTo(-size, size / 2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 /** Maximum horizontal width of Y-axis tick strings (labels drawn left of the axis line). */
@@ -544,6 +550,130 @@ function drawYAxisTicks(
           labelText = value.toFixed(1);
         }
         ctx.fillText(labelText, originX - 10, y);
+        lastLabelY = y;
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Right-hand Y-axis ticks (mirror of {@link drawYAxisTicks}); axis vertical line at `rightAxisX`.
+ */
+function drawRightYAxisTicks(
+  ctx: SKRSContext2D,
+  rightAxisX: number,
+  originY: number,
+  axisEndY: number,
+  minValue: number,
+  maxValue: number,
+  step: number,
+  tickFontSize: number,
+  customValues?: number[],
+  valueSpacing?: number,
+  scale: 'linear' | 'log' = 'linear',
+  dateFormat?: string,
+  isDateTime: boolean = false,
+  tickLabelColor: string = '#000000'
+): void {
+  ctx.save();
+  ctx.fillStyle = tickLabelColor;
+  ctx.font = `${tickFontSize}px Arial`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  const chartHeight = originY - axisEndY;
+
+  if (customValues && customValues.length > 0) {
+    const actualMin = Math.min(...customValues);
+    const actualMax = Math.max(...customValues);
+    const range = actualMax - actualMin || 1;
+
+    let lastLabelY = Infinity;
+    const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : 30;
+
+    customValues.forEach((value, index) => {
+      const y = originY - ((value - actualMin) / range) * chartHeight;
+      const isLastCustom = index === customValues.length - 1;
+
+      if (Math.abs(y - lastLabelY) < minLabelSpacing && !isLastCustom) {
+        ctx.beginPath();
+        ctx.moveTo(rightAxisX, y);
+        ctx.lineTo(rightAxisX + 5, y);
+        ctx.stroke();
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(rightAxisX, y);
+      ctx.lineTo(rightAxisX + 5, y);
+      ctx.stroke();
+
+      let labelText: string;
+      if (isDateTime && dateFormat) {
+        labelText = formatDate(value, dateFormat);
+      } else {
+        labelText = value.toFixed(1);
+      }
+      ctx.fillText(labelText, rightAxisX + 10, y);
+      lastLabelY = y;
+    });
+  } else {
+    let lastLabelY = Infinity;
+    const minLabelSpacing = valueSpacing && valueSpacing > 0 ? valueSpacing : tickFontSize + 5;
+
+    if (scale === 'log' && minValue > 0 && maxValue > 0) {
+      const logMin = Math.floor(Math.log10(minValue));
+      const logMax = Math.ceil(Math.log10(maxValue));
+
+      for (let power = logMin; power <= logMax; power++) {
+        const value = Math.pow(10, power);
+        if (value < minValue || value > maxValue) continue;
+
+        const logPos = logScale(value, minValue, maxValue);
+        const y = originY - logPos * chartHeight;
+
+        if (lastLabelY - y < minLabelSpacing && power !== logMin && power !== logMax) {
+          continue;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(rightAxisX, y);
+        ctx.lineTo(rightAxisX + 5, y);
+        ctx.stroke();
+
+        let labelText: string;
+        if (isDateTime && dateFormat) {
+          labelText = formatDate(value, dateFormat);
+        } else {
+          labelText = value.toFixed(1);
+        }
+        ctx.fillText(labelText, rightAxisX + 10, y);
+        lastLabelY = y;
+      }
+    } else {
+      const range = maxValue - minValue || 1;
+      for (let value = minValue; value <= maxValue; value += step) {
+        const y = originY - ((value - minValue) / range) * chartHeight;
+        const isLastStepTick = value + step > maxValue + 1e-9;
+
+        if (lastLabelY - y < minLabelSpacing && value !== minValue && !isLastStepTick) {
+          continue;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(rightAxisX, y);
+        ctx.lineTo(rightAxisX + 5, y);
+        ctx.stroke();
+
+        let labelText: string;
+        if (isDateTime && dateFormat) {
+          labelText = formatDate(value, dateFormat);
+        } else {
+          labelText = value.toFixed(1);
+        }
+        ctx.fillText(labelText, rightAxisX + 10, y);
         lastLabelY = y;
       }
     }
@@ -1006,6 +1136,104 @@ const numPointsPerSegment = 20;
   return splinePoints;
 }
 
+function cubicBezier1D(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const mt = 1 - t;
+  return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+}
+
+/**
+ * Polyline that follows the same geometry as the stroked series (for fills between two curved lines).
+ */
+function flattenLineChartCurveToPolyline(
+  canvasPoints: { x: number; y: number }[],
+  smoothness: SmoothnessType,
+  lineStyle: LineStyle,
+  /** Dense enough that “between” fills sit flush against stroked Bézier curves */
+  stepsPerBezierSegment = 24
+): { x: number; y: number }[] {
+  if (canvasPoints.length === 0) return [];
+  if (canvasPoints.length === 1) return [{ ...canvasPoints[0] }];
+
+  const isStepLine = lineStyle === 'step' || lineStyle === 'stepline';
+  if (isStepLine) {
+    const out: { x: number; y: number }[] = [];
+    out.push({ ...canvasPoints[0] });
+    for (let i = 0; i < canvasPoints.length - 1; i++) {
+      out.push({ x: canvasPoints[i + 1].x, y: canvasPoints[i].y });
+      out.push({ x: canvasPoints[i + 1].x, y: canvasPoints[i + 1].y });
+    }
+    return out;
+  }
+
+  if (smoothness === 'spline') {
+    return calculateSplinePoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
+  }
+
+  if (smoothness === 'bezier') {
+    const controlPoints = calculateBezierControlPoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
+    const out: { x: number; y: number }[] = [];
+    out.push({ ...canvasPoints[0] });
+    for (let i = 0; i < canvasPoints.length - 1; i++) {
+      const cp = controlPoints[i];
+      const p0 = canvasPoints[i];
+      const p1 = canvasPoints[i + 1];
+      for (let s = 1; s <= stepsPerBezierSegment; s++) {
+        const t = s / stepsPerBezierSegment;
+        out.push({
+          x: cubicBezier1D(p0.x, cp.cp1x, cp.cp2x, p1.x, t),
+          y: cubicBezier1D(p0.y, cp.cp1y, cp.cp2y, p1.y, t),
+        });
+      }
+    }
+    return out;
+  }
+
+  return canvasPoints.map((p) => ({ ...p }));
+}
+
+/**
+ * Extends the current path from `canvasPoints[0]` along the same curve/step/polyline used for stroking.
+ */
+function lineChartExtendPathAlongSeries(
+  ctx: SKRSContext2D,
+  canvasPoints: { x: number; y: number }[],
+  smoothness: SmoothnessType,
+  lineStyle: LineStyle
+): void {
+  if (canvasPoints.length < 2) return;
+
+  const isStepLine = lineStyle === 'step' || lineStyle === 'stepline';
+
+  if (!isStepLine && smoothness === 'bezier') {
+    const controlPoints = calculateBezierControlPoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
+    for (let i = 0; i < canvasPoints.length - 1; i++) {
+      const cp = controlPoints[i];
+      ctx.bezierCurveTo(cp.cp1x, cp.cp1y, cp.cp2x, cp.cp2y, canvasPoints[i + 1].x, canvasPoints[i + 1].y);
+    }
+    return;
+  }
+
+  if (!isStepLine && smoothness === 'spline') {
+    const splinePoints = calculateSplinePoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
+    for (let i = 1; i < splinePoints.length; i++) {
+      ctx.lineTo(splinePoints[i].x, splinePoints[i].y);
+    }
+    return;
+  }
+
+  if (isStepLine) {
+    for (let i = 0; i < canvasPoints.length - 1; i++) {
+      ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i].y);
+      ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
+    }
+    return;
+  }
+
+  for (let i = 1; i < canvasPoints.length; i++) {
+    ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+  }
+}
+
 /**
  * Calculates linear regression (y = mx + b)
  */
@@ -1429,15 +1657,14 @@ export async function createLineChart(
 
   const width = options.dimensions?.width ?? 800;
   const height = options.dimensions?.height ?? 600;
-  const padding = options.dimensions?.padding || {};
-  const paddingTop = padding.top ?? 60;
-  const paddingRight = padding.right ?? 100;
-  const paddingBottom = padding.bottom ?? 80;
-  const paddingLeft = padding.left ?? 100;
+  const padding = resolveOuterPadding(options.dimensions?.padding, width, height);
+  const paddingTop = padding.top;
+  const paddingRight = padding.right;
+  const paddingBottom = padding.bottom;
+  const paddingLeft = padding.left;
 
   const axisColor = options.appearance?.axisColor ?? options.axes?.x?.color ?? options.axes?.y?.color ?? '#000000';
   const axisWidth = options.appearance?.axisWidth ?? options.axes?.x?.width ?? options.axes?.y?.width ?? 2;
-  const arrowSize = options.appearance?.arrowSize ?? 10;
 
   const chartTitle = options.labels?.title?.text;
   const chartTitleFontSize = options.labels?.title?.fontSize ?? 24;
@@ -1451,7 +1678,7 @@ export async function createLineChart(
   const showLegend = options.legend?.show ?? false;
   const legendSpacing = options.legend?.spacing ?? 20;
   const legendEntries = options.legend?.entries;
-const legendPosition = options.legend?.position ?? 'right';
+const legendPlacement = normalizeLegendPosition(options.legend?.position);
 
   const showGrid = options.grid?.show ?? false;
   const gridColor = options.grid?.color ?? '#E0E0E0';
@@ -1584,8 +1811,6 @@ const legendPosition = options.legend?.position ?? 'right';
 
   let legendWidth = 0;
   let legendHeight = 0;
-  let extraWidth = 0;
-  let extraHeight = 0;
   const minLegendSpacing = 10;
 
   if (showLegend) {
@@ -1601,22 +1826,26 @@ const legendPosition = options.legend?.position ?? 'right';
     legendWidth = legendDims.width;
     legendHeight = legendDims.height;
 
-    if (legendPosition === 'left' || legendPosition === 'right') {
-      extraWidth = legendWidth + minLegendSpacing;
-    } else if (legendPosition === 'top' || legendPosition === 'bottom') {
-      extraHeight = legendHeight + minLegendSpacing;
-    }
   }
 
-  const adjustedWidth = width + extraWidth;
-  const adjustedHeight = height + extraHeight;
+  const vstack = computeChartVerticalStack({
+    paddingTop,
+    width,
+    height,
+    chartTitle,
+    chartTitleFontSize,
+    legendSpacing,
+    showLegend: !!(showLegend && legendWidth > 0 && legendHeight > 0),
+    legendPlacement,
+    legendWidth,
+    legendHeight,
+    minLegendInsetFloor: minLegendSpacing,
+  });
 
-  const canvas = createCanvas(adjustedWidth, adjustedHeight);
+  const canvas = createCanvas(width, height);
   const ctx: SKRSContext2D = canvas.getContext('2d');
 
-  await paintChartCanvasBackground(ctx, canvas, adjustedWidth, adjustedHeight, options.appearance);
-
-  const titleHeight = chartTitle ? chartTitleFontSize + 30 : 0;
+  await paintChartCanvasBackground(ctx, canvas, width, height, options.appearance);
 
   const X_AXIS_TICK_TOP_OFFSET = 10;
   const X_AXIS_TICK_DESCENDER_PAD = 8;
@@ -1630,35 +1859,41 @@ const legendPosition = options.legend?.position ?? 'right';
 
   let chartAreaLeft = paddingLeft;
   let chartAreaRight = width - paddingRight;
-  let chartAreaTop = paddingTop + titleHeight;
+  let chartAreaTop = vstack.chartAreaTopStart;
   let chartAreaBottom = height - paddingBottom;
 
-  if (showLegend) {
-    if (legendPosition === 'left') {
-      chartAreaLeft = paddingLeft + legendWidth + minLegendSpacing;
-      chartAreaRight = width - paddingRight;
-    } else if (legendPosition === 'right') {
-      chartAreaLeft = paddingLeft;
-      chartAreaRight = width - paddingRight;
-    } else if (legendPosition === 'top') {
-      chartAreaTop = paddingTop + titleHeight + legendHeight + minLegendSpacing;
-      chartAreaBottom = height - paddingBottom;
-    } else if (legendPosition === 'bottom') {
-      chartAreaTop = paddingTop + titleHeight;
-      chartAreaBottom = height - paddingBottom;
-    }
+  if (showLegend && legendWidth > 0 && legendHeight > 0) {
+    const inset = applyLegendChartAreaInset(
+      legendPlacement,
+      {
+        chartAreaLeft,
+        chartAreaRight,
+        chartAreaTop,
+        chartAreaBottom,
+      },
+      legendWidth,
+      legendHeight,
+      vstack.legendInsetGap,
+      0
+    );
+    chartAreaLeft = inset.chartAreaLeft;
+    chartAreaRight = inset.chartAreaRight;
+    chartAreaTop = inset.chartAreaTop;
+    chartAreaBottom = inset.chartAreaBottom;
   }
+
+  const originY = chartAreaBottom - axisLabelHeight;
+  /** Canvas row for y = yScaleMax (top tick/grid); tick padding only — axis spine fits range (no arrow). */
+  const yPlotTopInsetPx = Math.ceil(tickFontSize * 0.45 + 6);
+  const axisEndY = chartAreaTop + yPlotTopInsetPx;
 
   let yScaleMin = yMin;
   const yScaleMax = yMax;
   let ySpan = yScaleMax - yScaleMin || 1;
-  const estPlotHeight = Math.max(
-    120,
-    chartAreaBottom - axisLabelHeight - chartAreaTop - Math.ceil(arrowSize + tickFontSize * 1.75 + 12)
-  );
+  const plotHeightForBaseline = Math.max(120, originY - axisEndY);
   const baselineRefLC = baseline !== undefined ? baseline : 0;
-  if (yAxisScale === 'linear' && baselineRefLC > yScaleMin && estPlotHeight > 1e-6) {
-    const belowBaselinePx = ((baselineRefLC - yScaleMin) / ySpan) * estPlotHeight;
+  if (yAxisScale === 'linear' && baselineRefLC > yScaleMin && plotHeightForBaseline > 1e-6) {
+    const belowBaselinePx = ((baselineRefLC - yScaleMin) / ySpan) * plotHeightForBaseline;
     const reserveBelowBaselinePx =
       X_AXIS_TICK_TOP_OFFSET +
       tickFontSize +
@@ -1666,12 +1901,10 @@ const legendPosition = options.legend?.position ?? 'right';
       (xAxisLabel ? X_AXIS_TITLE_GAP_BELOW_TICKS + tickFontSize + X_AXIS_TITLE_BOTTOM_PAD : 0);
     if (belowBaselinePx < reserveBelowBaselinePx) {
       const gapPx = reserveBelowBaselinePx - belowBaselinePx;
-      yScaleMin -= (gapPx / estPlotHeight) * ySpan;
+      yScaleMin -= (gapPx / plotHeightForBaseline) * ySpan;
       ySpan = yScaleMax - yScaleMin || 1;
     }
   }
-
-  const originY = chartAreaBottom - axisLabelHeight;
 
   const maxYTickLabelWidth = computeMaxYTickLabelWidth(
     ctx,
@@ -1699,27 +1932,17 @@ const legendPosition = options.legend?.position ?? 'right';
     (yAxisLabel ? Y_AXIS_TITLE_TO_TICK_LABEL_GAP : 0) +
     maxYTickLabelWidth +
     TICK_LABEL_TO_AXIS_GAP;
-  const yAxisVisualClearance = Math.ceil(arrowSize + tickFontSize * 0.65 + 8);
-  const xAxisVisualClearance = Math.ceil(arrowSize + tickFontSize * 1.75 + 12);
-  const axisEndY = chartAreaTop + yAxisVisualClearance;
+  const xTickTailroom = Math.ceil(tickFontSize * 0.65 + 8);
   const minPlotWidth = 80;
-  const axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xAxisVisualClearance);
-  const yArrowTipY = Math.max(
-    chartAreaTop + 2,
-    axisEndY - Math.ceil(tickFontSize * 0.55 + arrowSize * 0.5 + 10)
-  );
-  const xArrowTipX = Math.min(
-    chartAreaRight - 2,
-    axisEndX + Math.ceil(tickFontSize * 0.6 + arrowSize * 0.5 + 10)
-  );
+  const axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xTickTailroom);
 
   if (chartTitle) {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
-    const titleY = paddingTop + 10;
-    const titleX = adjustedWidth / 2;
+    const titleY = paddingTop + vstack.titleTopInset;
+    const titleX = width / 2;
     await renderEnhancedText(
       ctx,
       chartTitle,
@@ -1740,21 +1963,25 @@ const legendPosition = options.legend?.position ?? 'right';
 
   const chartAreaHeight = originY - axisEndY;
   const effectiveBaseline = baseline !== undefined ? baseline : 0;
-  const baselineY = originY - ((effectiveBaseline - yScaleMin) / ySpan) * chartAreaHeight;
+  const baselineYUncapped = originY - ((effectiveBaseline - yScaleMin) / ySpan) * chartAreaHeight;
+  /** When baseline defaults to 0 but Y scale starts higher (explicit range), uncapped Y sits below the plot and disconnects axes — pin X-axis to the drawable band. */
+  const baselineY = Math.min(originY, Math.max(axisEndY, baselineYUncapped));
 
+  ctx.save();
+  ctx.lineCap = 'butt';
   ctx.beginPath();
   ctx.moveTo(originX, originY);
   ctx.lineTo(originX, axisEndY);
   ctx.stroke();
+  ctx.restore();
 
-  drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
-
+  ctx.save();
+  ctx.lineCap = 'butt';
   ctx.beginPath();
   ctx.moveTo(originX, baselineY);
   ctx.lineTo(axisEndX, baselineY);
   ctx.stroke();
-
-  drawArrow(ctx, xArrowTipX, baselineY, 0, arrowSize);
+  ctx.restore();
 
   const yTickLabelColor = yAxisConfig.color ?? axisColor;
   const xTickLabelColor = xAxisConfig.color ?? axisColor;
@@ -1912,12 +2139,9 @@ shadeToYCanvas = localShadeToYCanvas;
         areaSize = Math.abs(sum);
 
         ctx.moveTo(canvasPoints[0].x, localShadeToYCanvas);
-
-        for (let i = 0; i < canvasPoints.length; i++) {
-          ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
-        }
-
-        ctx.lineTo(canvasPoints[canvasPoints.length - 1].x, shadeToYCanvas);
+        ctx.lineTo(canvasPoints[0].x, canvasPoints[0].y);
+        lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle);
+        ctx.lineTo(canvasPoints[canvasPoints.length - 1].x, localShadeToYCanvas);
 
         ctx.closePath();
         ctx.fill();
@@ -1972,11 +2196,8 @@ const height = shadeToYValue - avgY;
         areaSize = Math.abs(sum);
 
         ctx.moveTo(canvasPoints[0].x, localShadeToYCanvas);
-
-        canvasPoints.forEach(point => {
-          ctx.lineTo(point.x, point.y);
-        });
-
+        ctx.lineTo(canvasPoints[0].x, canvasPoints[0].y);
+        lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle);
         ctx.lineTo(canvasPoints[canvasPoints.length - 1].x, localShadeToYCanvas);
 
         ctx.closePath();
@@ -2027,13 +2248,17 @@ const height = shadeToYValue - avgY;
         }
         areaSize = sum;
 
-        ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-        canvasPoints.forEach(point => {
-          ctx.lineTo(point.x, point.y);
-        });
+        const secondSmoothness = areaConfig.secondLine.smoothness ?? 'none';
+        const secondLineStyle = areaConfig.secondLine.lineStyle || 'solid';
+        const poly1 = flattenLineChartCurveToPolyline(canvasPoints, smoothness, lineStyle);
+        const poly2 = flattenLineChartCurveToPolyline(secondLinePoints, secondSmoothness, secondLineStyle);
 
-        for (let i = secondLinePoints.length - 1; i >= 0; i--) {
-          ctx.lineTo(secondLinePoints[i].x, secondLinePoints[i].y);
+        ctx.moveTo(poly1[0].x, poly1[0].y);
+        for (let i = 1; i < poly1.length; i++) {
+          ctx.lineTo(poly1[i].x, poly1[i].y);
+        }
+        for (let i = poly2.length - 1; i >= 0; i--) {
+          ctx.lineTo(poly2[i].x, poly2[i].y);
         }
         ctx.closePath();
         ctx.fill();
@@ -2041,11 +2266,14 @@ const height = shadeToYValue - avgY;
         ctx.save();
         ctx.strokeStyle = secondLineColor;
         ctx.lineWidth = areaConfig.secondLine.lineWidth ?? 2;
-        applyLineStyle(ctx, areaConfig.secondLine.lineStyle || 'solid');
+        const secondIsStep = secondLineStyle === 'step' || secondLineStyle === 'stepline';
+        if (!secondIsStep) {
+          applyLineStyle(ctx, secondLineStyle);
+        }
         ctx.beginPath();
         ctx.moveTo(secondLinePoints[0].x, secondLinePoints[0].y);
-        for (let i = 1; i < secondLinePoints.length; i++) {
-          ctx.lineTo(secondLinePoints[i].x, secondLinePoints[i].y);
+        if (secondLinePoints.length > 1) {
+          lineChartExtendPathAlongSeries(ctx, secondLinePoints, secondSmoothness, secondLineStyle);
         }
         ctx.stroke();
         ctx.restore();
@@ -2101,46 +2329,11 @@ const height = shadeToYValue - avgY;
         applyLineStyle(ctx, lineStyle);
       }
 
-      if (smoothness === 'bezier' && canvasPoints.length > 1) {
-
-        const controlPoints = calculateBezierControlPoints(canvasPoints.map(p => ({ x: p.x, y: p.y })));
-
+      if (canvasPoints.length >= 1) {
         ctx.beginPath();
         ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-
-        for (let i = 0; i < canvasPoints.length - 1; i++) {
-          const cp = controlPoints[i];
-          ctx.bezierCurveTo(cp.cp1x, cp.cp1y, cp.cp2x, cp.cp2y, canvasPoints[i + 1].x, canvasPoints[i + 1].y);
-        }
-
-        ctx.stroke();
-      } else if (smoothness === 'spline' && canvasPoints.length > 1) {
-
-        const splinePoints = calculateSplinePoints(canvasPoints.map(p => ({ x: p.x, y: p.y })));
-
-        ctx.beginPath();
-        ctx.moveTo(splinePoints[0].x, splinePoints[0].y);
-        for (let i = 1; i < splinePoints.length; i++) {
-          ctx.lineTo(splinePoints[i].x, splinePoints[i].y);
-        }
-        ctx.stroke();
-      } else if (isStepLine && canvasPoints.length > 1) {
-
-        ctx.beginPath();
-        ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-        for (let i = 0; i < canvasPoints.length - 1; i++) {
-
-          ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i].y);
-
-          ctx.lineTo(canvasPoints[i + 1].x, canvasPoints[i + 1].y);
-        }
-        ctx.stroke();
-      } else {
-
-        ctx.beginPath();
-        ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-        for (let i = 1; i < canvasPoints.length; i++) {
-          ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+        if (canvasPoints.length > 1) {
+          lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle);
         }
         ctx.stroke();
       }
@@ -2330,12 +2523,13 @@ const height = shadeToYValue - avgY;
   ctx.strokeStyle = axisColor;
   ctx.fillStyle = axisColor;
   ctx.lineWidth = axisWidth;
-  ctx.lineCap = 'round';
+  ctx.save();
+  ctx.lineCap = 'butt';
   ctx.beginPath();
   ctx.moveTo(originX, baselineY);
-  ctx.lineTo(xArrowTipX - arrowSize, baselineY);
+  ctx.lineTo(axisEndX, baselineY);
   ctx.stroke();
-  drawArrow(ctx, xArrowTipX, baselineY, 0, arrowSize);
+  ctx.restore();
 
   drawXAxisTicks(
     ctx,
@@ -2385,16 +2579,50 @@ const height = shadeToYValue - avgY;
     let legendX: number, legendY: number;
     const chartAreaHeight = originY - axisEndY;
 
-    switch (legendPosition) {
+    switch (legendPlacement) {
       case 'top':
-legendX = (adjustedWidth - legendWidth) / 2;
-        legendY = paddingTop + titleHeight + minLegendSpacing;
+        legendX = (width - legendWidth) / 2;
+        legendY = vstack.chartAreaTopStart;
+        break;
+      case 'top-left':
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = vstack.legendCornerTopY;
+        break;
+      case 'top-right':
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendY = vstack.legendCornerTopY;
         break;
       case 'bottom':
-legendX = (adjustedWidth - legendWidth) / 2;
+        legendX = (width - legendWidth) / 2;
         {
           const naturalBottomLegendY =
-            adjustedHeight - paddingBottom - legendHeight - minLegendSpacing;
+            height - paddingBottom - legendHeight - minLegendSpacing;
+          const xTickLabelBottom = originY + X_AXIS_TICK_TOP_OFFSET + tickFontSize;
+          const xAxisTitleBottom = xAxisLabel
+            ? originY + X_AXIS_TICK_TOP_OFFSET + tickFontSize + X_AXIS_TITLE_GAP_BELOW_TICKS + tickFontSize
+            : xTickLabelBottom;
+          const minLegendTop = xAxisTitleBottom + Math.max(8, minLegendSpacing);
+          legendY = Math.max(naturalBottomLegendY, minLegendTop);
+        }
+        break;
+      case 'bottom-left':
+        legendX = paddingLeft + minLegendSpacing;
+        {
+          const naturalBottomLegendY =
+            height - paddingBottom - legendHeight - minLegendSpacing;
+          const xTickLabelBottom = originY + X_AXIS_TICK_TOP_OFFSET + tickFontSize;
+          const xAxisTitleBottom = xAxisLabel
+            ? originY + X_AXIS_TICK_TOP_OFFSET + tickFontSize + X_AXIS_TITLE_GAP_BELOW_TICKS + tickFontSize
+            : xTickLabelBottom;
+          const minLegendTop = xAxisTitleBottom + Math.max(8, minLegendSpacing);
+          legendY = Math.max(naturalBottomLegendY, minLegendTop);
+        }
+        break;
+      case 'bottom-right':
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        {
+          const naturalBottomLegendY =
+            height - paddingBottom - legendHeight - minLegendSpacing;
           const xTickLabelBottom = originY + X_AXIS_TICK_TOP_OFFSET + tickFontSize;
           const xAxisTitleBottom = xAxisLabel
             ? originY + X_AXIS_TICK_TOP_OFFSET + tickFontSize + X_AXIS_TITLE_GAP_BELOW_TICKS + tickFontSize
@@ -2405,12 +2633,12 @@ legendX = (adjustedWidth - legendWidth) / 2;
         break;
       case 'left':
         legendX = paddingLeft + minLegendSpacing;
-legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
       case 'right':
       default:
-        legendX = axisEndX + minLegendSpacing;
-legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
     }
 
@@ -2442,8 +2670,8 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
     ctx.strokeStyle = frameColor;
     ctx.lineWidth = frameW;
     const inset = frameW / 2;
-    const fw = adjustedWidth - frameW;
-    const fh = adjustedHeight - frameW;
+    const fw = width - frameW;
+    const fh = height - frameW;
     ctx.beginPath();
     if (frameR != null && frameR > 0) {
       const r = Math.min(frameR, fw / 2, fh / 2);
@@ -2457,3 +2685,23 @@ legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
 
   return canvas.toBuffer('image/png');
 }
+
+/** Shared primitives for combo / mixed charts. */
+export {
+  applyLineStyle,
+  calculateLegendDimensions,
+  computeMaxYTickLabelWidth,
+  drawErrorBar,
+  drawGrid,
+  drawLegend,
+  drawMarker,
+  drawRightYAxisTicks,
+  drawXAxisTicks,
+  drawYAxisTicks,
+  formatDate,
+  generateCorrelationPoints,
+  lineChartExtendPathAlongSeries,
+  logScale,
+  renderEnhancedText,
+  reserveHorizontalForRotatedYAxisTitle,
+};

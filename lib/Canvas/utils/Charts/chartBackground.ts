@@ -39,6 +39,10 @@ export interface ChartAppearanceExtended {
   axisColor?: string;
   axisWidth?: number;
   arrowSize?: number;
+  /** Unused while line-chart Y-axis arrow is disabled. */
+  yAxisArrowExtensionPastMaxTickPx?: number;
+  /** Unused while line-chart Y-axis arrow is disabled. */
+  yAxisArrowTipOffsetY?: number;
   /** Optional outer frame drawn on top of the chart (see line chart renderer). */
   borderRadius?: number;
   borderWidth?: number;

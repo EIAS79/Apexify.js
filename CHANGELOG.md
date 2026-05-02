@@ -5,6 +5,63 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.15] - 2026-04-29
+
+### ✨ Added
+
+##### Chart layout (`lib/Canvas/utils/Charts/chartPadding.ts`)
+- **`defaultOuterPadding` / `resolveOuterPadding`**: Outer margins scale with canvas size (`min(width,height)`), replacing oversized fixed defaults so plots use more of the frame.
+- **`chartVerticalStackGaps`**: Rhythm between title → legend (full-width top) → plot; scales with canvas short side and respects **`legend.spacing`**.
+- **`computeChartVerticalStack`**: Shared **`chartAreaTopStart`**, **`legendInsetGap`**, **`legendCornerTopY`**, and **`legendAtTop`** (excluding corner placements) for consistent vertical stacking across charts.
+
+##### Legend placement (`lib/Canvas/utils/Charts/legendPlacement.ts`)
+- **`legendIsCornerTop`**: Identifies **`top-left`** / **`top-right`** for layout that must not reserve a full-width band above the plot.
+- **`applyLegendChartAreaInset`**: **`top-left`** / **`top-right`** only inset horizontally (left/right); vertical strip reserved only for **`top`**, **`bottom`**, and bottom corners as before.
+
+##### Combo chart (`lib/Canvas/utils/Charts/combochart.ts`)
+- **`barsType`**: **`'standard'`** | **`'grouped'`** | **`'stacked'`** — bars may use **`BarChartData.values`** (`BarSegment[]`) with per-segment **`color`** / **`label`**; **`barStyle.groupSpacing`** controls grouped gaps.
+- **`collectComboBarScaleValues`**: Primary Y auto-scale uses segment values (grouped), category totals (stacked), or **`value`** (standard / fallback rows).
+- Auto-legend expands grouped/stacked rows into per-segment entries when **`legend.entries`** is omitted.
+- **Dual-axis tinting**: When **`axes.y.color`** / **`axes.ySecondary.color`** are omitted, tick strokes, spines, and default axis title colors follow the first bar (or first segment color) and the first **`yAxis: 'secondary'`** line color (RGBA alpha stripped for strokes).
+
+##### Exports (`lib/Canvas/utils/Charts/index.ts`)
+- **`ComboBarsType`** re-exported alongside existing combo types.
+
+##### Axis types (`lib/Canvas/utils/Charts/linechart.ts`)
+- **`AxisConfig.color`**: Documented that combo charts may infer tick/label styling from matching series colors when unset.
+
+### 🔧 Improved
+
+##### Line chart (`linechart.ts`)
+- Legend no longer expands canvas with **`extraWidth` / `extraHeight`**; plot rectangle uses **`applyLegendChartAreaInset`** and **`resolveOuterPadding`**.
+- Vertical stack uses **`computeChartVerticalStack`** + **`legendInsetGap`** so legend→plot spacing scales; **`top-left`** / **`top-right`** legends use **`legendCornerTopY`**.
+- Title Y aligns with **`titleTopInset`** from the stack helper.
+
+##### Bar chart (`barchart.ts`)
+- Same inset-only legend canvas, **`resolveOuterPadding`**, **`computeChartVerticalStack`**, and **`vstack.legendInsetGap`** for **`applyLegendChartAreaInset`** (replacing raw **`legend.spacing`** as the sole inset gap).
+- Top corner legend positions use **`legendCornerTopY`**.
+
+##### Combo chart
+- Same padding/stack/corner-legend behavior as line/bar; baseline preview height accounts for **`axisBottomReserve`** and **`chartAreaTopPre`** after stack math.
+- **`legendActive`** guards legend draw path; primary Y spine/ticks use **`yPrimaryTickBase`** when separate from neutral **`axisColor`**.
+
+##### Horizontal bar chart (`horizontalbarchart.ts`)
+- Removed legend-driven **`extraWidth` / `extraHeight`**; **`applyLegendChartAreaInset`** + **`resolveOuterPadding`**; **`calculateResponsiveHeight`** uses **`resolveOuterPadding`** for consistent vertical padding.
+- Right-edge legends keep full **`chartAreaRight`** (legend past **`axisEndX`**); default **`right`** legend X clamped to stay inside canvas.
+- **`originY`** tied to **`chartAreaBottom`** after bottom legend inset.
+
+##### Pie chart (`piechart.ts`)
+- Fixed **`width × height`** canvas (no **`extraWidth` / `extraHeight`** stripes); **`resolveOuterPadding`**; connected-legend margin via plot inset; standard legend via **`applyLegendChartAreaInset`**; **`drawStandardLegend`** receives actual canvas dimensions.
+
+##### Defaults
+- **`defaultOuterPadding`**: slightly tighter bottom margin (**`base + 13`** vs **`base + 16`**).
+
+### 🐛 Fixed
+
+- **Legend + canvas growth**: Corner/edge legends no longer enlarged the bitmap while leaving **`chartArea*`** tied to the nominal size, which produced large empty margins (notably combo **`top-right`** and similar).
+- **Legend flush against plot**: Inset gap now uses **`legendInsetGap`** (canvas-aware) instead of a flat **`10px`** floor alone for **`applyLegendChartAreaInset`** on line/bar/combo.
+- **Corner top legends**: No redundant **`chartAreaTop += legendHeight + gap`** for **`top-left`** / **`top-right`**, so the plot gains vertical space; translucent legend may overlap the plot corner by design.
+
 ## [5.3.1] - 2026-04-29
 
 ### ✨ Added

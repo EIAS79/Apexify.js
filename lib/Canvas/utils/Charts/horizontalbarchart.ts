@@ -2,6 +2,14 @@ import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../types";
 import { createGradientFill } from "../Image/imageProperties";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
+import {
+  normalizeLegendPosition,
+  applyLegendChartAreaInset,
+  legendConsumesLeftEdge,
+  legendConsumesRightEdge,
+  type LegendPlacement,
+} from "./legendPlacement";
+import { resolveOuterPadding } from "./chartPadding";
 
 /**
  * Chart types for horizontal bar chart
@@ -153,7 +161,8 @@ textStyle?: EnhancedTextStyle;
   legend?: {
 show?: boolean;
 entries?: LegendEntry[];
-position?: 'top' | 'bottom' | 'left' | 'right';
+/** See {@link LegendPlacement}; aliases like `topLeft`, `bottom_right` accepted. */
+position?: LegendPlacement | string;
 spacing?: number;
 fontSize?: number;
 backgroundColor?: string;
@@ -291,24 +300,6 @@ function fillWithGradientOrColor(
   } else {
     ctx.fillStyle = color || defaultColor;
   }
-}
-
-/**
- * Draws an arrow at the end of an axis
- */
-function drawArrow(ctx: SKRSContext2D, x: number, y: number, angle: number, size: number): void {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-size, -size / 2);
-  ctx.lineTo(-size, size / 2);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.restore();
 }
 
 /** Truncate with ellipsis so text fits within maxWidth (for left bar labels). */
@@ -830,9 +821,7 @@ function calculateResponsiveHeight(
   dataLength: number,
   options: HorizontalBarChartOptions = {}
 ): number {
-  const padding = options.dimensions?.padding || {};
-  const paddingTop = padding.top ?? 60;
-  const paddingBottom = padding.bottom ?? 80;
+  const canvasWidth = options.dimensions?.width ?? 800;
 
   const minBarHeight = options.bars?.minHeight ?? 40;
 const barSpacing = options.bars?.spacing ?? 15;
@@ -855,7 +844,14 @@ xAxisLabelAreaHeight = tickLabelHeight + (options.axes?.x?.label ? 8 : 0) + xAxi
   const axisLabelHeight = Math.max(xAxisLabelAreaHeight, yAxisLabelHeight);
 const minBottomGap = 2;
 
-  return paddingTop + titleHeight + titleMargin + chartAreaHeight + axisLabelHeight + minBottomGap + paddingBottom;
+  const interior =
+    titleHeight + titleMargin + chartAreaHeight + axisLabelHeight + minBottomGap;
+  const pad = resolveOuterPadding(
+    options.dimensions?.padding,
+    canvasWidth,
+    Math.max(320, interior + 120)
+  );
+  return pad.top + interior + pad.bottom;
 }
 
 /**
@@ -870,12 +866,10 @@ export async function createHorizontalBarChart(
 ): Promise<Buffer> {
 
   let width = options.dimensions?.width ?? 800;
-  const padding = options.dimensions?.padding || {};
 
   const backgroundColor = options.appearance?.backgroundColor ?? '#FFFFFF';
   const axisColor = options.appearance?.axisColor ?? options.axes?.x?.color ?? options.axes?.y?.color ?? '#000000';
   const axisWidth = options.appearance?.axisWidth ?? options.axes?.x?.width ?? options.axes?.y?.width ?? 2;
-  const arrowSize = options.appearance?.arrowSize ?? 10;
 
   const chartTitle = options.labels?.title?.text;
   const chartTitleFontSize = options.labels?.title?.fontSize ?? 24;
@@ -901,7 +895,7 @@ const baseline = options.axes?.x?.baseline ?? 0;
 
   const showLegend = options.legend?.show ?? false;
   const legend = options.legend?.entries;
-const legendPosition = options.legend?.position ?? 'right';
+const legendPlacement = normalizeLegendPosition(options.legend?.position);
 
   const showGrid = options.grid?.show ?? false;
   const gridColor = options.grid?.color ?? '#E0E0E0';
@@ -915,17 +909,10 @@ const legendPosition = options.legend?.position ?? 'right';
 const lollipopLineWidth = options.bars?.lineWidth ?? 2;
 const lollipopDotSize = options.bars?.dotSize ?? 8;
 
-  const paddingTop = padding.top ?? 60;
-  const paddingRight = padding.right ?? 80;
-  const paddingBottom = padding.bottom ?? 80;
-  const paddingLeft = padding.left ?? 100;
-
   let baseHeight = calculateResponsiveHeight(data.length, options);
 
   let legendWidth = 0;
   let legendHeight = 0;
-  let extraWidth = 0;
-  let extraHeight = 0;
 const minLegendSpacing = 10;
   if (showLegend && legend && legend.length > 0) {
     const legendMaxWidth = options.legend?.maxWidth;
@@ -935,46 +922,6 @@ const minLegendSpacing = 10;
     legendWidth = legendDims.width;
     legendHeight = legendDims.height;
 
-    const legendSpacing = options.legend?.spacing ?? 20;
-
-    if (legendPosition === 'left') {
-
-      const tempCanvas = createCanvas(1, 1);
-      const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-let estimatedYAxisLabelWidth = 80;
-      if (tempCtx) {
-
-        const barLabelFontSize = options.labels?.barLabelDefaults?.fontSize ?? 14;
-        const showBarLabels = options.labels?.barLabelDefaults?.show ?? true;
-        const barLabelPosition = options.labels?.barLabelDefaults?.defaultPosition ?? 'left';
-
-        const hasLeftLabels = showBarLabels && (barLabelPosition === 'left' ||
-          data.some(item => (item.labelPosition ?? barLabelPosition) === 'left'));
-
-        if (hasLeftLabels) {
-
-          tempCtx.font = `${barLabelFontSize}px Arial`;
-          data.forEach(d => {
-            const labelWidth = tempCtx.measureText(d.label).width;
-            estimatedYAxisLabelWidth = Math.max(estimatedYAxisLabelWidth, labelWidth);
-          });
-
-          estimatedYAxisLabelWidth += 15;
-        } else {
-
-          tempCtx.font = `${tickFontSize}px Arial`;
-
-estimatedYAxisLabelWidth = 60;
-
-          estimatedYAxisLabelWidth += 30;
-        }
-      }
-      extraWidth = legendWidth + legendSpacing + estimatedYAxisLabelWidth + minLegendSpacing;
-    } else if (legendPosition === 'right') {
-      extraWidth = legendWidth + legendSpacing + minLegendSpacing;
-    } else if (legendPosition === 'top' || legendPosition === 'bottom') {
-      extraHeight = legendHeight + legendSpacing + minLegendSpacing;
-    }
   }
 
   let allValues: number[] = [];
@@ -1178,18 +1125,16 @@ estimatedYAxisLabelWidth = 60;
     barLabelColumnWidth +
     (yTickColumnWidth > 0 && barLabelColumnWidth > 0 ? 8 : 0);
 
-  if (showLegend && legend && legend.length > 0 && legendPosition === 'left') {
-    const legendSpacing = options.legend?.spacing ?? 20;
-    extraWidth = legendWidth + legendSpacing + leftCategoryGutter + minLegendSpacing;
-  }
+  const padResolved = resolveOuterPadding(options.dimensions?.padding, width, baseHeight);
+  const paddingTop = padResolved.top;
+  const paddingRight = padResolved.right;
+  const paddingBottom = padResolved.bottom;
+  const paddingLeft = padResolved.left;
 
-  const adjustedWidth = width + extraWidth;
-  const adjustedHeight = baseHeight + extraHeight;
-
-  const canvas = createCanvas(adjustedWidth, adjustedHeight);
+  const canvas = createCanvas(width, baseHeight);
   const ctx: SKRSContext2D = canvas.getContext('2d');
 
-  await paintChartCanvasBackground(ctx, canvas, adjustedWidth, adjustedHeight, options.appearance);
+  await paintChartCanvasBackground(ctx, canvas, width, baseHeight, options.appearance);
 
   const titleHeight = chartTitle ? chartTitleFontSize + 20 : 0;
 
@@ -1208,40 +1153,46 @@ let chartAreaRight = width - paddingRight;
 
 const titleMargin = chartTitle ? 20 : 0;
   let chartAreaTop = paddingTop + titleHeight + titleMargin;
+  let chartAreaBottom = baseHeight - paddingBottom;
 
-  if (showLegend && legend && legend.length > 0) {
+  if (showLegend && legend && legend.length > 0 && legendWidth > 0 && legendHeight > 0) {
     const legendSpacing = options.legend?.spacing ?? 20;
-    if (legendPosition === 'left') {
-      chartAreaLeft = paddingLeft + legendWidth + legendSpacing + leftCategoryGutter;
-chartAreaRight = width - paddingRight;
-    } else if (legendPosition === 'right') {
-
-      chartAreaLeft = paddingLeft;
-chartAreaRight = width - paddingRight;
-    } else if (legendPosition === 'top') {
-
-      chartAreaTop = paddingTop + titleHeight + legendHeight + legendSpacing + minLegendSpacing;
-    } else if (legendPosition === 'bottom') {
-
-      chartAreaTop = paddingTop + titleHeight;
+    const additionalLeftInset = legendConsumesLeftEdge(legendPlacement) ? leftCategoryGutter : 0;
+    let insetBounds = applyLegendChartAreaInset(
+      legendPlacement,
+      {
+        chartAreaLeft,
+        chartAreaRight,
+        chartAreaTop,
+        chartAreaBottom,
+      },
+      legendWidth,
+      legendHeight,
+      legendSpacing,
+      additionalLeftInset
+    );
+    if (legendConsumesRightEdge(legendPlacement)) {
+      insetBounds.chartAreaRight = width - paddingRight;
     }
+    chartAreaLeft = insetBounds.chartAreaLeft;
+    chartAreaRight = insetBounds.chartAreaRight;
+    chartAreaTop = insetBounds.chartAreaTop;
+    chartAreaBottom = insetBounds.chartAreaBottom;
   }
 
   const originX =
-    showLegend && legend && legend.length > 0 && legendPosition === 'left'
+    showLegend && legend && legend.length > 0 && legendConsumesLeftEdge(legendPlacement)
       ? chartAreaLeft
       : chartAreaLeft + leftCategoryGutter;
 
   const minBottomGap = 2;
-  const originY = baseHeight - paddingBottom - xAxisLabelAreaHeight - minBottomGap;
-  /** Plot bounds: keep top tick under arrow tip, rightmost tick left of arrow tip (matches vertical bar charts). */
+  const originY = chartAreaBottom - xAxisLabelAreaHeight - minBottomGap;
+  /** Top row for max category tick; X tailroom for value ticks only (no arrow). */
   const yTickHeadroom = Math.ceil(tickFontSize * 0.45 + 6);
   const xTickTailroom = Math.ceil(tickFontSize * 0.65 + 8);
   const axisEndY = chartAreaTop + yTickHeadroom;
   const minPlotWidth = 80;
   const axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xTickTailroom);
-  const yArrowTipY = Math.max(chartAreaTop + 2, axisEndY - arrowSize);
-  const xArrowTipX = Math.min(chartAreaRight - 2, axisEndX + arrowSize);
 
   if (chartTitle) {
     ctx.save();
@@ -1249,7 +1200,7 @@ chartAreaRight = width - paddingRight;
     ctx.textBaseline = 'top';
 
     const titleY = paddingTop + 10;
-    const titleX = adjustedWidth / 2;
+    const titleX = width / 2;
     await renderEnhancedText(
       ctx,
       chartTitle,
@@ -1266,14 +1217,12 @@ chartAreaRight = width - paddingRight;
   ctx.strokeStyle = axisColor;
   ctx.fillStyle = axisColor;
   ctx.lineWidth = axisWidth;
-  ctx.lineCap = 'round';
-
+  ctx.save();
+  ctx.lineCap = 'butt';
   ctx.beginPath();
   ctx.moveTo(originX, originY);
-  ctx.lineTo(originX, yArrowTipY + arrowSize);
+  ctx.lineTo(originX, axisEndY);
   ctx.stroke();
-
-drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
 
   const xStep = xAxisRange?.step ?? Math.ceil((xMax - xMin) / 10);
 
@@ -1283,10 +1232,9 @@ drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
 
   ctx.beginPath();
   ctx.moveTo(originX, originY);
-  ctx.lineTo(xArrowTipX - arrowSize, originY);
+  ctx.lineTo(axisEndX, originY);
   ctx.stroke();
-
-  drawArrow(ctx, xArrowTipX, originY, 0, arrowSize);
+  ctx.restore();
 
   drawXAxisTicks(ctx, originX, originY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, 'marks', xAxisTickColor);
 
@@ -1331,16 +1279,50 @@ drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
     let legendX: number, legendY: number;
     const chartAreaHeight = originY - axisEndY;
 
-    switch (legendPosition) {
+    switch (legendPlacement) {
       case 'top':
-legendX = (adjustedWidth - legendWidth) / 2;
+        legendX = (width - legendWidth) / 2;
+        legendY = paddingTop + titleHeight + minLegendSpacing;
+        break;
+      case 'top-left':
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = paddingTop + titleHeight + minLegendSpacing;
+        break;
+      case 'top-right':
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
         legendY = paddingTop + titleHeight + minLegendSpacing;
         break;
       case 'bottom':
-legendX = (adjustedWidth - legendWidth) / 2;
+        legendX = (width - legendWidth) / 2;
         {
           const naturalBottomLegendY =
-            adjustedHeight - paddingBottom - legendHeight - minLegendSpacing;
+            baseHeight - paddingBottom - legendHeight - minLegendSpacing;
+          const xTickLabelBottom = originY + 10 + tickFontSize;
+          const xAxisTitleBottom = xAxisLabel
+            ? originY + 10 + tickFontSize + xAxisTitleGap + axisLabelFontSize
+            : xTickLabelBottom;
+          const minLegendTop = xAxisTitleBottom + Math.max(8, minLegendSpacing);
+          legendY = Math.max(naturalBottomLegendY, minLegendTop);
+        }
+        break;
+      case 'bottom-left':
+        legendX = paddingLeft + minLegendSpacing;
+        {
+          const naturalBottomLegendY =
+            baseHeight - paddingBottom - legendHeight - minLegendSpacing;
+          const xTickLabelBottom = originY + 10 + tickFontSize;
+          const xAxisTitleBottom = xAxisLabel
+            ? originY + 10 + tickFontSize + xAxisTitleGap + axisLabelFontSize
+            : xTickLabelBottom;
+          const minLegendTop = xAxisTitleBottom + Math.max(8, minLegendSpacing);
+          legendY = Math.max(naturalBottomLegendY, minLegendTop);
+        }
+        break;
+      case 'bottom-right':
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        {
+          const naturalBottomLegendY =
+            baseHeight - paddingBottom - legendHeight - minLegendSpacing;
           const xTickLabelBottom = originY + 10 + tickFontSize;
           const xAxisTitleBottom = xAxisLabel
             ? originY + 10 + tickFontSize + xAxisTitleGap + axisLabelFontSize
@@ -1350,14 +1332,16 @@ legendX = (adjustedWidth - legendWidth) / 2;
         }
         break;
       case 'left':
-
         legendX = paddingLeft;
-legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
       case 'right':
       default:
-        legendX = axisEndX + minLegendSpacing;
-legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        legendX = Math.min(
+          width - paddingRight - legendWidth - minLegendSpacing,
+          axisEndX + minLegendSpacing
+        );
+        legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
     }
 
@@ -1785,19 +1769,17 @@ const spacing = 5;
   ctx.strokeStyle = axisColor;
   ctx.fillStyle = axisColor;
   ctx.lineWidth = axisWidth;
-  ctx.lineCap = 'round';
+  ctx.lineCap = 'butt';
 
   ctx.beginPath();
   ctx.moveTo(originX, originY);
-  ctx.lineTo(originX, yArrowTipY + arrowSize);
+  ctx.lineTo(originX, axisEndY);
   ctx.stroke();
-  drawArrow(ctx, originX, yArrowTipY, -Math.PI / 2, arrowSize);
 
   ctx.beginPath();
   ctx.moveTo(originX, originY);
-  ctx.lineTo(xArrowTipX - arrowSize, originY);
+  ctx.lineTo(axisEndX, originY);
   ctx.stroke();
-  drawArrow(ctx, xArrowTipX, originY, 0, arrowSize);
   ctx.restore();
 
   drawXAxisTicks(ctx, originX, originY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, 'labels', xAxisTickColor);

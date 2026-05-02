@@ -2,6 +2,7 @@ import { createPieChart } from '../utils/Charts/piechart';
 import { createBarChart } from '../utils/Charts/barchart';
 import { createHorizontalBarChart } from '../utils/Charts/horizontalbarchart';
 import { createLineChart } from '../utils/Charts/linechart';
+import { createComboChart } from '../utils/Charts/combochart';
 import { createComparisonChart } from '../utils/Charts/comparisonchart';
 import { getErrorMessage } from '../utils/core/errorUtils';
 
@@ -80,6 +81,20 @@ export class ChartCreator {
       return await createComparisonChart(options);
     } catch (error) {
       throw new Error(`createComparisonChart failed: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Bar + line on one plot with optional **secondary Y-axis** on the right.
+   * Lines default to the right scale; set `yAxis: 'primary'` to use the bar scale.
+   */
+  async createComboChart(
+    options: import('../utils/Charts/combochart').ComboChartOptions
+  ): Promise<Buffer> {
+    try {
+      return await createComboChart(options);
+    } catch (error) {
+      throw new Error(`createComboChart failed: ${getErrorMessage(error)}`);
     }
   }
 }

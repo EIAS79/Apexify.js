@@ -2,6 +2,12 @@ import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../types";
 import { createGradientFill } from "../Image/imageProperties";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
+import {
+  type LegendPlacement,
+  normalizeLegendPosition,
+  applyLegendChartAreaInset,
+} from "./legendPlacement";
+import { resolveOuterPadding } from "./chartPadding";
 
 /**
  * Pie slice data
@@ -72,7 +78,8 @@ opacity?: number;
 export interface StandardLegendConfig {
   /** When omitted, legend is shown; use `false` to hide. */
   show?: boolean;
-position?: 'top' | 'bottom' | 'left' | 'right';
+  /** Edges and corners; aliases normalized (e.g. `topLeft`, `bottom_right`). */
+  position?: LegendPlacement | string;
 fontSize?: number;
 backgroundColor?: string;
 backgroundGradient?: gradient;
@@ -382,19 +389,36 @@ const paddingBox = config.padding ?? 10;
   );
 
   let legendX: number, legendY: number;
-  const position = config.position ?? 'right';
+  const placement = normalizeLegendPosition(config.position);
   const gap = legendSpacing ?? 20;
+  const titleTop = titleHeight ?? 0;
 
   if (chartArea) {
 
-    switch (position) {
+    switch (placement) {
       case 'top':
         legendX = (canvasWidth - width) / 2;
 
-        legendY = padding.top + (titleHeight ?? 0);
+        legendY = padding.top + titleTop;
+        break;
+      case 'top-left':
+        legendX = padding.left + gap;
+        legendY = padding.top + titleTop;
+        break;
+      case 'top-right':
+        legendX = canvasWidth - padding.right - width - gap;
+        legendY = padding.top + titleTop;
         break;
       case 'bottom':
         legendX = (canvasWidth - width) / 2;
+        legendY = canvasHeight - padding.bottom - height;
+        break;
+      case 'bottom-left':
+        legendX = padding.left + gap;
+        legendY = canvasHeight - padding.bottom - height;
+        break;
+      case 'bottom-right':
+        legendX = canvasWidth - padding.right - width - gap;
         legendY = canvasHeight - padding.bottom - height;
         break;
       case 'left':
@@ -411,13 +435,29 @@ const paddingBox = config.padding ?? 10;
     }
   } else {
 
-    switch (position) {
+    switch (placement) {
       case 'top':
         legendX = (canvasWidth - width) / 2;
-        legendY = padding.top;
+        legendY = padding.top + titleTop;
+        break;
+      case 'top-left':
+        legendX = padding.left + gap;
+        legendY = padding.top + titleTop;
+        break;
+      case 'top-right':
+        legendX = canvasWidth - padding.right - width - gap;
+        legendY = padding.top + titleTop;
         break;
       case 'bottom':
         legendX = (canvasWidth - width) / 2;
+        legendY = canvasHeight - padding.bottom - height;
+        break;
+      case 'bottom-left':
+        legendX = padding.left + gap;
+        legendY = canvasHeight - padding.bottom - height;
+        break;
+      case 'bottom-right':
+        legendX = canvasWidth - padding.right - width - gap;
         legendY = canvasHeight - padding.bottom - height;
         break;
       case 'left':
@@ -684,11 +724,11 @@ export async function createPieChart(
 
   const width = options.dimensions?.width ?? 800;
   const height = options.dimensions?.height ?? 600;
-  const padding = options.dimensions?.padding || {};
-  const paddingTop = padding.top ?? 60;
-  const paddingRight = padding.right ?? 80;
-  const paddingBottom = padding.bottom ?? 80;
-  const paddingLeft = padding.left ?? 80;
+  const padResolved = resolveOuterPadding(options.dimensions?.padding, width, height);
+  const paddingTop = padResolved.top;
+  const paddingRight = padResolved.right;
+  const paddingBottom = padResolved.bottom;
+  const paddingLeft = padResolved.left;
 
   const chartType = options.type ?? 'pie';
   const donutInnerRadiusRatio = options.donutInnerRadius ?? 0.6;
@@ -767,59 +807,50 @@ const legendPadding = standardLegendConfig.padding ?? 10;
     connectedLegendSpace.bottom = boxHeight / 2 + 20;
   }
 
-  const standardLegendPosition = standardLegendConfig?.position ?? 'right';
   const legendGap = 20;
-
-  let extraWidth = 0;
-  let extraHeight = 0;
-
-  if (standardLegendEnabled) {
-    if (standardLegendPosition === 'left') {
-      extraWidth = standardLegendWidth + legendGap;
-    } else if (standardLegendPosition === 'right') {
-      extraWidth = standardLegendWidth + legendGap;
-    } else if (standardLegendPosition === 'top') {
-      extraHeight = standardLegendHeight + legendGap;
-    } else if (standardLegendPosition === 'bottom') {
-      extraHeight = standardLegendHeight + legendGap;
-    }
-  }
-
-  extraWidth = Math.max(extraWidth, connectedLegendSpace.left, connectedLegendSpace.right);
-  extraHeight = Math.max(extraHeight, connectedLegendSpace.top, connectedLegendSpace.bottom);
-
-  const adjustedWidth = width + extraWidth;
-  const adjustedHeight = height + extraHeight;
 
   let chartAreaLeft = paddingLeft;
   let chartAreaRight = width - paddingRight;
 let chartAreaTop = paddingTop + titleHeight;
   let chartAreaBottom = height - paddingBottom;
 
-  if (standardLegendEnabled) {
-    if (standardLegendPosition === 'left') {
-
-      chartAreaLeft = paddingLeft + standardLegendWidth + legendGap;
-      chartAreaRight = adjustedWidth - paddingRight;
-    } else if (standardLegendPosition === 'right') {
-
-      chartAreaLeft = paddingLeft;
-chartAreaRight = width - paddingRight;
-    } else if (standardLegendPosition === 'top') {
-
-      chartAreaTop = paddingTop + titleHeight + standardLegendHeight + legendGap;
-      chartAreaBottom = adjustedHeight - paddingBottom;
-    } else if (standardLegendPosition === 'bottom') {
-
-      chartAreaTop = paddingTop + titleHeight;
-chartAreaBottom = height - paddingBottom;
-    }
+  if (connectedLegendEnabled && legendEntries.length > 0) {
+    chartAreaLeft += connectedLegendSpace.left;
+    chartAreaRight -= connectedLegendSpace.right;
+    chartAreaTop += connectedLegendSpace.top;
+    chartAreaBottom -= connectedLegendSpace.bottom;
   }
 
-  const canvas = createCanvas(adjustedWidth, adjustedHeight);
+  if (
+    standardLegendEnabled &&
+    standardLegendConfig &&
+    legendEntries.length > 0 &&
+    standardLegendWidth > 0 &&
+    standardLegendHeight > 0
+  ) {
+    const lp = normalizeLegendPosition(standardLegendConfig.position);
+    const insetBounds = applyLegendChartAreaInset(
+      lp,
+      {
+        chartAreaLeft,
+        chartAreaRight,
+        chartAreaTop,
+        chartAreaBottom,
+      },
+      standardLegendWidth,
+      standardLegendHeight,
+      legendGap
+    );
+    chartAreaLeft = insetBounds.chartAreaLeft;
+    chartAreaRight = insetBounds.chartAreaRight;
+    chartAreaTop = insetBounds.chartAreaTop;
+    chartAreaBottom = insetBounds.chartAreaBottom;
+  }
+
+  const canvas = createCanvas(width, height);
   const ctx: SKRSContext2D = canvas.getContext('2d');
 
-  await paintChartCanvasBackground(ctx, canvas, adjustedWidth, adjustedHeight, options.appearance);
+  await paintChartCanvasBackground(ctx, canvas, width, height, options.appearance);
 
   if (chartTitle) {
     const titleStyle = options.labels?.title?.textStyle;
@@ -1069,8 +1100,8 @@ ctx.rotate(midAngle + Math.PI / 2);
       ctx,
       legendEntries,
       standardLegendConfig,
-      adjustedWidth,
-      adjustedHeight,
+      width,
+      height,
       { top: paddingTop, right: paddingRight, bottom: paddingBottom, left: paddingLeft },
       { left: chartAreaLeft, right: chartAreaRight, top: chartAreaTop, bottom: chartAreaBottom },
       legendGap,
