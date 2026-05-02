@@ -1,6 +1,6 @@
 {
   "name": "apexify.js",
-  "version": "5.3.15",
+  "version": "5.3.16",
   "description": "🎨 Advanced Canvas Rendering Library - Professional image processing, shape drawing, text effects, patterns, filters, and charts. Built with TypeScript & Rust for high performance.",
   "author": "zenith-79",
   "license": "MIT",

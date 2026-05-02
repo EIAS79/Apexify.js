@@ -74,6 +74,7 @@ export type {
   ComboChartOpacity,
   ComboChartOptions,
 } from './combochart';
+export type { LegendFitMode } from './linechart';
 export { createComboChart } from './combochart';
 
 /**

@@ -8,6 +8,10 @@ import {
   type LegendPlacement,
 } from "./legendPlacement";
 import { computeChartVerticalStack, resolveOuterPadding } from "./chartPadding";
+import {
+  computeLegendRowMetrics,
+  legendLineHeight,
+} from "./legendTextLayout";
 
 /**
  * Enhanced text styling for chart labels
@@ -52,6 +56,9 @@ export type MarkerType = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' 
  * Line smoothness type
  */
 export type SmoothnessType = 'none' | 'bezier' | 'spline';
+
+/** How legend outer width is chosen when using shared layout helpers. */
+export type LegendFitMode = 'content' | 'stretch';
 
 /**
  * Correlation/Regression line type
@@ -114,6 +121,11 @@ gradient?: gradient;
 lineWidth?: number;
 lineStyle?: LineStyle;
 smoothness?: SmoothnessType;
+  /**
+   * Chart.js–style tension in **0…1** (higher = curvier). Maps to the distance-weighted spline used for `bezier`.
+   * Default ~0.35 when omitted (library picks); typical dashboards use 0.25–0.5.
+   */
+  smoothnessTension?: number;
 showLine?: boolean;
   errorBar?: {
 show?: boolean;
@@ -164,6 +176,14 @@ labelColor?: string;
     step?: number;
   };
 values?: number[];
+  /**
+   * Numeric/domain ticks along X (derived from `range`, `values`, or data bounds).
+   * Bars/lines still use continuous **data coordinates** (`xStart`/`xEnd`, `point.x`) for layout;
+   * set both to `false` when only category names (e.g. bar labels) should appear on X.
+   */
+  showTickMarks?: boolean;
+  /** When false, no numeric/date labels under the X-axis (tick marks still follow `showTickMarks`). Default true. */
+  showTickLabels?: boolean;
   /** Tick marks + numeric labels; combo charts may infer this from matching series color when unset. */
 color?: string;
 width?: number;
@@ -237,6 +257,11 @@ textStyle?: EnhancedTextStyle;
 padding?: number;
 maxWidth?: number;
 wrapText?: boolean;
+/** `content` (default): box hugs entries, capped by `maxWidth`. `stretch`: use full `maxWidth` width when set. */
+fit?: LegendFitMode;
+minWidth?: number;
+/** Fixed outer legend width (overrides auto sizing). */
+width?: number;
   };
 
   grid?: {
@@ -1031,33 +1056,125 @@ function applyLineStyle(ctx: SKRSContext2D, style: LineStyle): void {
     case 'dashdot':
       ctx.setLineDash([10, 5, 2, 5]);
       break;
+    case 'longdash':
+      ctx.setLineDash([16, 6]);
+      break;
+    case 'shortdash':
+      ctx.setLineDash([4, 4]);
+      break;
+    case 'dashdotdot':
+      ctx.setLineDash([12, 4, 2, 4, 2, 4]);
+      break;
   }
 }
 
+function lineStyleHasDash(style: LineStyle): boolean {
+  return style !== 'solid' && style !== 'step' && style !== 'stepline';
+}
+
+function distanceBetweenPoints(
+  a: { x: number; y: number },
+  b: { x: number; y: number }
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 /**
- * Calculates Bezier control points for smooth curve
+ * Chart.js–compatible spline handles (scaled innovation / distance-weighted tension).
+ * See Chart.js `splineCurve` in helpers.curve.ts.
  */
-function calculateBezierControlPoints(
+function chartJsSplineCurve(
+  firstPoint: { x: number; y: number },
+  middlePoint: { x: number; y: number },
+  afterPoint: { x: number; y: number },
+  t: number
+): { previous: { x: number; y: number }; next: { x: number; y: number } } {
+  const d01 = distanceBetweenPoints(middlePoint, firstPoint);
+  const d12 = distanceBetweenPoints(afterPoint, middlePoint);
+  let s01 = d01 / (d01 + d12);
+  let s12 = d12 / (d01 + d12);
+  if (Number.isNaN(s01)) s01 = 0;
+  if (Number.isNaN(s12)) s12 = 0;
+
+  const fa = t * s01;
+  const fb = t * s12;
+
+  return {
+    previous: {
+      x: middlePoint.x - fa * (afterPoint.x - firstPoint.x),
+      y: middlePoint.y - fa * (afterPoint.y - firstPoint.y),
+    },
+    next: {
+      x: middlePoint.x + fb * (afterPoint.x - firstPoint.x),
+      y: middlePoint.y + fb * (afterPoint.y - firstPoint.y),
+    },
+  };
+}
+
+interface BezierRibbonPoint {
+  x: number;
+  y: number;
+  cp1x: number;
+  cp1y: number;
+  cp2x: number;
+  cp2y: number;
+}
+
+/**
+ * Per-point Bézier handles matching Chart.js `_updateBezierControlPoints` (default spline, not monotone).
+ * Stroke segment i with `bezierCurveTo(pt[i].cp2*, pt[i+1].cp1*, pt[i+1].x, pt[i+1].y)` after `moveTo(pt[0])`.
+ */
+function buildChartJsBezierRibbon(
   points: { x: number; y: number }[],
-  tension: number = 0.5
-): { cp1x: number; cp1y: number; cp2x: number; cp2y: number }[] {
-  const controlPoints: { cp1x: number; cp1y: number; cp2x: number; cp2y: number }[] = [];
+  tension: number
+): BezierRibbonPoint[] {
+  const n = points.length;
+  if (n === 0) return [];
 
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = i > 0 ? points[i - 1] : points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = i < points.length - 2 ? points[i + 2] : points[i + 1];
+  const result: BezierRibbonPoint[] = points.map((p) => ({
+    x: p.x,
+    y: p.y,
+    cp1x: p.x,
+    cp1y: p.y,
+    cp2x: p.x,
+    cp2y: p.y,
+  }));
 
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
-
-    controlPoints.push({ cp1x, cp1y, cp2x, cp2y });
+  let prev = points[0];
+  for (let i = 0; i < n; i++) {
+    const point = points[i];
+    const next = points[Math.min(i + 1, n - 1)];
+    const ctrl = chartJsSplineCurve(prev, point, next, tension);
+    result[i].cp1x = ctrl.previous.x;
+    result[i].cp1y = ctrl.previous.y;
+    result[i].cp2x = ctrl.next.x;
+    result[i].cp2y = ctrl.next.y;
+    prev = point;
   }
 
-  return controlPoints;
+  return result;
+}
+
+function clamp01(t: number): number {
+  return Math.min(1, Math.max(0, t));
+}
+
+/** Softer joins on curved strokes; butt/miter for polyline & steps (matches Chart.js defaults for dashed curves). */
+function applyCurveStrokeJoinStyle(
+  ctx: SKRSContext2D,
+  smoothness: SmoothnessType,
+  lineStyle: LineStyle
+): void {
+  const stepped = lineStyle === "step" || lineStyle === "stepline";
+  if (!stepped && smoothness !== "none") {
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+  } else {
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "butt";
+  }
 }
 
 /**
@@ -1114,7 +1231,7 @@ function calculateSplinePoints(
   }
 
   const splinePoints: { x: number; y: number }[] = [];
-const numPointsPerSegment = 20;
+  const numPointsPerSegment = 20;
 
   for (let i = 0; i < n - 1; i++) {
     const x0 = points[i].x;
@@ -1133,7 +1250,15 @@ const numPointsPerSegment = 20;
     }
   }
 
-  return splinePoints;
+  const deduped: { x: number; y: number }[] = [];
+  const eps = 1e-5;
+  for (const p of splinePoints) {
+    const last = deduped[deduped.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > eps) {
+      deduped.push(p);
+    }
+  }
+  return deduped;
 }
 
 function cubicBezier1D(p0: number, p1: number, p2: number, p3: number, t: number): number {
@@ -1148,6 +1273,7 @@ function flattenLineChartCurveToPolyline(
   canvasPoints: { x: number; y: number }[],
   smoothness: SmoothnessType,
   lineStyle: LineStyle,
+  curveTension?: number,
   /** Dense enough that “between” fills sit flush against stroked Bézier curves */
   stepsPerBezierSegment = 24
 ): { x: number; y: number }[] {
@@ -1170,18 +1296,25 @@ function flattenLineChartCurveToPolyline(
   }
 
   if (smoothness === 'bezier') {
-    const controlPoints = calculateBezierControlPoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
+    const t = clamp01(curveTension ?? 0.35);
+    const ribbon = buildChartJsBezierRibbon(
+      canvasPoints.map((p) => ({ x: p.x, y: p.y })),
+      t
+    );
     const out: { x: number; y: number }[] = [];
-    out.push({ ...canvasPoints[0] });
-    for (let i = 0; i < canvasPoints.length - 1; i++) {
-      const cp = controlPoints[i];
-      const p0 = canvasPoints[i];
-      const p1 = canvasPoints[i + 1];
+    out.push({ x: ribbon[0].x, y: ribbon[0].y });
+    for (let i = 0; i < ribbon.length - 1; i++) {
+      const p0 = ribbon[i];
+      const p3 = ribbon[i + 1];
+      const p1x = p0.cp2x;
+      const p1y = p0.cp2y;
+      const p2x = p3.cp1x;
+      const p2y = p3.cp1y;
       for (let s = 1; s <= stepsPerBezierSegment; s++) {
-        const t = s / stepsPerBezierSegment;
+        const u = s / stepsPerBezierSegment;
         out.push({
-          x: cubicBezier1D(p0.x, cp.cp1x, cp.cp2x, p1.x, t),
-          y: cubicBezier1D(p0.y, cp.cp1y, cp.cp2y, p1.y, t),
+          x: cubicBezier1D(p0.x, p1x, p2x, p3.x, u),
+          y: cubicBezier1D(p0.y, p1y, p2y, p3.y, u),
         });
       }
     }
@@ -1198,22 +1331,61 @@ function lineChartExtendPathAlongSeries(
   ctx: SKRSContext2D,
   canvasPoints: { x: number; y: number }[],
   smoothness: SmoothnessType,
-  lineStyle: LineStyle
+  lineStyle: LineStyle,
+  curveTension?: number
 ): void {
   if (canvasPoints.length < 2) return;
 
   const isStepLine = lineStyle === 'step' || lineStyle === 'stepline';
+  const tension = clamp01(curveTension ?? 0.35);
 
   if (!isStepLine && smoothness === 'bezier') {
-    const controlPoints = calculateBezierControlPoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
-    for (let i = 0; i < canvasPoints.length - 1; i++) {
-      const cp = controlPoints[i];
-      ctx.bezierCurveTo(cp.cp1x, cp.cp1y, cp.cp2x, cp.cp2y, canvasPoints[i + 1].x, canvasPoints[i + 1].y);
+    /** Dashed patterns follow arc length poorly on analytic cubics; approximate with a dense polyline (Chart.js keeps Bézier but uses round joins; we flatten for stable dashes). */
+    if (lineStyleHasDash(lineStyle)) {
+      const poly = flattenLineChartCurveToPolyline(
+        canvasPoints,
+        'bezier',
+        'solid',
+        tension,
+        36
+      );
+      for (let i = 1; i < poly.length; i++) {
+        ctx.lineTo(poly[i].x, poly[i].y);
+      }
+      return;
+    }
+
+    const ribbon = buildChartJsBezierRibbon(
+      canvasPoints.map((p) => ({ x: p.x, y: p.y })),
+      tension
+    );
+    for (let i = 0; i < ribbon.length - 1; i++) {
+      ctx.bezierCurveTo(
+        ribbon[i].cp2x,
+        ribbon[i].cp2y,
+        ribbon[i + 1].cp1x,
+        ribbon[i + 1].cp1y,
+        ribbon[i + 1].x,
+        ribbon[i + 1].y
+      );
     }
     return;
   }
 
   if (!isStepLine && smoothness === 'spline') {
+    if (lineStyleHasDash(lineStyle)) {
+      const poly = flattenLineChartCurveToPolyline(
+        canvasPoints,
+        'spline',
+        'solid',
+        curveTension,
+        36
+      );
+      for (let i = 1; i < poly.length; i++) {
+        ctx.lineTo(poly[i].x, poly[i].y);
+      }
+      return;
+    }
     const splinePoints = calculateSplinePoints(canvasPoints.map((p) => ({ x: p.x, y: p.y })));
     for (let i = 1; i < splinePoints.length; i++) {
       ctx.lineTo(splinePoints[i].x, splinePoints[i].y);
@@ -1430,29 +1602,7 @@ const numPoints = 100;
 }
 
 /**
- * Wraps text to fit within a maximum width
- */
-function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = words[0];
-
-  for (let i = 1; i < words.length; i++) {
-    const word = words[i];
-    const width = ctx.measureText(currentLine + ' ' + word).width;
-    if (width < maxWidth) {
-      currentLine += ' ' + word;
-    } else {
-      lines.push(currentLine);
-      currentLine = word;
-    }
-  }
-  lines.push(currentLine);
-  return lines;
-}
-
-/**
- * Calculates legend dimensions
+ * Calculates legend outer dimensions (tight to content unless `fit` / `maxWidth` say otherwise).
  */
 function calculateLegendDimensions(
   entries: LegendEntry[],
@@ -1460,7 +1610,10 @@ function calculateLegendDimensions(
   fontSize: number = 12,
   maxWidth?: number,
   wrapTextEnabled: boolean = true,
-  padding?: number
+  padding?: number,
+  fit: LegendFitMode = 'content',
+  explicitOuterWidth?: number,
+  minOuterWidth: number = 48
 ): { width: number; height: number } {
   if (!entries || entries.length === 0) {
     return { width: 0, height: 0 };
@@ -1469,43 +1622,60 @@ function calculateLegendDimensions(
   const boxSize = 15;
   const entrySpacing = spacing || 15;
   const paddingBox = padding ?? 8;
+  const textSpacing = 10;
 
   const tempCanvas = createCanvas(1, 1);
   const tempCtx = tempCanvas.getContext('2d');
   tempCtx.font = `${fontSize}px Arial`;
 
-  const textSpacing = 10;
-  const effectiveMaxWidth = maxWidth ? maxWidth - paddingBox * 2 - boxSize - textSpacing : undefined;
+  const outerForWrap =
+    explicitOuterWidth != null && explicitOuterWidth > 0 ? explicitOuterWidth : maxWidth;
+  const effectiveMaxWidth =
+    outerForWrap != null && outerForWrap > 0
+      ? outerForWrap - paddingBox * 2 - boxSize - textSpacing
+      : undefined;
 
   let maxEntryWidth = 0;
   const entryHeights: number[] = [];
 
-  entries.forEach(entry => {
-    let textWidth: number;
-    let textHeight: number;
-
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(tempCtx, entry.label, effectiveMaxWidth);
-      textWidth = Math.max(...wrappedLines.map(line => tempCtx.measureText(line).width));
-      textHeight = wrappedLines.length * fontSize * 1.2;
-    } else {
-      textWidth = tempCtx.measureText(entry.label).width;
-      textHeight = fontSize;
-    }
-
-    const entryWidth = boxSize + textSpacing + textWidth;
+  entries.forEach((entry) => {
+    const m = computeLegendRowMetrics(
+      tempCtx,
+      entry.label,
+      effectiveMaxWidth,
+      wrapTextEnabled,
+      fontSize,
+      boxSize
+    );
+    const entryWidth = boxSize + textSpacing + m.contentWidth;
     maxEntryWidth = Math.max(maxEntryWidth, entryWidth);
-    entryHeights.push(Math.max(boxSize, textHeight));
+    entryHeights.push(m.rowHeight);
   });
 
-  const width = maxWidth ? maxWidth : Math.max(200, maxEntryWidth + paddingBox * 2);
-  const height = entryHeights.reduce((sum, h, i) => sum + h + (i < entryHeights.length - 1 ? entrySpacing : 0), 0) + paddingBox * 2;
+  const contentOuterWidth = maxEntryWidth + paddingBox * 2;
+
+  let width: number;
+  if (explicitOuterWidth != null && explicitOuterWidth > 0) {
+    width = explicitOuterWidth;
+  } else if (fit === 'stretch' && maxWidth != null && maxWidth > 0) {
+    width = maxWidth;
+  } else if (maxWidth != null && maxWidth > 0) {
+    width = Math.min(maxWidth, contentOuterWidth);
+  } else {
+    width = contentOuterWidth;
+  }
+
+  width = Math.max(minOuterWidth, width);
+
+  const height =
+    entryHeights.reduce((sum, h, i) => sum + h + (i < entryHeights.length - 1 ? entrySpacing : 0), 0) +
+    paddingBox * 2;
 
   return { width, height };
 }
 
 /**
- * Draws legend
+ * Draws legend. Pass `layoutOuterWidth` / `layoutOuterHeight` from {@link calculateLegendDimensions} so the box matches layout.
  */
 async function drawLegend(
   ctx: SKRSContext2D,
@@ -1522,7 +1692,9 @@ async function drawLegend(
   wrapTextEnabled: boolean = true,
   backgroundGradient?: gradient,
   textGradient?: gradient,
-  textStyle?: EnhancedTextStyle
+  textStyle?: EnhancedTextStyle,
+  layoutOuterWidth?: number,
+  layoutOuterHeight?: number
 ): Promise<void> {
   if (!entries || entries.length === 0) return;
 
@@ -1535,38 +1707,42 @@ async function drawLegend(
 
   ctx.font = `${fontSize}px Arial`;
 
-  const effectiveMaxWidth = maxWidth ? maxWidth - paddingBox * 2 - boxSize - textSpacing : undefined;
+  let legendWidth: number;
+  let legendHeight: number;
+  let effectiveMaxWidth: number | undefined;
 
-  const entryHeights: number[] = [];
-  entries.forEach(entry => {
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
-      const textHeight = wrappedLines.length * fontSize * 1.2;
-      entryHeights.push(Math.max(boxSize, textHeight));
-    } else {
-      entryHeights.push(boxSize);
-    }
-  });
-
-  const legendHeight = entryHeights.reduce((sum, h, i) => sum + h + (i < entryHeights.length - 1 ? entrySpacing : 0), 0) + paddingBox * 2;
-  let legendWidth = 200;
-
-  if (maxWidth) {
-    legendWidth = maxWidth;
+  if (
+    layoutOuterWidth != null &&
+    layoutOuterHeight != null &&
+    layoutOuterWidth > 0 &&
+    layoutOuterHeight > 0
+  ) {
+    legendWidth = layoutOuterWidth;
+    legendHeight = layoutOuterHeight;
+    const inner = legendWidth - paddingBox * 2 - boxSize - textSpacing;
+    effectiveMaxWidth = inner > 0 ? inner : undefined;
   } else {
-    let maxEntryWidth = 0;
-    entries.forEach((entry) => {
-      if (wrapTextEnabled && effectiveMaxWidth) {
-        const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
-        const textWidth = Math.max(...wrappedLines.map(line => ctx.measureText(line).width));
-        maxEntryWidth = Math.max(maxEntryWidth, boxSize + textSpacing + textWidth);
-      } else {
-        const textWidth = ctx.measureText(entry.label).width;
-        maxEntryWidth = Math.max(maxEntryWidth, boxSize + textSpacing + textWidth);
-      }
-    });
-    legendWidth = Math.max(200, maxEntryWidth + paddingBox * 2);
+    const dims = calculateLegendDimensions(
+      entries,
+      spacing,
+      fontSize,
+      maxWidth,
+      wrapTextEnabled,
+      padding
+    );
+    legendWidth = dims.width;
+    legendHeight = dims.height;
+    const inner =
+      maxWidth != null && maxWidth > 0
+        ? maxWidth - paddingBox * 2 - boxSize - textSpacing
+        : undefined;
+    effectiveMaxWidth = inner != null && inner > 0 ? inner : undefined;
   }
+
+  const metricsList = entries.map((entry) =>
+    computeLegendRowMetrics(ctx, entry.label, effectiveMaxWidth, wrapTextEnabled, fontSize, boxSize)
+  );
+  const entryHeights = metricsList.map((m) => m.rowHeight);
 
   if (backgroundColor || backgroundGradient) {
     ctx.beginPath();
@@ -1611,17 +1787,16 @@ async function drawLegend(
 
     const textX = x + paddingBox + boxSize + textSpacing;
 
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
-      const lineHeight = fontSize * 1.2;
-      const startY = centerY - (wrappedLines.length - 1) * lineHeight / 2;
-
-      for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
+    const lines = metricsList[index]!.lines;
+    const lh = legendLineHeight(fontSize);
+    if (lines.length > 1) {
+      const startY = centerY - ((lines.length - 1) * lh) / 2;
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         await renderEnhancedText(
           ctx,
-          wrappedLines[lineIndex],
+          lines[lineIndex]!,
           textX,
-          startY + lineIndex * lineHeight,
+          startY + lineIndex * lh,
           textStyle,
           fontSize,
           effectiveTextColor,
@@ -1631,7 +1806,7 @@ async function drawLegend(
     } else {
       await renderEnhancedText(
         ctx,
-        entry.label,
+        lines[0] ?? entry.label,
         textX,
         centerY,
         textStyle,
@@ -1704,6 +1879,8 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
   const yAxisDateFormat = yAxisConfig.dateFormat;
   const xAxisDateTime = xAxisConfig.dateTime ?? false;
   const yAxisDateTime = yAxisConfig.dateTime ?? false;
+  const xShowTickMarks = xAxisConfig.showTickMarks !== false;
+  const xShowTickLabels = xAxisConfig.showTickLabels !== false;
 
   const allXValues: number[] = [];
   const allYValues: number[] = [];
@@ -1822,7 +1999,20 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
     const legendMaxWidth = options.legend?.maxWidth;
     const legendWrapText = options.legend?.wrapText !== false;
     const legendPadding = options.legend?.padding;
-    const legendDims = calculateLegendDimensions(entries, legendSpacing, legendFontSize, legendMaxWidth, legendWrapText, legendPadding);
+    const legendFit = options.legend?.fit ?? 'content';
+    const legendExplicitW = options.legend?.width;
+    const legendMinW = options.legend?.minWidth ?? 48;
+    const legendDims = calculateLegendDimensions(
+      entries,
+      legendSpacing,
+      legendFontSize,
+      legendMaxWidth,
+      legendWrapText,
+      legendPadding,
+      legendFit,
+      legendExplicitW,
+      legendMinW
+    );
     legendWidth = legendDims.width;
     legendHeight = legendDims.height;
 
@@ -1988,7 +2178,9 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
 
   drawYAxisTicks(ctx, originX, originY, axisEndY, yScaleMin, yScaleMax, yStep, tickFontSize, yAxisCustomValues, yAxisValueSpacing, yAxisScale, yAxisDateFormat, yAxisDateTime, yTickLabelColor);
 
-  drawXAxisTicks(ctx, originX, baselineY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, xAxisScale, xAxisDateFormat, xAxisDateTime, xTickLabelColor, 'marks');
+  if (xShowTickMarks) {
+    drawXAxisTicks(ctx, originX, baselineY, axisEndX, xMin, xMax, xStep, tickFontSize, xAxisCustomValues, xAxisValueSpacing, xAxisScale, xAxisDateFormat, xAxisDateTime, xTickLabelColor, 'marks');
+  }
 
   if (yAxisLabel) {
     ctx.save();
@@ -2017,6 +2209,7 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
     const lineWidth = serie.lineWidth ?? 2;
     const lineStyle = serie.lineStyle || 'solid';
     const smoothness = serie.smoothness || 'none';
+    const curveTension = serie.smoothnessTension;
 
     const hasCorrelation = serie.correlation && serie.correlation.type && serie.correlation.type !== 'none' && serie.correlation.show !== false;
     const showLine = serie.showLine !== false && (serie.showLine === true || !hasCorrelation);
@@ -2140,7 +2333,7 @@ shadeToYCanvas = localShadeToYCanvas;
 
         ctx.moveTo(canvasPoints[0].x, localShadeToYCanvas);
         ctx.lineTo(canvasPoints[0].x, canvasPoints[0].y);
-        lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle);
+        lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle, curveTension);
         ctx.lineTo(canvasPoints[canvasPoints.length - 1].x, localShadeToYCanvas);
 
         ctx.closePath();
@@ -2197,7 +2390,7 @@ const height = shadeToYValue - avgY;
 
         ctx.moveTo(canvasPoints[0].x, localShadeToYCanvas);
         ctx.lineTo(canvasPoints[0].x, canvasPoints[0].y);
-        lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle);
+        lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle, curveTension);
         ctx.lineTo(canvasPoints[canvasPoints.length - 1].x, localShadeToYCanvas);
 
         ctx.closePath();
@@ -2250,8 +2443,14 @@ const height = shadeToYValue - avgY;
 
         const secondSmoothness = areaConfig.secondLine.smoothness ?? 'none';
         const secondLineStyle = areaConfig.secondLine.lineStyle || 'solid';
-        const poly1 = flattenLineChartCurveToPolyline(canvasPoints, smoothness, lineStyle);
-        const poly2 = flattenLineChartCurveToPolyline(secondLinePoints, secondSmoothness, secondLineStyle);
+        const secondTension = areaConfig.secondLine.smoothnessTension;
+        const poly1 = flattenLineChartCurveToPolyline(canvasPoints, smoothness, lineStyle, curveTension);
+        const poly2 = flattenLineChartCurveToPolyline(
+          secondLinePoints,
+          secondSmoothness,
+          secondLineStyle,
+          secondTension
+        );
 
         ctx.moveTo(poly1[0].x, poly1[0].y);
         for (let i = 1; i < poly1.length; i++) {
@@ -2270,10 +2469,11 @@ const height = shadeToYValue - avgY;
         if (!secondIsStep) {
           applyLineStyle(ctx, secondLineStyle);
         }
+        applyCurveStrokeJoinStyle(ctx, secondSmoothness, secondLineStyle);
         ctx.beginPath();
         ctx.moveTo(secondLinePoints[0].x, secondLinePoints[0].y);
         if (secondLinePoints.length > 1) {
-          lineChartExtendPathAlongSeries(ctx, secondLinePoints, secondSmoothness, secondLineStyle);
+          lineChartExtendPathAlongSeries(ctx, secondLinePoints, secondSmoothness, secondLineStyle, secondTension);
         }
         ctx.stroke();
         ctx.restore();
@@ -2328,12 +2528,13 @@ const height = shadeToYValue - avgY;
       if (!isStepLine) {
         applyLineStyle(ctx, lineStyle);
       }
+      applyCurveStrokeJoinStyle(ctx, smoothness, lineStyle);
 
       if (canvasPoints.length >= 1) {
         ctx.beginPath();
         ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
         if (canvasPoints.length > 1) {
-          lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle);
+          lineChartExtendPathAlongSeries(ctx, canvasPoints, smoothness, lineStyle, curveTension);
         }
         ctx.stroke();
       }
@@ -2531,23 +2732,25 @@ const height = shadeToYValue - avgY;
   ctx.stroke();
   ctx.restore();
 
-  drawXAxisTicks(
-    ctx,
-    originX,
-    baselineY,
-    axisEndX,
-    xMin,
-    xMax,
-    xStep,
-    tickFontSize,
-    xAxisCustomValues,
-    xAxisValueSpacing,
-    xAxisScale,
-    xAxisDateFormat,
-    xAxisDateTime,
-    xTickLabelColor,
-    'labels'
-  );
+  if (xShowTickLabels) {
+    drawXAxisTicks(
+      ctx,
+      originX,
+      baselineY,
+      axisEndX,
+      xMin,
+      xMax,
+      xStep,
+      tickFontSize,
+      xAxisCustomValues,
+      xAxisValueSpacing,
+      xAxisScale,
+      xAxisDateFormat,
+      xAxisDateTime,
+      xTickLabelColor,
+      'labels'
+    );
+  }
 
   if (xAxisLabel) {
     ctx.save();
@@ -2657,7 +2860,9 @@ const height = shadeToYValue - avgY;
       legendWrapText,
       options.legend?.backgroundGradient,
       options.legend?.textGradient,
-      options.legend?.textStyle
+      options.legend?.textStyle,
+      legendWidth,
+      legendHeight
     );
   }
 
@@ -2688,6 +2893,7 @@ const height = shadeToYValue - avgY;
 
 /** Shared primitives for combo / mixed charts. */
 export {
+  applyCurveStrokeJoinStyle,
   applyLineStyle,
   calculateLegendDimensions,
   computeMaxYTickLabelWidth,

@@ -5,7 +5,30 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.3.15] - 2026-04-29
+## [5.3.16] - 2026-05-02
+
+### ✨ Added
+
+##### Legend text layout (`lib/Canvas/utils/Charts/legendTextLayout.ts`)
+- **`wrapLegendLabel`**: Word wrapping plus character-level breaks when a token is still wider than the text column (fixes long **`key:value`** strings, URLs, and unbroken words).
+- **`computeLegendRowMetrics`**, **`legendLineHeight`**, **`legendEntryRowHeightForLines`**: Single code path so legend **width/height** measurement matches **drawing** (line height ratio **~1.38** and small vertical padding for multi-line blocks).
+
+### 🔧 Improved
+
+##### Charts — legends (`linechart.ts`, `barchart.ts`, `horizontalbarchart.ts`, `piechart.ts`; combo via `linechart` helpers)
+- **`calculateLegendDimensions`** / **`drawLegend`** and bar **`drawLegendAtPosition`** use the shared layout helpers for consistent wrapped-label sizing across chart types.
+- Multi-line legend entries reserve enough vertical space so the **last** wrapped line stays inside the legend background/border.
+
+##### Pie chart (`piechart.ts`)
+- **`calculateStandardLegendDimensions`** accepts **`wrapText`** and matches **`drawStandardLegend`** when reserving layout; **`createPieChart`** passes **`standardLegendConfig.wrapText`** for reserved legend space.
+- **Connected** legend labels reuse **`wrapLegendLabel`** and the same line-height / row-height behavior as the standard legend.
+
+### 🐛 Fixed
+
+- Legend boxes that were **too tight** for long labels: horizontal overflow and **last row** clipping or sitting **outside** the legend container.
+
+
+## [5.3.15] - 2026-05-02
 
 ### ✨ Added
 

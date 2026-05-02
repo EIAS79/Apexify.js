@@ -8,6 +8,12 @@ import {
   applyLegendChartAreaInset,
 } from "./legendPlacement";
 import { resolveOuterPadding } from "./chartPadding";
+import {
+  computeLegendRowMetrics,
+  legendEntryRowHeightForLines,
+  legendLineHeight,
+  wrapLegendLabel,
+} from "./legendTextLayout";
 
 /**
  * Pie slice data
@@ -284,28 +290,6 @@ function fillWithGradientOrColor(
 }
 
 /**
- * Wraps text to fit within a maximum width
- */
-function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = words[0];
-
-  for (let i = 1; i < words.length; i++) {
-    const word = words[i];
-    const width = ctx.measureText(currentLine + ' ' + word).width;
-    if (width < maxWidth) {
-      currentLine += ' ' + word;
-    } else {
-      lines.push(currentLine);
-      currentLine = word;
-    }
-  }
-  lines.push(currentLine);
-  return lines;
-}
-
-/**
  * Calculates dimensions for standard legend with text wrapping
  */
 function calculateStandardLegendDimensions(
@@ -313,7 +297,8 @@ function calculateStandardLegendDimensions(
   fontSize: number,
   spacing: number,
   padding: number,
-  maxWidth?: number
+  maxWidth?: number,
+  wrapTextEnabled: boolean = true
 ): { width: number; height: number; entryHeights: number[] } {
 
   const tempCanvas = createCanvas(1, 1);
@@ -322,27 +307,28 @@ function calculateStandardLegendDimensions(
 
   const boxSize = Math.max(18, fontSize * 1.2);
   const textSpacing = 12;
-  const effectiveMaxWidth = maxWidth ? maxWidth - padding * 2 - boxSize - textSpacing : undefined;
+  const inner =
+    maxWidth != null && maxWidth > 0
+      ? maxWidth - padding * 2 - boxSize - textSpacing
+      : undefined;
+  const effectiveMaxWidth =
+    inner != null && inner > 0 ? inner : undefined;
 
   let maxEntryWidth = 0;
   const entryHeights: number[] = [];
 
   entries.forEach(entry => {
-    let textWidth: number;
-    let textHeight: number;
-
-    if (effectiveMaxWidth) {
-      const wrappedLines = wrapText(tempCtx, entry.label, effectiveMaxWidth);
-      textWidth = Math.max(...wrappedLines.map(line => tempCtx.measureText(line).width));
-textHeight = wrappedLines.length * fontSize * 1.2;
-    } else {
-      textWidth = tempCtx.measureText(entry.label).width;
-      textHeight = fontSize;
-    }
-
-    const entryWidth = boxSize + textSpacing + textWidth;
+    const m = computeLegendRowMetrics(
+      tempCtx,
+      entry.label,
+      effectiveMaxWidth,
+      wrapTextEnabled,
+      fontSize,
+      boxSize
+    );
+    const entryWidth = boxSize + textSpacing + m.contentWidth;
     maxEntryWidth = Math.max(maxEntryWidth, entryWidth);
-    entryHeights.push(Math.max(boxSize, textHeight));
+    entryHeights.push(m.rowHeight);
   });
 
   const width = maxWidth ? maxWidth : maxEntryWidth + padding * 2;
@@ -385,7 +371,8 @@ const paddingBox = config.padding ?? 10;
     fontSize,
     spacing,
     paddingBox,
-    maxWidth
+    maxWidth,
+    wrapTextEnabled
   );
 
   let legendX: number, legendY: number;
@@ -493,7 +480,16 @@ const paddingBox = config.padding ?? 10;
 
   const boxSize = Math.max(18, fontSize * 1.2);
   const textSpacing = 12;
-  const effectiveMaxWidth = maxWidth ? maxWidth - paddingBox * 2 - boxSize - textSpacing : undefined;
+  const inner =
+    maxWidth != null && maxWidth > 0
+      ? maxWidth - paddingBox * 2 - boxSize - textSpacing
+      : undefined;
+  const effectiveMaxWidth =
+    inner != null && inner > 0 ? inner : undefined;
+
+  const metricsList = entries.map((entry) =>
+    computeLegendRowMetrics(ctx, entry.label, effectiveMaxWidth, wrapTextEnabled, fontSize, boxSize)
+  );
 
   let currentY = legendY + paddingBox;
 
@@ -519,17 +515,16 @@ const paddingBox = config.padding ?? 10;
     const textX = legendX + paddingBox + boxSize + textSpacing;
     const labelTextColor = config.textGradient ? undefined : (config.textColor || textColor);
 
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
-      const lineHeight = fontSize * 1.2;
-      const startY = centerY - (wrappedLines.length - 1) * lineHeight / 2;
-
-      for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
+    const lines = metricsList[index]!.lines;
+    const lh = legendLineHeight(fontSize);
+    if (lines.length > 1) {
+      const startY = centerY - ((lines.length - 1) * lh) / 2;
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         await renderEnhancedText(
           ctx,
-          wrappedLines[lineIndex],
+          lines[lineIndex]!,
           textX,
-          startY + lineIndex * lineHeight,
+          startY + lineIndex * lh,
           config.textStyle,
           fontSize,
           labelTextColor,
@@ -539,7 +534,7 @@ const paddingBox = config.padding ?? 10;
     } else {
       await renderEnhancedText(
         ctx,
-        entry.label,
+        lines[0] ?? entry.label,
         textX,
         centerY,
         config.textStyle,
@@ -614,10 +609,10 @@ const labelRadius = radius + 20;
     let textHeight: number;
     let textWidth: number;
 
-    if (wrapTextEnabled) {
-      wrappedLines = wrapText(ctx, entry.label, textMaxWidth);
+    if (wrapTextEnabled && textMaxWidth > 0) {
+      wrappedLines = wrapLegendLabel(ctx, entry.label, textMaxWidth);
       textWidth = Math.max(...wrappedLines.map(line => ctx.measureText(line).width));
-      textHeight = wrappedLines.length * fontSize * 1.2;
+      textHeight = legendEntryRowHeightForLines(wrappedLines, fontSize, 0);
     } else {
       wrappedLines = [entry.label];
       textWidth = ctx.measureText(entry.label).width;
@@ -666,8 +661,8 @@ const labelRadius = radius + 20;
     const textMaxWidth = maxWidth - padding * 2;
     let wrappedLines: string[];
 
-    if (wrapTextEnabled) {
-      wrappedLines = wrapText(ctx, entry.label, textMaxWidth);
+    if (wrapTextEnabled && textMaxWidth > 0) {
+      wrappedLines = wrapLegendLabel(ctx, entry.label, textMaxWidth);
     } else {
       wrappedLines = [entry.label];
     }
@@ -698,7 +693,7 @@ const labelRadius = radius + 20;
     ctx.textBaseline = 'middle';
 
     if (wrapTextEnabled && wrappedLines.length > 1) {
-      const lineHeight = fontSize * 1.2;
+      const lineHeight = legendLineHeight(fontSize);
       const startY = pos.boxY - (wrappedLines.length - 1) * lineHeight / 2;
       const textX = pos.isLeftSide ? pos.boxX + pos.boxWidth - padding : pos.boxX + padding;
 
@@ -780,12 +775,14 @@ const legendSpacing = standardLegendConfig.spacing ?? 18;
 const legendPadding = standardLegendConfig.padding ?? 10;
     const legendMaxWidth = standardLegendConfig.maxWidth;
 
+    const legendWrapText = standardLegendConfig.wrapText !== false;
     const { width: legWidth, height: legHeight } = calculateStandardLegendDimensions(
       legendEntries,
       legendFontSize,
       legendSpacing,
       legendPadding,
-      legendMaxWidth
+      legendMaxWidth,
+      legendWrapText
     );
     standardLegendWidth = legWidth;
     standardLegendHeight = legHeight;

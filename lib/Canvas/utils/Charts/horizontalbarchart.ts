@@ -10,6 +10,10 @@ import {
   type LegendPlacement,
 } from "./legendPlacement";
 import { resolveOuterPadding } from "./chartPadding";
+import {
+  computeLegendRowMetrics,
+  legendLineHeight,
+} from "./legendTextLayout";
 
 /**
  * Chart types for horizontal bar chart
@@ -604,28 +608,6 @@ function drawGrid(
 }
 
 /**
- * Wraps text to fit within a maximum width
- */
-function wrapText(ctx: SKRSContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = words[0];
-
-  for (let i = 1; i < words.length; i++) {
-    const word = words[i];
-    const width = ctx.measureText(currentLine + ' ' + word).width;
-    if (width < maxWidth) {
-      currentLine += ' ' + word;
-    } else {
-      lines.push(currentLine);
-      currentLine = word;
-    }
-  }
-  lines.push(currentLine);
-  return lines;
-}
-
-/**
  * Calculates legend dimensions without needing a canvas context
  */
 function calculateLegendDimensions(
@@ -646,27 +628,28 @@ function calculateLegendDimensions(
   tempCtx.font = `${fontSize}px Arial`;
 
   const textSpacing = 10;
-  const effectiveMaxWidth = maxWidth ? maxWidth - padding * 2 - boxSize - textSpacing : undefined;
+  const inner =
+    maxWidth != null && maxWidth > 0
+      ? maxWidth - padding * 2 - boxSize - textSpacing
+      : undefined;
+  const effectiveMaxWidth =
+    inner != null && inner > 0 ? inner : undefined;
 
   let maxEntryWidth = 0;
   const entryHeights: number[] = [];
 
   legend.forEach(entry => {
-    let textWidth: number;
-    let textHeight: number;
-
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(tempCtx, entry.label, effectiveMaxWidth);
-      textWidth = Math.max(...wrappedLines.map(line => tempCtx.measureText(line).width));
-      textHeight = wrappedLines.length * fontSize * 1.2;
-    } else {
-      textWidth = tempCtx.measureText(entry.label).width;
-      textHeight = fontSize;
-    }
-
-    const entryWidth = boxSize + textSpacing + textWidth;
+    const m = computeLegendRowMetrics(
+      tempCtx,
+      entry.label,
+      effectiveMaxWidth,
+      wrapTextEnabled,
+      fontSize,
+      boxSize
+    );
+    const entryWidth = boxSize + textSpacing + m.contentWidth;
     maxEntryWidth = Math.max(maxEntryWidth, entryWidth);
-    entryHeights.push(Math.max(boxSize, textHeight));
+    entryHeights.push(m.rowHeight);
   });
 
   const legendWidth = maxWidth ? maxWidth : maxEntryWidth + padding * 2;
@@ -710,28 +693,22 @@ async function drawLegendAtPosition(
   const effectiveBorderColor = borderColor ?? (isDarkBackground ? '#FFFFFF' : '#000000');
 
   const textSpacing = 10;
-  const effectiveMaxWidth = maxWidth ? maxWidth - padding * 2 - boxSize - textSpacing : undefined;
+  const inner =
+    maxWidth != null && maxWidth > 0
+      ? maxWidth - padding * 2 - boxSize - textSpacing
+      : undefined;
+  const effectiveMaxWidth =
+    inner != null && inner > 0 ? inner : undefined;
+
+  const metricsList = legend.map((entry) =>
+    computeLegendRowMetrics(ctx, entry.label, effectiveMaxWidth, wrapTextEnabled, fontSize, boxSize)
+  );
 
   let maxEntryWidth = 0;
-  const entryHeights: number[] = [];
-
-  legend.forEach(entry => {
-    let textWidth: number;
-    let textHeight: number;
-
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
-      textWidth = Math.max(...wrappedLines.map(line => ctx.measureText(line).width));
-      textHeight = wrappedLines.length * fontSize * 1.2;
-    } else {
-      textWidth = ctx.measureText(entry.label).width;
-      textHeight = fontSize;
-    }
-
-    const entryWidth = boxSize + textSpacing + textWidth;
-    maxEntryWidth = Math.max(maxEntryWidth, entryWidth);
-    entryHeights.push(Math.max(boxSize, textHeight));
-  });
+  for (const m of metricsList) {
+    maxEntryWidth = Math.max(maxEntryWidth, boxSize + textSpacing + m.contentWidth);
+  }
+  const entryHeights = metricsList.map((m) => m.rowHeight);
 
   const legendWidth = maxWidth ? maxWidth : maxEntryWidth + padding * 2;
   const legendHeight = entryHeights.reduce((sum, h, i) => sum + h + (i < entryHeights.length - 1 ? spacing : 0), 0) + padding * 2;
@@ -778,17 +755,16 @@ async function drawLegendAtPosition(
 
     const textX = legendX + padding + boxSize + textSpacing;
 
-    if (wrapTextEnabled && effectiveMaxWidth) {
-      const wrappedLines = wrapText(ctx, entry.label, effectiveMaxWidth);
-      const lineHeight = fontSize * 1.2;
-      const startY = centerY - (wrappedLines.length - 1) * lineHeight / 2;
-
-      for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
+    const lines = metricsList[index]!.lines;
+    const lh = legendLineHeight(fontSize);
+    if (lines.length > 1) {
+      const startY = centerY - ((lines.length - 1) * lh) / 2;
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         await renderEnhancedText(
           ctx,
-          wrappedLines[lineIndex],
+          lines[lineIndex]!,
           textX,
-          startY + lineIndex * lineHeight,
+          startY + lineIndex * lh,
           textStyle,
           fontSize,
           effectiveTextColor,
@@ -798,7 +774,7 @@ async function drawLegendAtPosition(
     } else {
       await renderEnhancedText(
         ctx,
-        entry.label,
+        lines[0] ?? entry.label,
         textX,
         centerY,
         textStyle,

@@ -35,6 +35,7 @@ function collectComboBarScaleValues(bars: BarChartData[], barsType: ComboBarsTyp
 }
 import type { AxisConfig, EnhancedTextStyle, LegendEntry, LineSeries } from "./linechart";
 import {
+  applyCurveStrokeJoinStyle,
   applyLineStyle,
   calculateLegendDimensions,
   computeMaxYTickLabelWidth,
@@ -159,6 +160,15 @@ export interface ComboChartOptions {
     padding?: number;
     maxWidth?: number;
     wrapText?: boolean;
+    /**
+     * `content` (default): outer width hugs entries, capped by `maxWidth`.
+     * `stretch`: when `maxWidth` is set, the legend box uses that full width (e.g. bottom strip).
+     */
+    fit?: "content" | "stretch";
+    /** Minimum outer width when using `fit: 'content'` (default 48). */
+    minWidth?: number;
+    /** Fixed outer width (overrides auto layout). */
+    width?: number;
   };
 
   grid?: { show?: boolean; color?: string; width?: number };
@@ -295,7 +305,8 @@ async function renderComboLineSeries(
     const lineColor = serie.color || "#E67E22";
     const lineWidth = serie.lineWidth ?? 2;
     const lineStyle = serie.lineStyle || "solid";
-    const smoothness = serie.smoothness || "none";
+    const smoothness = serie.smoothness ?? "bezier";
+    const smoothTension = serie.smoothnessTension;
 
     const serieOpacity = (serie.opacity ?? 1) * layerOpacity;
     const hasCorrelation =
@@ -376,7 +387,8 @@ async function renderComboLineSeries(
             ctx,
             canvasPoints,
             smoothness as import("./linechart").SmoothnessType,
-            lineStyle as import("./linechart").LineStyle
+            lineStyle as import("./linechart").LineStyle,
+            smoothTension
           );
         }
         ctx.lineTo(canvasPoints[canvasPoints.length - 1].x, shadeToYCanvas);
@@ -395,6 +407,11 @@ async function renderComboLineSeries(
       ctx.lineWidth = lineWidth;
       const isStepLine = lineStyle === "step" || lineStyle === "stepline";
       if (!isStepLine) applyLineStyle(ctx, lineStyle as import("./linechart").LineStyle);
+      applyCurveStrokeJoinStyle(
+        ctx,
+        smoothness as import("./linechart").SmoothnessType,
+        lineStyle as import("./linechart").LineStyle
+      );
 
       ctx.beginPath();
       ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
@@ -403,7 +420,8 @@ async function renderComboLineSeries(
           ctx,
           canvasPoints,
           smoothness as import("./linechart").SmoothnessType,
-          lineStyle as import("./linechart").LineStyle
+          lineStyle as import("./linechart").LineStyle,
+          smoothTension
         );
       }
       ctx.stroke();
@@ -582,6 +600,10 @@ async function renderComboLineSeries(
  * Bar + line combo chart with optional **secondary Y-axis** on the right.
  * Bars support `barsType`: standard (`value`), **grouped** or **stacked** (`values` + segment colors).
  * Lines default to the secondary axis; set `yAxis: 'primary'` to plot on the bar scale.
+ *
+ * **X-axis coordinates:** each bar uses `xStart`/`xEnd` (and line points use `x`) on a **continuous**
+ * scale so bars and lines align; that domain is not optional. Use {@link AxisConfig.showTickLabels}
+ * / `showTickMarks` to hide numeric ticks when categories are shown only via bar labels.
  */
 export async function createComboChart(
   options: ComboChartOptions
@@ -612,6 +634,8 @@ export async function createComboChart(
     options.appearance?.axisWidth ?? options.axes?.x?.width ?? options.axes?.y?.width ?? 2;
 
   const xAxisConfig = options.axes?.x || {};
+  const xShowTickMarks = xAxisConfig.showTickMarks !== false;
+  const xShowTickLabels = xAxisConfig.showTickLabels !== false;
   const yAxisPrimaryConfig = options.axes?.y || {};
   const yAxisSecondaryConfig = options.axes?.ySecondary || {};
 
@@ -759,13 +783,17 @@ export async function createComboChart(
       yScaleMin = Math.min(yScaleMin, baseline);
       yScaleMax = Math.max(yScaleMax, baseline);
     } else if (dataVals.length > 0) {
-      yScaleMin = Math.min(...dataVals);
-      yScaleMax = Math.max(...dataVals);
-      yScaleMin = Math.min(yScaleMin, baseline);
-      yScaleMax = Math.max(yScaleMax, baseline);
+      const rawMin = Math.min(...dataVals);
+      const rawMax = Math.max(...dataVals);
+      yScaleMin = Math.min(rawMin, baseline);
+      yScaleMax = Math.max(rawMax, baseline);
       const pad = (yScaleMax - yScaleMin || 1) * 0.1;
       yScaleMin -= pad;
       yScaleMax += pad;
+      // Avoid wasted negative domain when every sample is on or above baseline (typical positive-only bars).
+      if (scale !== "log" && rawMin >= baseline) {
+        yScaleMin = Math.max(baseline, yScaleMin);
+      }
       yStep = Math.ceil((yScaleMax - yScaleMin) / 10);
     } else {
       yScaleMin = fallbackWhenEmpty[0];
@@ -810,13 +838,19 @@ export async function createComboChart(
     const legendMaxWidth = options.legend?.maxWidth;
     const legendWrapText = options.legend?.wrapText !== false;
     const legendPadding = options.legend?.padding;
+    const legendFit = options.legend?.fit ?? "content";
+    const legendExplicitW = options.legend?.width;
+    const legendMinW = options.legend?.minWidth ?? 48;
     const legendDims = calculateLegendDimensions(
       mergedLegendEntries,
       legendSpacing,
       legendFontSize,
       legendMaxWidth,
       legendWrapText,
-      legendPadding
+      legendPadding,
+      legendFit,
+      legendExplicitW,
+      legendMinW
     );
     legendWidth = legendDims.width;
     legendHeight = legendDims.height;
@@ -1058,27 +1092,29 @@ export async function createComboChart(
   );
   ctx.restore();
 
-  ctx.save();
-  ctx.globalAlpha = op.xAxis ?? 1;
-  ctx.strokeStyle = xTickLabelColor;
-  drawXAxisTicks(
-    ctx,
-    originX,
-    baselineY,
-    axisEndX,
-    xMin,
-    xMax,
-    xStep,
-    tickFontSize,
-    xAxisCustomValues,
-    xAxisValueSpacing,
-    xAxisScale,
-    xAxisDateFormat,
-    xAxisDateTime,
-    xTickLabelColor,
-    "marks"
-  );
-  ctx.restore();
+  if (xShowTickMarks) {
+    ctx.save();
+    ctx.globalAlpha = op.xAxis ?? 1;
+    ctx.strokeStyle = xTickLabelColor;
+    drawXAxisTicks(
+      ctx,
+      originX,
+      baselineY,
+      axisEndX,
+      xMin,
+      xMax,
+      xStep,
+      tickFontSize,
+      xAxisCustomValues,
+      xAxisValueSpacing,
+      xAxisScale,
+      xAxisDateFormat,
+      xAxisDateTime,
+      xTickLabelColor,
+      "marks"
+    );
+    ctx.restore();
+  }
 
   if (showGrid) {
     ctx.save();
@@ -1622,27 +1658,29 @@ export async function createComboChart(
   ctx.stroke();
   ctx.restore();
 
-  ctx.save();
-  ctx.globalAlpha = op.xAxis ?? 1;
-  ctx.strokeStyle = xTickLabelColor;
-  drawXAxisTicks(
-    ctx,
-    originX,
-    baselineY,
-    axisEndX,
-    xMin,
-    xMax,
-    xStep,
-    tickFontSize,
-    xAxisCustomValues,
-    xAxisValueSpacing,
-    xAxisScale,
-    xAxisDateFormat,
-    xAxisDateTime,
-    xTickLabelColor,
-    "labels"
-  );
-  ctx.restore();
+  if (xShowTickLabels) {
+    ctx.save();
+    ctx.globalAlpha = op.xAxis ?? 1;
+    ctx.strokeStyle = xTickLabelColor;
+    drawXAxisTicks(
+      ctx,
+      originX,
+      baselineY,
+      axisEndX,
+      xMin,
+      xMax,
+      xStep,
+      tickFontSize,
+      xAxisCustomValues,
+      xAxisValueSpacing,
+      xAxisScale,
+      xAxisDateFormat,
+      xAxisDateTime,
+      xTickLabelColor,
+      "labels"
+    );
+    ctx.restore();
+  }
 
   if (yPrimaryLabel) {
     ctx.save();
@@ -1790,7 +1828,9 @@ export async function createComboChart(
       legendWrapText,
       options.legend?.backgroundGradient,
       options.legend?.textGradient,
-      options.legend?.textStyle
+      options.legend?.textStyle,
+      legendWidth,
+      legendHeight
     );
     ctx.restore();
   }
