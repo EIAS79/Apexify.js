@@ -1775,7 +1775,7 @@ export async function createComboChart(
 
     switch (legendPlacement) {
       case "top":
-        legendX = (baseWidth - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         legendY = vstack.chartAreaTopStart;
         break;
       case "top-left":
@@ -1787,7 +1787,7 @@ export async function createComboChart(
         legendY = vstack.legendCornerTopY;
         break;
       case "bottom":
-        legendX = (baseWidth - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         legendY =
           height - paddingBottom - legendHeight - minLegendSpacing;
         break;
@@ -1804,6 +1804,22 @@ export async function createComboChart(
       case "left":
         legendX = paddingLeft + minLegendSpacing;
         legendY = axisEndY + (plotHeight - legendHeight) / 2;
+        break;
+      case "left-top":
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case "left-bottom":
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = originY - legendHeight - minLegendSpacing;
+        break;
+      case "right-top":
+        legendX = baseWidth - paddingRight - legendWidth - minLegendSpacing;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case "right-bottom":
+        legendX = baseWidth - paddingRight - legendWidth - minLegendSpacing;
+        legendY = originY - legendHeight - minLegendSpacing;
         break;
       case "right":
       default:

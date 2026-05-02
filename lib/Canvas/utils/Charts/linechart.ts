@@ -2769,7 +2769,7 @@ const height = shadeToYValue - avgY;
 
     switch (legendPlacement) {
       case 'top':
-        legendX = (width - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         legendY = vstack.chartAreaTopStart;
         break;
       case 'top-left':
@@ -2781,7 +2781,7 @@ const height = shadeToYValue - avgY;
         legendY = vstack.legendCornerTopY;
         break;
       case 'bottom':
-        legendX = (width - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         {
           const naturalBottomLegendY =
             height - paddingBottom - legendHeight - minLegendSpacing;
@@ -2822,6 +2822,22 @@ const height = shadeToYValue - avgY;
       case 'left':
         legendX = paddingLeft + minLegendSpacing;
         legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        break;
+      case 'left-top':
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case 'left-bottom':
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = originY - legendHeight - minLegendSpacing;
+        break;
+      case 'right-top':
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case 'right-bottom':
+        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendY = originY - legendHeight - minLegendSpacing;
         break;
       case 'right':
       default:

@@ -381,10 +381,14 @@ const paddingBox = config.padding ?? 10;
   const titleTop = titleHeight ?? 0;
 
   if (chartArea) {
+    const centerXInChart =
+      chartArea.left + (chartArea.right - chartArea.left - width) / 2;
+    const centerYInChart =
+      chartArea.top + (chartArea.bottom - chartArea.top - height) / 2;
 
     switch (placement) {
       case 'top':
-        legendX = (canvasWidth - width) / 2;
+        legendX = centerXInChart;
 
         legendY = padding.top + titleTop;
         break;
@@ -397,7 +401,7 @@ const paddingBox = config.padding ?? 10;
         legendY = padding.top + titleTop;
         break;
       case 'bottom':
-        legendX = (canvasWidth - width) / 2;
+        legendX = centerXInChart;
         legendY = canvasHeight - padding.bottom - height;
         break;
       case 'bottom-left':
@@ -410,15 +414,31 @@ const paddingBox = config.padding ?? 10;
         break;
       case 'left':
         legendX = chartArea.left - width - gap;
-        legendY = (canvasHeight - height) / 2;
+        legendY = centerYInChart;
+        break;
+      case 'left-top':
+        legendX = chartArea.left - width - gap;
+        legendY = chartArea.top + gap;
+        break;
+      case 'left-bottom':
+        legendX = chartArea.left - width - gap;
+        legendY = chartArea.bottom - height - gap;
         break;
       case 'right':
         legendX = chartArea.right + gap;
-        legendY = (canvasHeight - height) / 2;
+        legendY = centerYInChart;
+        break;
+      case 'right-top':
+        legendX = chartArea.right + gap;
+        legendY = chartArea.top + gap;
+        break;
+      case 'right-bottom':
+        legendX = chartArea.right + gap;
+        legendY = chartArea.bottom - height - gap;
         break;
       default:
         legendX = chartArea.right + gap;
-        legendY = (canvasHeight - height) / 2;
+        legendY = centerYInChart;
     }
   } else {
 
@@ -451,9 +471,25 @@ const paddingBox = config.padding ?? 10;
         legendX = padding.left;
         legendY = (canvasHeight - height) / 2;
         break;
+      case 'left-top':
+        legendX = padding.left;
+        legendY = padding.top + titleTop + gap;
+        break;
+      case 'left-bottom':
+        legendX = padding.left;
+        legendY = canvasHeight - padding.bottom - height - gap;
+        break;
       case 'right':
         legendX = canvasWidth - padding.right - width;
         legendY = (canvasHeight - height) / 2;
+        break;
+      case 'right-top':
+        legendX = canvasWidth - padding.right - width;
+        legendY = padding.top + titleTop + gap;
+        break;
+      case 'right-bottom':
+        legendX = canvasWidth - padding.right - width;
+        legendY = canvasHeight - padding.bottom - height - gap;
         break;
       default:
         legendX = canvasWidth - padding.right - width;

@@ -1,6 +1,11 @@
 /**
  * Canonical legend positions for chart layout.
- * Accepts aliases via {@link normalizeLegendPosition} (e.g. `topLeft`, `bottom_right`).
+ * Accepts aliases via {@link normalizeLegendPosition} (e.g. `topLeft`, `right_top`).
+ * First word = band (top/bottom strip or left/right margin); `right-top` is not `top-right`.
+ *
+ * **Cardinal** (`top` | `bottom` | `left` | `right`): legend sits centered on that side —
+ * top/bottom → horizontal center in the top/bottom margin; left/right → vertical center beside the plot.
+ * Compound keys (`top-right`, `left-top`, …) pin to a corner or edge segment instead.
  */
 export type LegendPlacement =
   | 'top'
@@ -10,8 +15,20 @@ export type LegendPlacement =
   | 'top-left'
   | 'top-right'
   | 'bottom-left'
-  | 'bottom-right';
+  | 'bottom-right'
+  /** Right margin beside the plot, vertically aligned to the top (not the same as `top-right`). */
+  | 'right-top'
+  /** Right margin beside the plot, vertically aligned to the bottom. */
+  | 'right-bottom'
+  /** Left margin beside the plot, vertically aligned to the top (not the same as `top-left`). */
+  | 'left-top'
+  /** Left margin beside the plot, vertically aligned to the bottom. */
+  | 'left-bottom';
 
+/**
+ * First word = primary band (top/bottom strip vs left/right strip); second = alignment within it.
+ * E.g. `top-right` = above the chart, flush right; `right-top` = beside the chart on the right, top-aligned.
+ */
 export function normalizeLegendPosition(raw: string | undefined): LegendPlacement {
   const key = String(raw ?? 'right')
     .toLowerCase()
@@ -24,26 +41,42 @@ export function normalizeLegendPosition(raw: string | undefined): LegendPlacemen
     right: 'right',
     'top-left': 'top-left',
     topleft: 'top-left',
-    lefttop: 'top-left',
     'top-right': 'top-right',
     topright: 'top-right',
-    righttop: 'top-right',
     'bottom-left': 'bottom-left',
     bottomleft: 'bottom-left',
-    leftbottom: 'bottom-left',
     'bottom-right': 'bottom-right',
     bottomright: 'bottom-right',
-    rightbottom: 'bottom-right',
+    'right-top': 'right-top',
+    righttop: 'right-top',
+    'right-bottom': 'right-bottom',
+    rightbottom: 'right-bottom',
+    'left-top': 'left-top',
+    lefttop: 'left-top',
+    'left-bottom': 'left-bottom',
+    leftbottom: 'left-bottom',
   };
   return map[key] ?? 'right';
 }
 
 export function legendConsumesLeftEdge(p: LegendPlacement): boolean {
-  return p === 'left' || p === 'top-left' || p === 'bottom-left';
+  return (
+    p === 'left' ||
+    p === 'top-left' ||
+    p === 'bottom-left' ||
+    p === 'left-top' ||
+    p === 'left-bottom'
+  );
 }
 
 export function legendConsumesRightEdge(p: LegendPlacement): boolean {
-  return p === 'right' || p === 'top-right' || p === 'bottom-right';
+  return (
+    p === 'right' ||
+    p === 'top-right' ||
+    p === 'bottom-right' ||
+    p === 'right-top' ||
+    p === 'right-bottom'
+  );
 }
 
 export function legendConsumesTopEdge(p: LegendPlacement): boolean {
@@ -54,7 +87,7 @@ export function legendConsumesBottomEdge(p: LegendPlacement): boolean {
   return p === 'bottom' || p === 'bottom-left' || p === 'bottom-right';
 }
 
-/** Legend in a top corner may overlap the plot horizontally only — avoid full-width vertical inset. */
+/** True for `top-left` / `top-right`. Plot layout still reserves the same top band as {@link legendConsumesTopEdge}; inset adds horizontal + vertical clearance like full `top`. */
 export function legendIsCornerTop(p: LegendPlacement): boolean {
   return p === 'top-left' || p === 'top-right';
 }
@@ -101,9 +134,11 @@ export function applyLegendChartAreaInset(
       break;
     case 'top-left':
       bumpLeft();
+      chartAreaTop += h;
       break;
     case 'top-right':
       chartAreaRight -= w;
+      chartAreaTop += h;
       break;
     case 'bottom-left':
       bumpLeft();
@@ -112,6 +147,14 @@ export function applyLegendChartAreaInset(
     case 'bottom-right':
       chartAreaRight -= w;
       chartAreaBottom -= h;
+      break;
+    case 'right-top':
+    case 'right-bottom':
+      chartAreaRight -= w;
+      break;
+    case 'left-top':
+    case 'left-bottom':
+      bumpLeft();
       break;
     default:
       chartAreaRight -= w;

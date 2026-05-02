@@ -1,5 +1,5 @@
 import type { LegendPlacement } from "./legendPlacement";
-import { legendConsumesTopEdge, legendIsCornerTop } from "./legendPlacement";
+import { legendConsumesTopEdge } from "./legendPlacement";
 
 /**
  * Outer margins scale with canvas size so plots use most of the frame on large canvases.
@@ -72,12 +72,12 @@ export function computeChartVerticalStack(options: ChartVerticalStackOptions): {
   const floor = options.minLegendInsetFloor ?? 10;
   const legendInsetGap = Math.max(floor, stack.legendToPlot);
 
+  /** Any legend in the top margin (`top`, `top-left`, `top-right`) uses the same title→plot spacing so the plot does not jump when switching between them. */
   const legendAtTop =
     options.showLegend &&
     options.legendWidth > 0 &&
     options.legendHeight > 0 &&
-    legendConsumesTopEdge(options.legendPlacement) &&
-    !legendIsCornerTop(options.legendPlacement);
+    legendConsumesTopEdge(options.legendPlacement);
 
   const titleTextBottom =
     options.paddingTop +
@@ -93,10 +93,8 @@ export function computeChartVerticalStack(options: ChartVerticalStackOptions): {
       titleTextBottom + (options.chartTitle ? stack.titleToPlot : 0);
   }
 
-  const cornerGapBelowTitle = Math.max(10, Math.round(stack.titleToLegend * 0.68));
-  const legendCornerTopY = options.chartTitle
-    ? titleTextBottom + cornerGapBelowTitle
-    : options.paddingTop + cornerGapBelowTitle;
+  /** Align corner top legends (`top-left` / `top-right`) on the same row as `top` after {@link chartAreaTopStart}. */
+  const legendCornerTopY = chartAreaTopStart;
 
   return {
     chartAreaTopStart,

@@ -1514,7 +1514,7 @@ const minLegendSpacing = 10;
 
     switch (legendPlacement) {
       case 'top':
-        legendX = (outputWidth - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         legendY = vstack.chartAreaTopStart;
         break;
       case 'top-left':
@@ -1526,7 +1526,7 @@ const minLegendSpacing = 10;
         legendY = vstack.legendCornerTopY;
         break;
       case 'bottom':
-        legendX = (outputWidth - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         {
           const naturalBottomLegendY =
             height - paddingBottom - legendHeight - minLegendSpacing;
@@ -1570,6 +1570,22 @@ const minLegendSpacing = 10;
       case 'left':
         legendX = paddingLeft + minLegendSpacing;
         legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        break;
+      case 'left-top':
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case 'left-bottom':
+        legendX = paddingLeft + minLegendSpacing;
+        legendY = originY - legendHeight - minLegendSpacing;
+        break;
+      case 'right-top':
+        legendX = outputWidth - paddingRight - legendWidth - minLegendSpacing;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case 'right-bottom':
+        legendX = outputWidth - paddingRight - legendWidth - minLegendSpacing;
+        legendY = originY - legendHeight - minLegendSpacing;
         break;
       case 'right':
       default:

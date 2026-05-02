@@ -1275,7 +1275,7 @@ const titleMargin = chartTitle ? 20 : 0;
 
     switch (legendPlacement) {
       case 'top':
-        legendX = (width - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         legendY = paddingTop + titleHeight + minLegendSpacing;
         break;
       case 'top-left':
@@ -1287,7 +1287,7 @@ const titleMargin = chartTitle ? 20 : 0;
         legendY = paddingTop + titleHeight + minLegendSpacing;
         break;
       case 'bottom':
-        legendX = (width - legendWidth) / 2;
+        legendX = (originX + axisEndX - legendWidth) / 2;
         {
           const naturalBottomLegendY =
             baseHeight - paddingBottom - legendHeight - minLegendSpacing;
@@ -1328,6 +1328,28 @@ const titleMargin = chartTitle ? 20 : 0;
       case 'left':
         legendX = paddingLeft;
         legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
+        break;
+      case 'left-top':
+        legendX = paddingLeft;
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case 'left-bottom':
+        legendX = paddingLeft;
+        legendY = originY - legendHeight - minLegendSpacing;
+        break;
+      case 'right-top':
+        legendX = Math.min(
+          width - paddingRight - legendWidth - minLegendSpacing,
+          axisEndX + minLegendSpacing
+        );
+        legendY = axisEndY + minLegendSpacing;
+        break;
+      case 'right-bottom':
+        legendX = Math.min(
+          width - paddingRight - legendWidth - minLegendSpacing,
+          axisEndX + minLegendSpacing
+        );
+        legendY = originY - legendHeight - minLegendSpacing;
         break;
       case 'right':
       default:
