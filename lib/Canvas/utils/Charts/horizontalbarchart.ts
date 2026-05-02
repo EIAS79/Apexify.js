@@ -1248,10 +1248,10 @@ const titleMargin = chartTitle ? 20 : 0;
     ctx.font = `${axisLabelFontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.translate(
-      chartAreaLeft + yAxisRotatedTitleReserve / 2,
-      (originY + axisEndY) / 2
-    );
+    /** Gutter is [originX - leftCategoryGutter, originX]; axis title uses its slice at the left end. */
+    const yAxisTitleCenterX =
+      originX - leftCategoryGutter + yAxisRotatedTitleReserve / 2;
+    ctx.translate(yAxisTitleCenterX, (originY + axisEndY) / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText(yAxisLabel, 0, 0);
     ctx.restore();
