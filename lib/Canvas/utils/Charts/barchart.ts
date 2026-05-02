@@ -13,6 +13,11 @@ import {
   computeLegendRowMetrics,
   legendLineHeight,
 } from "./legendTextLayout";
+import { segmentValueDisplayText } from "./segmentValueLabel";
+import {
+  reserveBelowBarChartValueBaseline,
+  reserveHorizontalForRotatedYAxisTitle,
+} from "./axisTitleLayout";
 
 /**
  * Enhanced text styling for chart labels
@@ -50,6 +55,7 @@ export interface BarSegment {
 value: number;
 color?: string;
 gradient?: gradient;
+  /** When set (non-empty), drawn as the segment value label instead of {@link value} */
 label?: string;
 valueColor?: string;
 showValue?: boolean;
@@ -1089,12 +1095,14 @@ const minLegendSpacing = 10;
     minLegendInsetFloor: minLegendSpacing,
   });
 
-  const canvas = createCanvas(width, height);
-  const ctx: SKRSContext2D = canvas.getContext('2d');
-
-  await paintChartCanvasBackground(ctx, canvas, width, height, options.appearance);
-
-  const axisLabelHeight = (xAxisLabel || yAxisLabel) ? axisLabelFontSize + 20 : 0;
+  const measCanvas = createCanvas(1, 1);
+  const measureCtx = measCanvas.getContext('2d') as SKRSContext2D;
+  const axisLabelHeight = reserveBelowBarChartValueBaseline(
+    measureCtx,
+    xAxisLabel,
+    tickFontSize,
+    axisLabelFontSize
+  );
 
   let chartAreaLeft = paddingLeft;
   let chartAreaRight = baseWidth - paddingRight;
@@ -1161,50 +1169,15 @@ const minLegendSpacing = 10;
     chartAreaBottom = inset.chartAreaBottom;
   }
 
-  const originX = chartAreaLeft;
   const originY = chartAreaBottom - axisLabelHeight;
   /** Top canvas row for max Y tick (tick padding only). */
   const yTickHeadroom = Math.ceil(tickFontSize * 0.45 + 6);
   const xTickTailroom = Math.ceil(tickFontSize * 0.65 + 8);
   const axisEndY = chartAreaTop + yTickHeadroom;
-  const minPlotWidth = 80;
-  const axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xTickTailroom);
-
-  if (chartTitle) {
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-
-    const titleY = paddingTop + vstack.titleTopInset;
-    const titleX = width / 2;
-    await renderEnhancedText(
-      ctx,
-      chartTitle,
-      titleX,
-      titleY,
-      options.labels?.title?.textStyle,
-      chartTitleFontSize,
-      options.labels?.title?.color,
-      options.labels?.title?.gradient
-    );
-    ctx.restore();
-  }
-
-  ctx.strokeStyle = axisColor;
-  ctx.fillStyle = axisColor;
-  ctx.lineWidth = axisWidth;
-  ctx.save();
-  ctx.lineCap = 'butt';
-  ctx.beginPath();
-  ctx.moveTo(originX, originY);
-  ctx.lineTo(originX, axisEndY);
-  ctx.stroke();
-  ctx.restore();
 
   let allValues: number[] = [];
   if (chartType === 'grouped' || chartType === 'stacked' || chartType === 'waterfall') {
     if (chartType === 'grouped') {
-
       data.forEach(d => {
         if (d.values && d.values.length > 0) {
           d.values.forEach(seg => allValues.push(seg.value));
@@ -1213,23 +1186,18 @@ const minLegendSpacing = 10;
         }
       });
     } else if (chartType === 'waterfall') {
-
       let cumulativeValue = initialValue;
-allValues.push(initialValue);
-
+      allValues.push(initialValue);
       data.forEach(d => {
         if (d.values && d.values.length > 0) {
-
           const itemTotal = d.values.reduce((sum, seg) => sum + seg.value, 0);
           cumulativeValue += itemTotal;
         } else if (d.value !== undefined) {
           cumulativeValue += d.value;
         }
-
         allValues.push(cumulativeValue);
       });
     } else {
-
       data.forEach(d => {
         if (d.values && d.values.length > 0) {
           const sum = d.values.reduce((acc, seg) => acc + seg.value, 0);
@@ -1240,25 +1208,20 @@ allValues.push(initialValue);
       });
     }
   } else {
-
     allValues = data.map(d => d.value ?? 0).filter(v => v !== undefined && v !== null);
   }
 
   let minValue: number, maxValue: number, yStep: number;
   let yAxisCustomValues: number[] | undefined = yAxisValues;
   const hasExplicitYRange = yAxisRange && yAxisRange.min !== undefined && yAxisRange.max !== undefined;
-  const hasExplicitXRange = xAxisRange && xAxisRange.min !== undefined && xAxisRange.max !== undefined;
 
   if (yAxisCustomValues && yAxisCustomValues.length > 0) {
-
     minValue = Math.min(...yAxisCustomValues);
     maxValue = Math.max(...yAxisCustomValues);
-yStep = 1;
+    yStep = 1;
   } else if (hasExplicitYRange) {
-
     minValue = yAxisRange!.min!;
     maxValue = yAxisRange!.max!;
-
     const effectiveBaseline = baseline !== undefined ? baseline : 0;
     minValue = Math.min(minValue, effectiveBaseline);
     maxValue = Math.max(maxValue, effectiveBaseline);
@@ -1266,10 +1229,8 @@ yStep = 1;
     if (chartType === 'waterfall' && allValues.length > 0) {
       const dataMin = Math.min(...allValues);
       const dataMax = Math.max(...allValues);
-
       minValue = Math.min(minValue, dataMin);
       maxValue = Math.max(maxValue, dataMax);
-
       const range = maxValue - minValue;
       const padding = range * 0.1;
       minValue = Math.min(minValue - padding, effectiveBaseline);
@@ -1278,7 +1239,6 @@ yStep = 1;
 
     yStep = yAxisRange.step ?? Math.ceil((maxValue - minValue) / 10);
   } else {
-
     if (allValues.length > 0) {
       minValue = Math.min(...allValues);
       maxValue = Math.max(...allValues);
@@ -1319,6 +1279,92 @@ yStep = 1;
     }
   }
   const ySpan = yScaleMax - yScaleMin || 1;
+
+  let maxYTickLabelWidth = 0;
+  if (measureCtx) {
+    measureCtx.font = `${tickFontSize}px Arial`;
+    const labels: string[] = [];
+    if (yAxisCustomValues && yAxisCustomValues.length > 0) {
+      for (const v of yAxisCustomValues) labels.push(v.toFixed(1));
+    } else {
+      const safeStep = Number.isFinite(yStep) && yStep > 0 ? yStep : 1;
+      let guard = 0;
+      for (let v = yScaleMin; v <= yScaleMax + 1e-9 && guard < 2000; v += safeStep) {
+        labels.push(v.toFixed(1));
+        guard++;
+      }
+    }
+    for (const txt of labels) {
+      maxYTickLabelWidth = Math.max(maxYTickLabelWidth, measureCtx.measureText(txt).width);
+    }
+  }
+
+  let yAxisTitleReservePx = 0;
+  if (yAxisLabel && measureCtx) {
+    yAxisTitleReservePx = reserveHorizontalForRotatedYAxisTitle(
+      measureCtx,
+      yAxisLabel,
+      axisLabelFontSize
+    );
+  }
+
+  const TICK_LABEL_TO_AXIS_GAP = 10;
+  const Y_AXIS_TITLE_TO_TICK_LABEL_GAP = 12;
+
+  const originX =
+    chartAreaLeft +
+    yAxisTitleReservePx +
+    (yAxisLabel ? Y_AXIS_TITLE_TO_TICK_LABEL_GAP : 0) +
+    maxYTickLabelWidth +
+    TICK_LABEL_TO_AXIS_GAP;
+
+  const minPlotWidth = 80;
+  let axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xTickTailroom);
+  const plotRightNeeds = originX + minPlotWidth + xTickTailroom;
+  let outputWidth = width;
+  if (plotRightNeeds > chartAreaRight + 1e-6) {
+    outputWidth = Math.ceil(width + (plotRightNeeds - chartAreaRight));
+    chartAreaRight = outputWidth - paddingRight;
+    axisEndX = Math.max(originX + minPlotWidth, chartAreaRight - xTickTailroom);
+  }
+
+  const canvas = createCanvas(outputWidth, height);
+  const ctx: SKRSContext2D = canvas.getContext('2d');
+
+  await paintChartCanvasBackground(ctx, canvas, outputWidth, height, options.appearance);
+
+  if (chartTitle) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    const titleY = paddingTop + vstack.titleTopInset;
+    const titleX = outputWidth / 2;
+    await renderEnhancedText(
+      ctx,
+      chartTitle,
+      titleX,
+      titleY,
+      options.labels?.title?.textStyle,
+      chartTitleFontSize,
+      options.labels?.title?.color,
+      options.labels?.title?.gradient
+    );
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = axisColor;
+  ctx.fillStyle = axisColor;
+  ctx.lineWidth = axisWidth;
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  ctx.moveTo(originX, originY);
+  ctx.lineTo(originX, axisEndY);
+  ctx.stroke();
+  ctx.restore();
+
+  const hasExplicitXRange = xAxisRange && xAxisRange.min !== undefined && xAxisRange.max !== undefined;
 
   if (hasExplicitXRange || xAxisCustomValues) {
     const effectiveXMin = xAxisCustomValues ? Math.min(...xAxisCustomValues) : xAxisRange!.min!;
@@ -1401,31 +1447,6 @@ yStep = 1;
     });
   }
 
-  // Measure Y tick label width so the rotated Y-axis title keeps a safe, flexible distance.
-  let maxYTickLabelWidth = 0;
-  {
-    const measureCanvas = createCanvas(1, 1);
-    const measureCtx = measureCanvas.getContext('2d') as SKRSContext2D;
-    if (measureCtx) {
-      measureCtx.font = `${tickFontSize}px Arial`;
-      const labels: string[] = [];
-      if (yAxisCustomValues && yAxisCustomValues.length > 0) {
-        for (const v of yAxisCustomValues) labels.push(v.toFixed(1));
-      } else {
-        // Guard against runaway loops if user passes an extremely small/invalid step.
-        const safeStep = Number.isFinite(yStep) && yStep > 0 ? yStep : 1;
-        let guard = 0;
-        for (let v = yScaleMin; v <= yScaleMax + 1e-9 && guard < 2000; v += safeStep) {
-          labels.push(v.toFixed(1));
-          guard++;
-        }
-      }
-      for (const txt of labels) {
-        maxYTickLabelWidth = Math.max(maxYTickLabelWidth, measureCtx.measureText(txt).width);
-      }
-    }
-  }
-
   const xTickLabelColor = options.axes?.x?.color ?? axisLabelColor;
 
   drawYAxisTicks(ctx, originX, originY, axisEndY, yScaleMin, yScaleMax, yStep, tickFontSize, yAxisCustomValues, yAxisValueSpacing);
@@ -1473,15 +1494,7 @@ yStep = 1;
     ctx.font = `${axisLabelFontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-
-    // Includes +2px per request to increase spacing from values.
-    const yAxisTitleGap = Math.max(
-      36,
-      Math.ceil(maxYTickLabelWidth + 10 + axisLabelFontSize * 0.75 + 2)
-    );
-    const labelX = originX - yAxisTitleGap;
-    const labelY = (originY + axisEndY) / 2;
-    ctx.translate(labelX, labelY);
+    ctx.translate(chartAreaLeft + yAxisTitleReservePx / 2, (originY + axisEndY) / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText(yAxisLabel, 0, 0);
     ctx.restore();
@@ -1501,7 +1514,7 @@ yStep = 1;
 
     switch (legendPlacement) {
       case 'top':
-        legendX = (width - legendWidth) / 2;
+        legendX = (outputWidth - legendWidth) / 2;
         legendY = vstack.chartAreaTopStart;
         break;
       case 'top-left':
@@ -1509,11 +1522,11 @@ yStep = 1;
         legendY = vstack.legendCornerTopY;
         break;
       case 'top-right':
-        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendX = outputWidth - paddingRight - legendWidth - minLegendSpacing;
         legendY = vstack.legendCornerTopY;
         break;
       case 'bottom':
-        legendX = (width - legendWidth) / 2;
+        legendX = (outputWidth - legendWidth) / 2;
         {
           const naturalBottomLegendY =
             height - paddingBottom - legendHeight - minLegendSpacing;
@@ -1541,7 +1554,7 @@ yStep = 1;
         }
         break;
       case 'bottom-right':
-        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendX = outputWidth - paddingRight - legendWidth - minLegendSpacing;
         {
           const naturalBottomLegendY =
             height - paddingBottom - legendHeight - minLegendSpacing;
@@ -1560,7 +1573,7 @@ yStep = 1;
         break;
       case 'right':
       default:
-        legendX = width - paddingRight - legendWidth - minLegendSpacing;
+        legendX = outputWidth - paddingRight - legendWidth - minLegendSpacing;
         legendY = axisEndY + (chartAreaHeight - legendHeight) / 2;
         break;
     }
@@ -1678,7 +1691,7 @@ yStep = 1;
 
             labelsToDraw.push({
               type: 'value',
-              text: segment.value.toString(),
+              text: segmentValueDisplayText(segment),
               x: segXStart + segmentWidth / 2,
               y: valueLabelY,
               align: 'center',
@@ -1754,7 +1767,7 @@ yStep = 1;
             if (shouldShowValue && clampedBarHeight > valueFontSize + 5) {
               labelsToDraw.push({
                 type: 'value',
-                text: segment.value.toString(),
+                text: segmentValueDisplayText(segment),
                 x: clampedBarXStart + clampedGroupWidth / 2,
                 y: clampedBarY + clampedBarHeight / 2,
                 align: 'center',
@@ -1803,7 +1816,7 @@ yStep = 1;
             if (shouldShowValue && clampedBarHeight > valueFontSize + 5) {
               labelsToDraw.push({
                 type: 'value',
-                text: segment.value.toString(),
+                text: segmentValueDisplayText(segment),
                 x: clampedBarXStart + clampedGroupWidth / 2,
                 y: clampedBarY + clampedBarHeight / 2,
                 align: 'center',
@@ -1855,7 +1868,7 @@ yStep = 1;
           if (shouldShowValue && segmentHeight > valueFontSize + 5) {
             labelsToDraw.push({
               type: 'value',
-              text: segment.value.toString(),
+              text: segmentValueDisplayText(segment),
               x: barXStart + groupWidth / 2,
               y: barY + segmentHeight / 2,
               align: 'center',
@@ -1893,7 +1906,7 @@ yStep = 1;
           if (shouldShowValue && segmentHeight > valueFontSize + 5) {
             labelsToDraw.push({
               type: 'value',
-              text: segment.value.toString(),
+              text: segmentValueDisplayText(segment),
               x: barXStart + groupWidth / 2,
               y: barY + segmentHeight / 2,
               align: 'center',

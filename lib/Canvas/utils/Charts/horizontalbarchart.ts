@@ -14,6 +14,11 @@ import {
   computeLegendRowMetrics,
   legendLineHeight,
 } from "./legendTextLayout";
+import {
+  reserveBelowBarChartValueBaseline,
+  reserveHorizontalForRotatedYAxisTitle,
+} from "./axisTitleLayout";
+import { segmentValueDisplayText } from "./segmentValueLabel";
 
 /**
  * Chart types for horizontal bar chart
@@ -56,6 +61,7 @@ export interface HorizontalBarSegment {
 value: number;
 color?: string;
 gradient?: gradient;
+  /** When set (non-empty), drawn as the segment value label instead of {@link value} */
 label?: string;
 valueColor?: string;
 showValue?: boolean;
@@ -809,15 +815,17 @@ const titleMargin = options.labels?.title?.text ? 20 : 0;
 
   const tickFontSize = options.axes?.x?.tickFontSize ?? options.axes?.y?.tickFontSize ?? 12;
   const axisLabelFontSize = options.labels?.barLabelDefaults?.fontSize ?? 14;
+  const measH = createCanvas(1, 1).getContext('2d') as SKRSContext2D;
   let xAxisLabelAreaHeight = 0;
   if (options.axes?.x?.label || options.axes?.x?.values || options.axes?.x?.range) {
-const tickLabelHeight = tickFontSize + 10;
-const xAxisLabelTextHeight = options.axes?.x?.label ? axisLabelFontSize + 2 : 0;
-xAxisLabelAreaHeight = tickLabelHeight + (options.axes?.x?.label ? 8 : 0) + xAxisLabelTextHeight;
+    xAxisLabelAreaHeight = reserveBelowBarChartValueBaseline(
+      measH,
+      options.axes?.x?.label,
+      tickFontSize,
+      axisLabelFontSize
+    );
   }
-
-  const yAxisLabelHeight = options.axes?.y?.label ? axisLabelFontSize + 20 : 0;
-  const axisLabelHeight = Math.max(xAxisLabelAreaHeight, yAxisLabelHeight);
+  const axisLabelHeight = xAxisLabelAreaHeight;
 const minBottomGap = 2;
 
   const interior =
@@ -1096,7 +1104,20 @@ const minLegendSpacing = 10;
   const barLabelCap = Math.max(80, Math.min(width * 0.22, 380));
   const barLabelColumnWidth =
     hasLeftBarLabels && maxBarLabelRaw > 0 ? Math.min(maxBarLabelRaw, barLabelCap) + 10 : 0;
+
+  const measTitle = createCanvas(1, 1).getContext('2d') as SKRSContext2D;
+  let yAxisRotatedTitleReserve = 0;
+  if (yAxisLabel && measTitle) {
+    yAxisRotatedTitleReserve = reserveHorizontalForRotatedYAxisTitle(
+      measTitle,
+      yAxisLabel,
+      axisLabelFontSize
+    );
+  }
+
   const leftCategoryGutter =
+    yAxisRotatedTitleReserve +
+    (yAxisLabel && (shouldDrawYAxisTicks || hasLeftBarLabels) ? 12 : yAxisLabel ? 8 : 0) +
     yTickColumnWidth +
     barLabelColumnWidth +
     (yTickColumnWidth > 0 && barLabelColumnWidth > 0 ? 8 : 0);
@@ -1114,14 +1135,15 @@ const minLegendSpacing = 10;
 
   const titleHeight = chartTitle ? chartTitleFontSize + 20 : 0;
 
+  const measureCtxInit = createCanvas(1, 1).getContext('2d') as SKRSContext2D;
   let xAxisLabelAreaHeight = 0;
   if (xAxisLabel || (xAxisCustomValues && xAxisCustomValues.length > 0) || xAxisRange) {
-
-const tickLabelHeight = tickFontSize + 10;
-
-const xAxisLabelTextHeight = xAxisLabel ? axisLabelFontSize + 2 : 0;
-
-xAxisLabelAreaHeight = tickLabelHeight + (xAxisLabel ? 8 : 0) + xAxisLabelTextHeight;
+    xAxisLabelAreaHeight = reserveBelowBarChartValueBaseline(
+      measureCtxInit,
+      xAxisLabel,
+      tickFontSize,
+      axisLabelFontSize
+    );
   }
 
   let chartAreaLeft = paddingLeft;
@@ -1226,14 +1248,10 @@ const titleMargin = chartTitle ? 20 : 0;
     ctx.font = `${axisLabelFontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-
-    const categoryAxisTitleGap = Math.max(
-      36,
-      Math.ceil(maxYTickLabelWidth + Math.min(maxBarLabelRaw, barLabelCap) + 10 + axisLabelFontSize * 0.75 + 2)
+    ctx.translate(
+      chartAreaLeft + yAxisRotatedTitleReserve / 2,
+      (originY + axisEndY) / 2
     );
-    const labelX = originX - categoryAxisTitleGap;
-    const labelY = (originY + axisEndY) / 2;
-    ctx.translate(labelX, labelY);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText(yAxisLabel, 0, 0);
     ctx.restore();
@@ -1455,7 +1473,7 @@ const titleMargin = chartTitle ? 20 : 0;
           if (shouldShowValue) {
             labelsToDraw.push({
               type: 'value',
-              text: segment.value.toString(),
+              text: segmentValueDisplayText(segment),
               x: segment.value >= baseline ? segBarEndX + 5 : segBarX - 5,
               y: segCenterY,
               align: segment.value >= baseline ? 'left' : 'right',
@@ -1491,7 +1509,7 @@ const titleMargin = chartTitle ? 20 : 0;
           if (shouldShowValue && segmentLength > valueFontSize + 10) {
             labelsToDraw.push({
               type: 'value',
-              text: segment.value.toString(),
+              text: segmentValueDisplayText(segment),
               x: segBarX + segmentLength / 2,
               y: barCenterY,
               align: 'center',

@@ -12,6 +12,10 @@ import {
   computeLegendRowMetrics,
   legendLineHeight,
 } from "./legendTextLayout";
+import {
+  reserveBelowLineChartPlotBottom,
+  reserveHorizontalForRotatedYAxisTitle,
+} from "./axisTitleLayout";
 
 /**
  * Enhanced text styling for chart labels
@@ -445,16 +449,6 @@ function computeMaxYTickLabelWidth(
     }
   }
   return maxW;
-}
-
-/** Horizontal canvas reserve for a Y-axis title rotated −90° (single-line heuristic). */
-function reserveHorizontalForRotatedYAxisTitle(ctx: SKRSContext2D, label: string, fontSize: number): number {
-  ctx.font = `${fontSize}px Arial`;
-  const m = ctx.measureText(label);
-  const ascent = m.actualBoundingBoxAscent ?? fontSize * 0.72;
-  const descent = m.actualBoundingBoxDescent ?? fontSize * 0.28;
-  const verticalExtent = ascent + descent;
-  return Math.ceil(Math.min(Math.max(verticalExtent + 12, fontSize + 10), m.width + fontSize));
 }
 
 /**
@@ -2037,15 +2031,7 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
 
   await paintChartCanvasBackground(ctx, canvas, width, height, options.appearance);
 
-  const X_AXIS_TICK_TOP_OFFSET = 10;
-  const X_AXIS_TICK_DESCENDER_PAD = 8;
-  const X_AXIS_TITLE_GAP_BELOW_TICKS = 14;
-  const X_AXIS_TITLE_BOTTOM_PAD = 12;
-
-  let axisLabelHeight = X_AXIS_TICK_TOP_OFFSET + tickFontSize + X_AXIS_TICK_DESCENDER_PAD;
-  if (xAxisLabel) {
-    axisLabelHeight += X_AXIS_TITLE_GAP_BELOW_TICKS + tickFontSize + X_AXIS_TITLE_BOTTOM_PAD;
-  }
+  let axisLabelHeight = reserveBelowLineChartPlotBottom(ctx, xAxisLabel, tickFontSize);
 
   let chartAreaLeft = paddingLeft;
   let chartAreaRight = width - paddingRight;
@@ -2084,11 +2070,7 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
   const baselineRefLC = baseline !== undefined ? baseline : 0;
   if (yAxisScale === 'linear' && baselineRefLC > yScaleMin && plotHeightForBaseline > 1e-6) {
     const belowBaselinePx = ((baselineRefLC - yScaleMin) / ySpan) * plotHeightForBaseline;
-    const reserveBelowBaselinePx =
-      X_AXIS_TICK_TOP_OFFSET +
-      tickFontSize +
-      X_AXIS_TICK_DESCENDER_PAD +
-      (xAxisLabel ? X_AXIS_TITLE_GAP_BELOW_TICKS + tickFontSize + X_AXIS_TITLE_BOTTOM_PAD : 0);
+    const reserveBelowBaselinePx = axisLabelHeight;
     if (belowBaselinePx < reserveBelowBaselinePx) {
       const gapPx = reserveBelowBaselinePx - belowBaselinePx;
       yScaleMin -= (gapPx / plotHeightForBaseline) * ySpan;
@@ -2752,6 +2734,9 @@ const height = shadeToYValue - avgY;
     );
   }
 
+  const X_AXIS_TICK_TOP_OFFSET = 10;
+  const X_AXIS_TITLE_GAP_BELOW_TICKS = 14;
+
   if (xAxisLabel) {
     ctx.save();
     ctx.fillStyle = xAxisLabelColor;
@@ -2909,5 +2894,5 @@ export {
   lineChartExtendPathAlongSeries,
   logScale,
   renderEnhancedText,
-  reserveHorizontalForRotatedYAxisTitle,
 };
+export { reserveHorizontalForRotatedYAxisTitle } from "./axisTitleLayout";

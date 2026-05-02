@@ -1,6 +1,6 @@
 {
   "name": "apexify.js",
-  "version": "5.3.16",
+  "version": "5.3.17",
   "description": "🎨 Advanced Canvas Rendering Library - Professional image processing, shape drawing, text effects, patterns, filters, and charts. Built with TypeScript & Rust for high performance.",
   "author": "zenith-79",
   "license": "MIT",
@@ -30,6 +30,7 @@
     "build:esm": "tsc --build tsconfig.esm.json --force",
     "build:cjs": "tsc --build tsconfig.cjs.json --force",
     "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "verify-charts": "ts-node --transpile-only scripts/verify-chart-fixes.ts",
     "release": "npm run build && npm publish"
   },
   "files": [

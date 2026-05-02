@@ -9,6 +9,7 @@ import {
 import { computeChartVerticalStack, resolveOuterPadding } from "./chartPadding";
 import { drawBar } from "./barchart";
 import type { BarChartData } from "./barchart";
+import { segmentValueDisplayText } from "./segmentValueLabel";
 
 /** Bar layer layout for {@link ComboChartOptions}. */
 export type ComboBarsType = "standard" | "grouped" | "stacked";
@@ -1352,7 +1353,7 @@ export async function createComboChart(
           }
           labelsToDraw.push({
             type: "value",
-            text: segment.value.toString(),
+            text: segmentValueDisplayText(segment),
             x: segXStart + segmentWidth / 2,
             y: valueLabelY,
             align: "center",
@@ -1416,7 +1417,7 @@ export async function createComboChart(
         if (shouldShowSegValue && segmentHeight > valueFontSize + 5) {
           labelsToDraw.push({
             type: "value",
-            text: segment.value.toString(),
+            text: segmentValueDisplayText(segment),
             x: barDrawLeft + drawW / 2,
             y: barY + segmentHeight / 2,
             align: "center",
@@ -1455,7 +1456,7 @@ export async function createComboChart(
         if (shouldShowSegValue && segmentHeight > valueFontSize + 5) {
           labelsToDraw.push({
             type: "value",
-            text: segment.value.toString(),
+            text: segmentValueDisplayText(segment),
             x: barDrawLeft + drawW / 2,
             y: barY + segmentHeight / 2,
             align: "center",
