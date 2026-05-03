@@ -22,6 +22,6 @@
             "moduleResolution": "node"
         }
     },
-    "include": ["lib/**/*", "./types/**/*"],
+    "include": ["lib/**/*", "./types/**/*", "scripts/**/*"],
     "exclude": ["node_modules"]
 }

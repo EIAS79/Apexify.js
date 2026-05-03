@@ -77,10 +77,38 @@ export type {
 export type { LegendFitMode } from './linechart';
 export { createComboChart } from './combochart';
 
+export {
+  ScatterPoint,
+  ScatterMarkerType,
+  ScatterSeries,
+  ScatterCorrelationConfig,
+  ScatterChartOptions,
+  createScatterChart,
+} from './scatterchart';
+
+export {
+  RadarSeries,
+  RadarChartOptions,
+  createRadarChart,
+} from './radarchart';
+
+export {
+  PolarAreaSlice,
+  PolarAreaChartOptions,
+  createPolarAreaChart,
+} from './polarareachart';
+
 /**
  * Unified chart type
  */
-export type ChartType = 'pie' | 'bar' | 'horizontalBar' | 'line';
+export type ChartType =
+  | 'pie'
+  | 'bar'
+  | 'horizontalBar'
+  | 'line'
+  | 'scatter'
+  | 'radar'
+  | 'polarArea';
 
 /**
  * Unified chart data (union of all chart data types)
@@ -89,7 +117,10 @@ export type ChartData =
   | { type: 'pie'; data: import('./piechart').PieSlice[] }
   | { type: 'bar'; data: import('./barchart').BarChartData[] }
   | { type: 'horizontalBar'; data: import('./horizontalbarchart').HorizontalBarChartData[] }
-  | { type: 'line'; data: import('./linechart').LineSeries[] };
+  | { type: 'line'; data: import('./linechart').LineSeries[] }
+  | { type: 'scatter'; data: import('./scatterchart').ScatterSeries[] }
+  | { type: 'radar'; data: import('./radarchart').RadarSeries[] }
+  | { type: 'polarArea'; data: import('./polarareachart').PolarAreaSlice[] };
 
 /**
  * Unified chart options (union of all chart options types)
@@ -98,5 +129,8 @@ export type ChartOptions =
   | { type: 'pie'; options: import('./piechart').PieChartOptions }
   | { type: 'bar'; options: import('./barchart').BarChartOptions }
   | { type: 'horizontalBar'; options: import('./horizontalbarchart').HorizontalBarChartOptions }
-  | { type: 'line'; options: import('./linechart').LineChartOptions };
+  | { type: 'line'; options: import('./linechart').LineChartOptions }
+  | { type: 'scatter'; options: import('./scatterchart').ScatterChartOptions }
+  | { type: 'radar'; options: import('./radarchart').RadarChartOptions }
+  | { type: 'polarArea'; options: import('./polarareachart').PolarAreaChartOptions };
 

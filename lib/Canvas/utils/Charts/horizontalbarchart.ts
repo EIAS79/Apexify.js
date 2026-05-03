@@ -20,6 +20,11 @@ import {
 } from "./axisTitleLayout";
 import { segmentValueDisplayText } from "./segmentValueLabel";
 
+function clampChartOpacity(raw?: number): number {
+  if (raw === undefined || raw === null || Number.isNaN(Number(raw))) return 1;
+  return Math.min(1, Math.max(0, Number(raw)));
+}
+
 /**
  * Chart types for horizontal bar chart
  */
@@ -65,6 +70,8 @@ gradient?: gradient;
 label?: string;
 valueColor?: string;
 showValue?: boolean;
+  /** Opacity of this segment’s fill (0–1). Overrides row/global defaults. */
+  opacity?: number;
 }
 
 /**
@@ -86,6 +93,8 @@ labelColor?: string;
 labelPosition?: 'top' | 'left' | 'right' | 'inside' | 'bottom';
 valueColor?: string;
 showValue?: boolean;
+  /** Opacity for this bar’s fill (0–1). Overrides {@link HorizontalBarChartOptions.bars.opacity}. */
+  opacity?: number;
 }
 
 /**
@@ -202,6 +211,8 @@ segmentSpacing?: number;
 lineWidth?: number;
 dotSize?: number;
 borderRadius?: number;
+/** Default opacity (0–1) for all bars; overridden per row/segment {@link HorizontalBarChartData.opacity}. */
+opacity?: number;
   };
 }
 
@@ -892,6 +903,7 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
   const groupSpacing = options.bars?.groupSpacing ?? 10;
 const lollipopLineWidth = options.bars?.lineWidth ?? 2;
 const lollipopDotSize = options.bars?.dotSize ?? 8;
+  const globalBarOpacity = options.bars?.opacity;
 
   let baseHeight = calculateResponsiveHeight(data.length, options);
 
@@ -1480,6 +1492,9 @@ const titleMargin = chartTitle ? 20 : 0;
           }
           const segBarLength = Math.abs(segBarEndX - segBarX);
 
+          const segOp = clampChartOpacity(segment.opacity ?? item.opacity ?? globalBarOpacity ?? 1);
+          ctx.save();
+          ctx.globalAlpha = segOp;
           ctx.beginPath();
           ctx.rect(segBarX, segY, segBarLength, segmentHeight);
           fillWithGradientOrColor(
@@ -1490,6 +1505,7 @@ const titleMargin = chartTitle ? 20 : 0;
             { x: segBarX, y: segY, w: segBarLength, h: segmentHeight }
           );
           ctx.fill();
+          ctx.restore();
 
           const shouldShowValue = segment.showValue !== undefined ? segment.showValue : showValues;
           if (shouldShowValue) {
@@ -1524,8 +1540,12 @@ const titleMargin = chartTitle ? 20 : 0;
             segBarX = baselineX - accumulatedLength - segmentLength;
           }
 
+          const stackSegOp = clampChartOpacity(segment.opacity ?? item.opacity ?? globalBarOpacity ?? 1);
+          ctx.save();
+          ctx.globalAlpha = stackSegOp;
           ctx.fillStyle = segment.color || item.color || '#4A90E2';
           ctx.fillRect(segBarX, barY, segmentLength, calculatedBarHeight);
+          ctx.restore();
 
           const shouldShowValue = segment.showValue !== undefined ? segment.showValue : showValues;
           if (shouldShowValue && segmentLength > valueFontSize + 10) {
@@ -1586,7 +1606,9 @@ const titleMargin = chartTitle ? 20 : 0;
         valueX = baselineX - negativeRatio * chartAreaWidth;
       }
 
+      const lolOp = clampChartOpacity(item.opacity ?? globalBarOpacity ?? 1);
       ctx.save();
+      ctx.globalAlpha = lolOp;
       ctx.strokeStyle = item.color || '#4A90E2';
       ctx.lineWidth = lollipopLineWidth;
       ctx.beginPath();
@@ -1650,6 +1672,9 @@ const titleMargin = chartTitle ? 20 : 0;
       }
       barLength = barEndX - barX;
 
+      const stdOp = clampChartOpacity(item.opacity ?? globalBarOpacity ?? 1);
+      ctx.save();
+      ctx.globalAlpha = stdOp;
       ctx.beginPath();
       ctx.rect(barX, barY, barLength, calculatedBarHeight);
       fillWithGradientOrColor(
@@ -1660,6 +1685,7 @@ const titleMargin = chartTitle ? 20 : 0;
         { x: barX, y: barY, w: barLength, h: calculatedBarHeight }
       );
       ctx.fill();
+      ctx.restore();
 
       const shouldShowValue = item.showValue !== undefined ? item.showValue : showValues;
       if (shouldShowValue) {

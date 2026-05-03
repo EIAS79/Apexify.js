@@ -31,6 +31,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Chart verification PNG exports (npm run verify-new-charts)
+chart-verify-output/
+
 # Test outputs
 coverage/
 .nyc_output/

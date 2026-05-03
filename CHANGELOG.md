@@ -5,6 +5,40 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.20] - 2026-05-03
+
+This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work. It adds new chart kinds, opacity controls, tighter chart typings and fixes, and substantial **video audio** options (mute ranges, strip audio, multi-clip mixing, and loudness / pitch / speed control).
+
+### ✨ Added
+
+##### Charts (`ChartCreator`, `lib/Canvas/utils/Charts`)
+- **Scatter**, **radar** (spider / radial), and **polar area** charts with implementations in **`scatterchart`**, **`radarchart`**, and **`polarareachart`**, wired through **`createChart`** and chart union types / exports.
+- **Opacity** for plot geometry: **bars** and **horizontal bars** (`bars.opacity` / per-row / per-segment), **lines** (`lines.opacity` / per-series), and **pie / donut slices** (`slices.opacity` / per-slice), with **`clampChartOpacity`**-style **0–1** handling where applicable.
+
+##### Video (`VideoCreationOptions`, `lib/Canvas/utils/Video/videoHelpers.ts`)
+- **`removeAudio`**: write a **video-only** output (all audio streams removed).
+- **`mute`**: silence **specific time ranges** (seconds), or omit **`ranges`** for a **full** audio strip (same end state as **`removeAudio`**; uses stream copy where appropriate).
+- **`mixAudio`**: mix **multiple** external clips (path, URL, or **`Buffer`**) at chosen **timeline starts**, with trim (**`duration`** / **`sourceStart`**), per-clip **`volume`**, optional **`keepOriginalAudio`**, **`originalVolume`**, and per-track **`speed`** / **`pitchSemitones`** (overlay clips and optional **`originalSpeed`** / **`originalPitchSemitones`** on the source audio).
+- **`adjustVolume`**: overall gain (**`volume`** as **percentage**, **100** = unity) and optional **`ranges`** for **per-interval** loudness; ranges may also set **`speed`** and **`pitchSemitones`** (interval pitch/speed via FFmpeg **`rubberband`** when available).
+
+##### ApexPainter
+- **`adjustVideoVolume`** now calls **`videoHelpers.adjustVideoVolume`** so **`VideoCreator`** and painter share one implementation.
+
+### 🔧 Improved
+
+##### Charts
+- Types and defaults aligned with runtime behavior (titles, axes, legends, and numeric display) for **clearer contracts** and **more predictable** layout across chart kinds.
+
+### 🐛 Fixed
+
+##### Charts
+- Various **typing** and **drawing** issues so labels, titles, and values stay **consistent** with options and scale math (including newer scatter / radar / polar-area paths).
+
+### ⚠️ Breaking changes
+
+##### Video volume helper
+- Gain for **`adjustVolume`** / **`adjustVideoVolume`** is expressed as a **percentage** (**100** = unchanged). Code that relied on the previous ApexPainter-only **`0–10`** linear **`volume`** argument should use **`100`** for nominal full level (or rescale accordingly).
+
 ## [5.3.16] - 2026-05-02
 
 ### ✨ Added

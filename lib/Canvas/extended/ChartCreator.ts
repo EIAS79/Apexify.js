@@ -2,6 +2,9 @@ import { createPieChart } from '../utils/Charts/piechart';
 import { createBarChart } from '../utils/Charts/barchart';
 import { createHorizontalBarChart } from '../utils/Charts/horizontalbarchart';
 import { createLineChart } from '../utils/Charts/linechart';
+import { createScatterChart } from '../utils/Charts/scatterchart';
+import { createRadarChart } from '../utils/Charts/radarchart';
+import { createPolarAreaChart } from '../utils/Charts/polarareachart';
 import { createComboChart } from '../utils/Charts/combochart';
 import { createComparisonChart } from '../utils/Charts/comparisonchart';
 import { getErrorMessage } from '../utils/core/errorUtils';
@@ -14,7 +17,7 @@ export class ChartCreator {
    * Creates a chart based on the specified type.
    * For side-by-side or stacked multi-chart layouts, use {@link createComparisonChart} instead.
    *
-   * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line')
+   * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line', 'scatter', 'radar', 'polarArea')
    * @param data - Chart data (type depends on chartType)
    * @param options - Chart options (type depends on chartType)
    * @returns Promise<Buffer> - Chart image buffer
@@ -40,7 +43,22 @@ export class ChartCreator {
     options?: import('../utils/Charts/linechart').LineChartOptions
   ): Promise<Buffer>;
   async createChart(
-    chartType: 'pie' | 'bar' | 'horizontalBar' | 'line',
+    chartType: 'scatter',
+    data: import('../utils/Charts/scatterchart').ScatterSeries[],
+    options?: import('../utils/Charts/scatterchart').ScatterChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'radar',
+    data: import('../utils/Charts/radarchart').RadarSeries[],
+    options?: import('../utils/Charts/radarchart').RadarChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'polarArea',
+    data: import('../utils/Charts/polarareachart').PolarAreaSlice[],
+    options?: import('../utils/Charts/polarareachart').PolarAreaChartOptions
+  ): Promise<Buffer>;
+  async createChart(
+    chartType: 'pie' | 'bar' | 'horizontalBar' | 'line' | 'scatter' | 'radar' | 'polarArea',
     data: any,
     options?: any
   ): Promise<Buffer> {
@@ -58,6 +76,15 @@ export class ChartCreator {
         case 'line':
           return await createLineChart(data, options);
 
+        case 'scatter':
+          return await createScatterChart(data, options);
+
+        case 'radar':
+          return await createRadarChart(data, options);
+
+        case 'polarArea':
+          return await createPolarAreaChart(data, options);
+
         default:
           throw new Error(`Unsupported chart type: ${chartType}`);
       }
@@ -68,7 +95,7 @@ export class ChartCreator {
 
   /**
    * Creates a comparison chart with two charts side by side or top/bottom.
-   * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
+   * Each chart can be of any type (pie, bar, horizontalBar, line, donut, scatter, radar, polarArea) with its own data and config.
    * Panel `appearance` supports gradient, `customBg`, `bgLayers`, and inherited axis defaults; charts are drawn with uniform scaling into each cell.
    *
    * @param options - Comparison chart configuration

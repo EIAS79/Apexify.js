@@ -9,6 +9,41 @@ import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
 const execAsync = promisify(exec);
 
 /**
+ * One external audio clip placed on the video timeline for {@link VideoCreationOptions.mixAudio}.
+ */
+export interface MixAudioOverlayClip {
+  source: string | Buffer;
+  /** Seconds on the output timeline when this clip starts. */
+  startTime: number;
+  /** Seconds of audio to use from the file (default: min of file remainder and video end). */
+  duration?: number;
+  /** Seconds to skip into the overlay file before playing (default 0). */
+  sourceStart?: number;
+  /** Linear gain (default 1). */
+  volume?: number;
+  /** Playback speed for this clip (`atempo`, clamped ~0.25–4). Not wall-clock stretch of `duration`; faster speed shortens how long the trimmed audio plays on the timeline. */
+  speed?: number;
+  /** Pitch shift in semitones (+12 = octave up). Uses `asetrate` + compensating `atempo` (no librubberband). */
+  pitchSemitones?: number;
+}
+
+/**
+ * Mix multiple audio files onto a video (background music, SFX, voice-over) while keeping or dropping original audio.
+ */
+export interface MixAudioOperation {
+  outputPath: string;
+  overlays: MixAudioOverlayClip[];
+  /** When true (default), include the video’s existing audio in the mix. When false, only silence + overlays. */
+  keepOriginalAudio?: boolean;
+  /** Gain applied to the original audio before mixing (default 1). */
+  originalVolume?: number;
+  /** Playback speed for the video’s original audio track (default 1). */
+  originalSpeed?: number;
+  /** Pitch shift in semitones for the original audio (default 0). */
+  originalPitchSemitones?: number;
+}
+
+/**
  * Video creation options interface
  */
 export interface VideoCreationOptions {
@@ -182,13 +217,35 @@ export interface VideoCreationOptions {
     speed?: number;
     outputPath: string;
   };
+  /** Drop all audio streams (video-only file). Same as {@link mute} with no `ranges`. */
+  removeAudio?: {
+    outputPath: string;
+  };
+  /**
+   * Mix one or more external audio clips at chosen times (paths, URLs, or buffers).
+   * Original soundtrack can stay (e.g. duck under music) or be omitted via `keepOriginalAudio: false`.
+   */
+  mixAudio?: MixAudioOperation;
   mute?: {
     outputPath: string;
+    /** Silence these time ranges (seconds); omit for full strip → use {@link removeAudio} or mute without ranges. */
     ranges?: Array<{ start: number; end: number }>;
   };
+  /** Adjust loudness; optional per-interval volume/pitch/speed (interval pitch/speed uses FFmpeg `rubberband` when set). */
   adjustVolume?: {
-    volume: number;
     outputPath: string;
+    /** Percentage of unity gain (100 = unchanged). Ignored when `ranges` is set. */
+    volume?: number;
+    ranges?: Array<{
+      start: number;
+      end: number;
+      /** Percentage linear gain /100 (100 = unity). */
+      volume: number;
+      /** Local playback speed in this interval (requires librubberband). */
+      speed?: number;
+      /** Pitch shift in semitones in this interval (requires librubberband). */
+      pitchSemitones?: number;
+    }>;
   };
   createFromFrames?: {
     frames: Array<string | Buffer>;
@@ -566,6 +623,20 @@ export class VideoCreator {
         return await this.createTimeLapseVideo(options.source, options.createTimeLapse);
       }
 
+      if (options.removeAudio) {
+        if (!this.muteVideo) {
+          throw new Error('muteVideo helper method not set');
+        }
+        return await this.muteVideo(options.source, { outputPath: options.removeAudio.outputPath });
+      }
+
+      if (options.mixAudio) {
+        if (!this.mixVideoAudio) {
+          throw new Error('mixVideoAudio helper method not set');
+        }
+        return await this.mixVideoAudio(options.source, options.mixAudio);
+      }
+
       if (options.mute) {
         if (!this.muteVideo) {
           throw new Error('muteVideo helper method not set');
@@ -708,6 +779,7 @@ export class VideoCreator {
   private createSplitScreen?: (options: any) => Promise<any>;
   private createTimeLapseVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
   private muteVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
+  private mixVideoAudio?: (videoSource: string | Buffer, options: any) => Promise<any>;
   private adjustVideoVolume?: (videoSource: string | Buffer, options: any) => Promise<any>;
   private createVideoFromFrames?: (options: any) => Promise<any>;
   private freezeVideoFrame?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
@@ -746,6 +818,7 @@ export class VideoCreator {
     createSplitScreen?: (options: any) => Promise<any>;
     createTimeLapseVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
     muteVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
+    mixVideoAudio?: (videoSource: string | Buffer, options: any) => Promise<any>;
     adjustVideoVolume?: (videoSource: string | Buffer, options: any) => Promise<any>;
     createVideoFromFrames?: (options: any) => Promise<any>;
     freezeVideoFrame?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
@@ -780,6 +853,7 @@ export class VideoCreator {
     this.createSplitScreen = helpers.createSplitScreen;
     this.createTimeLapseVideo = helpers.createTimeLapseVideo;
     this.muteVideo = helpers.muteVideo;
+    this.mixVideoAudio = helpers.mixVideoAudio;
     this.adjustVideoVolume = helpers.adjustVideoVolume;
     this.createVideoFromFrames = helpers.createVideoFromFrames;
     this.freezeVideoFrame = helpers.freezeVideoFrame;

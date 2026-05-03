@@ -17,6 +17,12 @@ import {
   reserveHorizontalForRotatedYAxisTitle,
 } from "./axisTitleLayout";
 
+/** Clamp chart layer opacity to 0–1 (invalid values → 1). */
+function clampChartOpacity(raw?: number): number {
+  if (raw === undefined || raw === null || Number.isNaN(Number(raw))) return 1;
+  return Math.min(1, Math.max(0, Number(raw)));
+}
+
 /**
  * Enhanced text styling for chart labels
  */
@@ -153,6 +159,11 @@ color?: string;
 show?: boolean;
 filled?: boolean;
   };
+  /**
+   * Opacity multiplier (0–1) for the series line, markers, area fill, error bars, and correlation curve.
+   * Overrides {@link LineChartOptions.lines.opacity} when set.
+   */
+  opacity?: number;
 }
 
 /**
@@ -272,6 +283,11 @@ width?: number;
     show?: boolean;
     color?: string;
     width?: number;
+  };
+
+  /** Default opacity (0–1) for all series; overridden per {@link LineSeries.opacity}. */
+  lines?: {
+    opacity?: number;
   };
 }
 
@@ -1853,6 +1869,8 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
   const gridColor = options.grid?.color ?? '#E0E0E0';
   const gridWidth = options.grid?.width ?? 1;
 
+  const globalLineOpacity = options.lines?.opacity;
+
   const xAxisConfig = options.axes?.x || {};
   const yAxisConfig = options.axes?.y || {};
   const xAxisLabel = xAxisConfig.label;
@@ -2187,6 +2205,8 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
   const chartAreaHeightForPoints = originY - axisEndY;
 
   series.forEach(serie => {
+    const seriesOpacity = clampChartOpacity(serie.opacity ?? globalLineOpacity ?? 1);
+
     const lineColor = serie.color || '#4A90E2';
     const lineWidth = serie.lineWidth ?? 2;
     const lineStyle = serie.lineStyle || 'solid';
@@ -2244,6 +2264,8 @@ let shadeToYCanvas: number | null = null;
       ctx.beginPath();
       ctx.rect(originX, axisEndY, axisEndX - originX, originY - axisEndY);
       ctx.clip();
+
+      ctx.globalAlpha = seriesOpacity;
 
       const areaColor = areaConfig.color || lineColor;
       const areaOpacity = areaConfig.opacity ?? 0.3;
@@ -2503,6 +2525,7 @@ const height = shadeToYValue - avgY;
 
     if (showLine) {
       ctx.save();
+      ctx.globalAlpha = seriesOpacity;
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = lineWidth;
 
@@ -2580,6 +2603,7 @@ const height = shadeToYValue - avgY;
           if (canvasCorrelationPoints.length > 0) {
 
             ctx.save();
+            ctx.globalAlpha = seriesOpacity;
             ctx.strokeStyle = correlationColor;
             ctx.lineWidth = correlationLineWidth;
             applyLineStyle(ctx, correlationLineStyle);
@@ -2598,6 +2622,8 @@ const height = shadeToYValue - avgY;
     }
 
     if (showMarkers) {
+      ctx.save();
+      ctx.globalAlpha = seriesOpacity;
       canvasPoints.forEach(canvasPoint => {
         const point = canvasPoint.originalPoint;
         const shouldShowMarker = point.showMarker !== false;
@@ -2607,9 +2633,12 @@ const height = shadeToYValue - avgY;
           drawMarker(ctx, canvasPoint.x, canvasPoint.y, markerType, markerSize, markerColorForPoint, markerFilled);
         }
       });
+      ctx.restore();
     }
 
     if (showErrorBars) {
+      ctx.save();
+      ctx.globalAlpha = seriesOpacity;
       canvasPoints.forEach(canvasPoint => {
         const point = canvasPoint.originalPoint;
         const errorBar = point.errorBar;
@@ -2638,10 +2667,12 @@ const height = shadeToYValue - avgY;
           }
         }
       });
+      ctx.restore();
     }
 
     if (showPointLabels) {
       ctx.save();
+      ctx.globalAlpha = seriesOpacity;
       ctx.fillStyle = pointLabelColor;
       ctx.font = `${pointLabelFontSize}px Arial`;
       ctx.textAlign = 'center';
@@ -2681,6 +2712,7 @@ const height = shadeToYValue - avgY;
 
     if (areaSize !== null && areaConfig && areaConfig.showAreaSize === true) {
       ctx.save();
+      ctx.globalAlpha = seriesOpacity;
       ctx.fillStyle = areaConfig.areaSizeColor || '#000000';
       ctx.font = `${pointLabelFontSize}px Arial`;
       ctx.textAlign = 'center';
@@ -2892,7 +2924,7 @@ const height = shadeToYValue - avgY;
   return canvas.toBuffer('image/png');
 }
 
-/** Shared primitives for combo / mixed charts. */
+/** Shared primitives for combo / mixed charts and scatter / radar charts. */
 export {
   applyCurveStrokeJoinStyle,
   applyLineStyle,
@@ -2905,6 +2937,7 @@ export {
   drawRightYAxisTicks,
   drawXAxisTicks,
   drawYAxisTicks,
+  fillWithGradientOrColor,
   formatDate,
   generateCorrelationPoints,
   lineChartExtendPathAlongSeries,

@@ -6,15 +6,29 @@ import type { PieSlice, PieChartOptions } from "./piechart";
 import type { BarChartData, BarChartOptions } from "./barchart";
 import type { HorizontalBarChartData, HorizontalBarChartOptions } from "./horizontalbarchart";
 import type { LineSeries, LineChartOptions } from "./linechart";
+import type { ScatterSeries, ScatterChartOptions } from "./scatterchart";
+import type { RadarSeries, RadarChartOptions } from "./radarchart";
+import type { PolarAreaSlice, PolarAreaChartOptions } from "./polarareachart";
 import { createPieChart } from './piechart';
 import { createBarChart } from './barchart';
 import { createHorizontalBarChart } from './horizontalbarchart';
 import { createLineChart } from './linechart';
+import { createScatterChart } from './scatterchart';
+import { createRadarChart } from './radarchart';
+import { createPolarAreaChart } from './polarareachart';
 
 /**
  * Chart type for comparison charts
  */
-export type ComparisonChartType = 'pie' | 'bar' | 'horizontalBar' | 'line' | 'donut';
+export type ComparisonChartType =
+  | 'pie'
+  | 'bar'
+  | 'horizontalBar'
+  | 'line'
+  | 'donut'
+  | 'scatter'
+  | 'radar'
+  | 'polarArea';
 
 /**
  * Chart data for comparison (union type)
@@ -23,7 +37,10 @@ export type ComparisonChartData =
   | PieSlice[]
   | BarChartData[]
   | HorizontalBarChartData[]
-  | LineSeries[];
+  | LineSeries[]
+  | ScatterSeries[]
+  | RadarSeries[]
+  | PolarAreaSlice[];
 
 /**
  * Chart options for individual charts in comparison (union type)
@@ -32,7 +49,10 @@ export type IndividualChartOptions =
   | PieChartOptions
   | BarChartOptions
   | HorizontalBarChartOptions
-  | LineChartOptions;
+  | LineChartOptions
+  | ScatterChartOptions
+  | RadarChartOptions
+  | PolarAreaChartOptions;
 
 /**
  * Enhanced text styling for comparison chart title
@@ -366,7 +386,13 @@ export async function createComparisonChart(
         props.legends = pieOptions.legends;
       }
     } else {
-      const otherOptions = chartOptions as BarChartOptions | HorizontalBarChartOptions | LineChartOptions;
+      const otherOptions = chartOptions as
+        | BarChartOptions
+        | HorizontalBarChartOptions
+        | LineChartOptions
+        | ScatterChartOptions
+        | RadarChartOptions
+        | PolarAreaChartOptions;
       if (otherOptions.legend && otherOptions.legend.entries && otherOptions.legend.entries.length > 0) {
         props.legend = otherOptions.legend;
       }
@@ -486,6 +512,15 @@ export async function createComparisonChart(
     case 'line':
       chart1Buffer = await createLineChart(options.chart1.data as LineSeries[], chart1Options as LineChartOptions);
       break;
+    case 'scatter':
+      chart1Buffer = await createScatterChart(options.chart1.data as ScatterSeries[], chart1Options as ScatterChartOptions);
+      break;
+    case 'radar':
+      chart1Buffer = await createRadarChart(options.chart1.data as RadarSeries[], chart1Options as RadarChartOptions);
+      break;
+    case 'polarArea':
+      chart1Buffer = await createPolarAreaChart(options.chart1.data as PolarAreaSlice[], chart1Options as PolarAreaChartOptions);
+      break;
     default:
       throw new Error(`Unsupported chart type for chart 1: ${options.chart1.type}`);
   }
@@ -507,6 +542,15 @@ export async function createComparisonChart(
       break;
     case 'line':
       chart2Buffer = await createLineChart(options.chart2.data as LineSeries[], chart2Options as LineChartOptions);
+      break;
+    case 'scatter':
+      chart2Buffer = await createScatterChart(options.chart2.data as ScatterSeries[], chart2Options as ScatterChartOptions);
+      break;
+    case 'radar':
+      chart2Buffer = await createRadarChart(options.chart2.data as RadarSeries[], chart2Options as RadarChartOptions);
+      break;
+    case 'polarArea':
+      chart2Buffer = await createPolarAreaChart(options.chart2.data as PolarAreaSlice[], chart2Options as PolarAreaChartOptions);
       break;
     default:
       throw new Error(`Unsupported chart type for chart 2: ${options.chart2.type}`);

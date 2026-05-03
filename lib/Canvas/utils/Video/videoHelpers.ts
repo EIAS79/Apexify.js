@@ -19,6 +19,35 @@ const execAsync = promisify(exec);
  * Helper function to resolve video source (Buffer, URL, or local path) to a file path
  * Downloads URLs and writes Buffers to temp files as needed
  */
+/**
+ * True if the file has at least one audio stream.
+ */
+async function probeHasAudioStream(mediaPath: string): Promise<boolean> {
+  const escaped = mediaPath.replace(/"/g, '\\"');
+  try {
+    const { stdout } = await execAsync(
+      `ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "${escaped}"`,
+      { timeout: 20000, maxBuffer: 1024 * 1024 }
+    );
+    return stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function probeFormatDurationSeconds(mediaPath: string): Promise<number> {
+  const escaped = mediaPath.replace(/"/g, '\\"');
+  try {
+    const { stdout } = await execAsync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${escaped}"`,
+      { timeout: 20000, maxBuffer: 1024 * 1024 }
+    );
+    return parseFloat(stdout.trim()) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function resolveVideoSource(
   videoSource: string | Buffer,
   frameDir: string,
@@ -50,6 +79,53 @@ async function resolveVideoSource(
     }
     return { videoPath: resolvedPath, shouldCleanup: false };
   }
+}
+
+const DEFAULT_AUDIO_RATE = 48000;
+
+function clampAudioSpeed(s: number): number {
+  if (!Number.isFinite(s)) return 1;
+  return Math.min(4, Math.max(0.25, s));
+}
+
+/** Builds chained `atempo` filters; each stage stays within FFmpeg’s 0.5–2.0 range. */
+function chainAtempoSegments(factor: number): string {
+  if (!Number.isFinite(factor) || factor <= 0) return '';
+  let f = factor;
+  const parts: string[] = [];
+  while (f > 2 + 1e-9) {
+    parts.push('atempo=2');
+    f /= 2;
+  }
+  while (f < 0.5 - 1e-9) {
+    parts.push('atempo=0.5');
+    f /= 0.5;
+  }
+  if (Math.abs(f - 1) > 1e-6) {
+    parts.push(`atempo=${f}`);
+  }
+  return parts.join(',');
+}
+
+/** Pitch shift (semitones) without rubberband: rate change + compensating tempo so duration is preserved. */
+function buildPitchSemitonesChain(semitones: number): string {
+  const ratio = Math.pow(2, semitones / 12);
+  const inv = 1 / ratio;
+  const tempo = chainAtempoSegments(inv);
+  const rate = DEFAULT_AUDIO_RATE * ratio;
+  return `asetrate=${rate},aresample=${DEFAULT_AUDIO_RATE}${tempo ? `,${tempo}` : ''}`;
+}
+
+function buildMixPitchSpeedSegment(pitchSemitones?: number, speed?: number): string {
+  const parts: string[] = [];
+  if (pitchSemitones != null && pitchSemitones !== 0) {
+    parts.push(buildPitchSemitonesChain(pitchSemitones));
+  }
+  if (speed != null && speed !== 1) {
+    const t = chainAtempoSegments(clampAudioSpeed(speed));
+    if (t) parts.push(t);
+  }
+  return parts.filter(Boolean).join(',');
 }
 
 /**
@@ -1747,10 +1823,10 @@ timeout: 600000,
       const volumeFilters = options.ranges.map(range =>
         `volume=enable='between(t,${range.start},${range.end})':volume=0`
       ).join(',');
-      command = `ffmpeg -i "${escapedVideoPath}" -af "${volumeFilters}" -y "${escapedOutputPath}"`;
+      command = `ffmpeg -i "${escapedVideoPath}" -af "${volumeFilters}" -c:v copy -y "${escapedOutputPath}"`;
     } else {
 
-      command = `ffmpeg -i "${escapedVideoPath}" -an -y "${escapedOutputPath}"`;
+      command = `ffmpeg -i "${escapedVideoPath}" -c:v copy -an -y "${escapedOutputPath}"`;
     }
 
     try {
@@ -1768,11 +1844,165 @@ timeout: 600000,
   }
 
   /**
+   * Mix arbitrary audio clips onto the video timeline (delays, trims, volume).
+   * Original audio can stay (duck with overlays) or be dropped (silence + overlays only).
+   */
+  async mixVideoAudio(
+    videoSource: string | Buffer,
+    options: {
+      outputPath: string;
+      overlays: Array<{
+        source: string | Buffer;
+        startTime: number;
+        duration?: number;
+        sourceStart?: number;
+        volume?: number;
+        speed?: number;
+        pitchSemitones?: number;
+      }>;
+      keepOriginalAudio?: boolean;
+      originalVolume?: number;
+      originalSpeed?: number;
+      originalPitchSemitones?: number;
+    }
+  ): Promise<{ outputPath: string; success: boolean }> {
+    if (!options.overlays || options.overlays.length === 0) {
+      throw new Error('mixAudio: provide at least one entry in overlays');
+    }
+
+    const frameDir = path.join(process.cwd(), '.temp-frames');
+    if (!fs.existsSync(frameDir)) {
+      fs.mkdirSync(frameDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(videoSource, frameDir, timestamp);
+
+    const info = await this.deps.getVideoInfo(videoPath, true);
+    const videoDuration = info?.duration ?? 0;
+    if (!videoDuration || videoDuration <= 0) {
+      if (shouldCleanupVideo && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      throw new Error('mixAudio: could not determine video duration');
+    }
+
+    const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
+    const escapedMain = videoPath.replace(/"/g, '\\"');
+
+    const keepOriginal = options.keepOriginalAudio !== false;
+    const origVol = options.originalVolume ?? 1;
+    const origTail = buildMixPitchSpeedSegment(
+      options.originalPitchSemitones,
+      options.originalSpeed
+    );
+
+    const mainHasAudio = await probeHasAudioStream(videoPath);
+
+    interface PreparedOverlay {
+      path: string;
+      cleanup: boolean;
+      tag: string;
+      fcSegment: string;
+    }
+
+    const prepared: PreparedOverlay[] = [];
+    let overlaySeq = 0;
+    for (const ov of options.overlays) {
+      const { videoPath: op, shouldCleanup: oc } = await resolveVideoSource(ov.source, frameDir, timestamp + overlaySeq + 1);
+      overlaySeq++;
+
+      const startTime = Math.max(0, ov.startTime);
+      const delayMs = Math.round(startTime * 1000);
+      const srcStart = Math.max(0, ov.sourceStart ?? 0);
+      const vol = ov.volume ?? 1;
+
+      const overlayDur = await probeFormatDurationSeconds(op);
+      const roomOnTimeline = Math.max(0, videoDuration - startTime);
+      const availInFile = Math.max(0, overlayDur - srcStart);
+      let playLen =
+        ov.duration != null
+          ? ov.duration
+          : Math.min(availInFile, roomOnTimeline);
+      playLen = Math.min(playLen, availInFile, roomOnTimeline);
+
+      if (playLen < 0.04 || roomOnTimeline <= 0) {
+        if (oc && fs.existsSync(op)) fs.unlinkSync(op);
+        continue;
+      }
+
+      const inputIdx = prepared.length + 1;
+      const tag = `ov${prepared.length}`;
+      const mid = buildMixPitchSpeedSegment(ov.pitchSemitones, ov.speed);
+      const midSeg = mid ? `${mid},` : '';
+      const fcSegment = `[${inputIdx}:a]atrim=start=${srcStart}:duration=${playLen},asetpts=PTS-STARTPTS,aresample=48000,${midSeg}aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${vol},adelay=${delayMs}|${delayMs}[${tag}];`;
+      prepared.push({ path: op, cleanup: oc, tag, fcSegment });
+    }
+
+    if (prepared.length === 0) {
+      if (shouldCleanupVideo && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      throw new Error(
+        'mixAudio: no usable overlays (check startTime vs video duration, duration, and sourceStart)'
+      );
+    }
+
+    const inputs: string[] = [`-i "${escapedMain}"`];
+    for (const p of prepared) {
+      inputs.push(`-i "${p.path.replace(/"/g, '\\"')}"`);
+    }
+
+    let fc = '';
+    const mixLabels: string[] = [];
+
+    if (keepOriginal && mainHasAudio) {
+      const origMid = origTail ? `${origTail},` : '';
+      fc += `[0:a]aresample=48000,${origMid}aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${origVol}[m0];`;
+      mixLabels.push('[m0]');
+    } else {
+      fc += `anullsrc=r=48000:cl=stereo,atrim=end=${videoDuration},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[m0];`;
+      mixLabels.push('[m0]');
+    }
+
+    for (let i = 0; i < prepared.length; i++) {
+      fc += prepared[i]!.fcSegment;
+      mixLabels.push(`[${prepared[i]!.tag}]`);
+    }
+
+    const nIn = mixLabels.length;
+    fc += `${mixLabels.join('')}amix=inputs=${nIn}:duration=longest:normalize=1[outa]`;
+
+    const cmd = `ffmpeg ${inputs.join(' ')} -filter_complex "${fc}" -map 0:v -map "[outa]" -c:v copy -c:a aac -b:a 192k -t ${videoDuration} -y "${escapedOutputPath}"`;
+
+    try {
+      await execAsync(cmd, { timeout: 600000, maxBuffer: 30 * 1024 * 1024 });
+      if (shouldCleanupVideo && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      for (const p of prepared) {
+        if (p.cleanup && fs.existsSync(p.path)) fs.unlinkSync(p.path);
+      }
+      return { outputPath: options.outputPath, success: true };
+    } catch (error) {
+      if (shouldCleanupVideo && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      for (const p of prepared) {
+        if (p.cleanup && fs.existsSync(p.path)) fs.unlinkSync(p.path);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Adjust video volume
    */
   async adjustVideoVolume(
     videoSource: string | Buffer,
-    options: { volume?: number; outputPath: string; ranges?: Array<{ start: number; end: number; volume: number }> }
+    options: {
+      volume?: number;
+      outputPath: string;
+      ranges?: Array<{
+        start: number;
+        end: number;
+        volume: number;
+        speed?: number;
+        pitchSemitones?: number;
+      }>;
+    }
   ): Promise<{ outputPath: string; success: boolean }> {
     const frameDir = path.join(process.cwd(), '.temp-frames');
     if (!fs.existsSync(frameDir)) {
@@ -1788,16 +2018,31 @@ timeout: 600000,
     let command: string;
 
     if (options.ranges && options.ranges.length > 0) {
-
-      const volumeFilters = options.ranges.map(range => {
+      const segments: string[] = [];
+      for (const range of options.ranges) {
         const volumeMultiplier = range.volume / 100;
-        return `volume=enable='between(t,${range.start},${range.end})':volume=${volumeMultiplier}`;
-      }).join(',');
-      command = `ffmpeg -i "${escapedVideoPath}" -af "${volumeFilters}" -y "${escapedOutputPath}"`;
+        const en = `enable='between(t\\,${range.start}\\,${range.end})'`;
+        segments.push(`volume=${en}:volume=${volumeMultiplier}`);
+        const needRb =
+          (range.speed != null && range.speed !== 1) ||
+          (range.pitchSemitones != null && range.pitchSemitones !== 0);
+        if (needRb) {
+          const rb: string[] = [];
+          if (range.speed != null && range.speed !== 1) {
+            rb.push(`tempo=${clampAudioSpeed(range.speed)}`);
+          }
+          if (range.pitchSemitones != null && range.pitchSemitones !== 0) {
+            rb.push(`pitch=${range.pitchSemitones * 100}`);
+          }
+          if (rb.length > 0) {
+            segments.push(`rubberband=${rb.join(':')}:${en}`);
+          }
+        }
+      }
+      command = `ffmpeg -i "${escapedVideoPath}" -af "${segments.join(',')}" -c:v copy -y "${escapedOutputPath}"`;
     } else {
-
-      const volumeMultiplier = (options.volume || 100) / 100;
-      command = `ffmpeg -i "${escapedVideoPath}" -af "volume=${volumeMultiplier}" -y "${escapedOutputPath}"`;
+      const volumeMultiplier = (options.volume ?? 100) / 100;
+      command = `ffmpeg -i "${escapedVideoPath}" -af "volume=${volumeMultiplier}" -c:v copy -y "${escapedOutputPath}"`;
     }
 
     try {

@@ -43,6 +43,9 @@ import type { PieSlice, PieChartOptions } from "./utils/Charts/piechart";
 import type { BarChartData, BarChartOptions } from "./utils/Charts/barchart";
 import type { HorizontalBarChartData, HorizontalBarChartOptions } from "./utils/Charts/horizontalbarchart";
 import type { LineSeries, LineChartOptions } from "./utils/Charts/linechart";
+import type { ScatterSeries, ScatterChartOptions } from "./utils/Charts/scatterchart";
+import type { RadarSeries, RadarChartOptions } from "./utils/Charts/radarchart";
+import type { PolarAreaSlice, PolarAreaChartOptions } from "./utils/Charts/polarareachart";
 
 export class ApexPainter {
   private format?: OutputFormat;
@@ -156,8 +159,10 @@ export class ApexPainter {
         this.#createTimeLapseVideo(videoSource, options),
       muteVideo: (videoSource, options) =>
         this.#muteVideo(videoSource, options),
+      mixVideoAudio: (videoSource, options) =>
+        this.videoHelpers.mixVideoAudio(videoSource, options),
       adjustVideoVolume: (videoSource, options) =>
-        this.#adjustVideoVolume(videoSource, options),
+        this.videoHelpers.adjustVideoVolume(videoSource, options),
       createVideoFromFrames: (options) =>
         this.#createVideoFromFrames(options),
       freezeVideoFrame: (videoSource, options, onProgress) =>
@@ -3293,58 +3298,6 @@ export class ApexPainter {
   }
 
   /**
-   * Adjust video volume
-   * @private
-   */
-  async #adjustVideoVolume(
-    videoSource: string | Buffer,
-    options: { volume: number; outputPath: string }
-  ): Promise<{ outputPath: string; success: boolean }> {
-    const frameDir = path.join(process.cwd(), '.temp-frames');
-    if (!fs.existsSync(frameDir)) {
-      fs.mkdirSync(frameDir, { recursive: true });
-    }
-
-    let videoPath: string;
-    let shouldCleanupVideo = false;
-    const timestamp = Date.now();
-
-    if (Buffer.isBuffer(videoSource)) {
-      videoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
-      fs.writeFileSync(videoPath, videoSource);
-      shouldCleanupVideo = true;
-    } else {
-      let resolvedPath = videoSource;
-      if (!/^https?:\/\//i.test(resolvedPath)) {
-        resolvedPath = path.join(process.cwd(), resolvedPath);
-      }
-      if (!fs.existsSync(resolvedPath)) {
-        throw new Error(`Video file not found: ${videoSource}`);
-      }
-      videoPath = resolvedPath;
-    }
-
-    const volume = Math.max(0, Math.min(10, options.volume)); // Clamp between 0 and 10
-    const escapedVideoPath = videoPath.replace(/"/g, '\\"');
-    const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
-
-    const command = `ffmpeg -i "${escapedVideoPath}" -af "volume=${volume}" -y "${escapedOutputPath}"`;
-
-    try {
-      await execAsync(command, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
-      if (shouldCleanupVideo && fs.existsSync(videoPath)) {
-        fs.unlinkSync(videoPath);
-      }
-      return { outputPath: options.outputPath, success: true };
-    } catch (error) {
-      if (shouldCleanupVideo && fs.existsSync(videoPath)) {
-        fs.unlinkSync(videoPath);
-      }
-      throw error;
-    }
-  }
-
-  /**
    * Create video from frames/images
    * @private
    */
@@ -4425,7 +4378,7 @@ break;
   /**
    * Creates a chart based on the chart type.
    *
-   * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line')
+   * @param chartType - Type of chart to create ('pie', 'bar', 'horizontalBar', 'line', 'scatter', 'radar', 'polarArea')
    * @param data - Chart data (varies by chart type)
    * @param options - Chart options (varies by chart type)
    * @returns Promise<Buffer> - Chart image buffer
@@ -4457,17 +4410,23 @@ break;
    * );
    * ```
    */
-  async createChart<T extends 'pie' | 'bar' | 'horizontalBar' | 'line'>(
+  async createChart<T extends 'pie' | 'bar' | 'horizontalBar' | 'line' | 'scatter' | 'radar' | 'polarArea'>(
     chartType: T,
     data: T extends 'pie' ? PieSlice[]
       : T extends 'bar' ? BarChartData[]
       : T extends 'horizontalBar' ? HorizontalBarChartData[]
       : T extends 'line' ? LineSeries[]
+      : T extends 'scatter' ? ScatterSeries[]
+      : T extends 'radar' ? RadarSeries[]
+      : T extends 'polarArea' ? PolarAreaSlice[]
       : never,
     options?: T extends 'pie' ? PieChartOptions
       : T extends 'bar' ? BarChartOptions
       : T extends 'horizontalBar' ? HorizontalBarChartOptions
       : T extends 'line' ? LineChartOptions
+      : T extends 'scatter' ? ScatterChartOptions
+      : T extends 'radar' ? RadarChartOptions
+      : T extends 'polarArea' ? PolarAreaChartOptions
       : never
   ): Promise<Buffer> {
     switch (chartType) {
@@ -4479,6 +4438,12 @@ break;
         return await this.chartCreator.createChart('horizontalBar', data as HorizontalBarChartData[], options as HorizontalBarChartOptions | undefined);
       case 'line':
         return await this.chartCreator.createChart('line', data as LineSeries[], options as LineChartOptions | undefined);
+      case 'scatter':
+        return await this.chartCreator.createChart('scatter', data as ScatterSeries[], options as ScatterChartOptions | undefined);
+      case 'radar':
+        return await this.chartCreator.createChart('radar', data as RadarSeries[], options as RadarChartOptions | undefined);
+      case 'polarArea':
+        return await this.chartCreator.createChart('polarArea', data as PolarAreaSlice[], options as PolarAreaChartOptions | undefined);
       default:
         throw new Error(`Unsupported chart type: ${chartType}`);
     }
@@ -4486,7 +4451,7 @@ break;
 
   /**
    * Creates a comparison chart with two charts side by side or top/bottom.
-   * Each chart can be of any type (pie, bar, horizontalBar, line, donut) with its own data and config.
+   * Each chart can be of any type (pie, bar, horizontalBar, line, donut, scatter, radar, polarArea) with its own data and config.
    *
    * Panel appearance supports the same building blocks as canvas backgrounds: solid/gradient fill,
    * optional `customBg`, `bgLayers` overlays, and optional default axis styling inherited by sub-charts.
