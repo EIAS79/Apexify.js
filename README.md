@@ -1,419 +1,672 @@
-# 🎨 Apexify.js - The Ultimate Canvas & Image Processing Library
+# Apexify.js
 
 <div align="center">
 
 ![Apexify.js Banner](https://imgur.com/0E9GTmP)
 
-**🚀 One Library. Infinite Possibilities. Professional Results.**
+**Programmatic visual generation for Node.js.**
 
-[![npm version](https://badge.fury.io/js/apexify.js.svg)](https://badge.fury.io/js/apexify.js)
+Create images, charts, text effects, shapes, GIFs, and video outputs from JavaScript or TypeScript.
+
+[![npm version](https://badge.fury.io/js/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![npm downloads](https://img.shields.io/npm/dt/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ready-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-16%2B-green.svg)](https://nodejs.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-**The most powerful, all-in-one canvas rendering and image processing library for Node.js**
-
-**🚀 Now Even More Advanced: Full Canvas API Compatibility + Advanced Extensions**
+[Documentation](https://apexifyjs.vercel.app/docs#00-start-here) ·
+[Gallery](https://apexifyjs.vercel.app/gallery) ·
+[Studio](https://apexifyjs.vercel.app/studio) ·
+[npm](https://www.npmjs.com/package/apexify.js)
 
 </div>
 
 ---
 
-## 🏆 Why Apexify.js is Better Than Everything Else
+## What is Apexify.js?
 
-### **The Only Library That Does It All**
+**Apexify.js** is a TypeScript-first Node.js rendering library for generating visual assets from code.
 
-While other libraries force you to install multiple packages for different tasks, **Apexify.js gives you everything in one place**:
+It is built for developers who need to create images, charts, banners, cards, reports, GIFs, or video-related outputs without manually designing every asset.
 
-| Feature | Apexify.js | Other Libraries |
-|---------|-----------|-----------------|
-| **Canvas Rendering** | ✅ Built-in | ❌ Separate library needed |
-| **Image Processing** | ✅ Built-in | ❌ Requires Sharp/Jimp |
-| **Video Processing** | ✅ Built-in (33+ features) | ❌ Requires FFmpeg wrapper |
-| **Chart Generation** | ✅ Built-in (6 chart types) | ❌ Requires Chart.js/Recharts |
-| **GIF Creation** | ✅ Built-in | ❌ Separate library needed |
-| **Text Rendering** | ✅ Advanced (gradients, paths, effects) | ❌ Basic only |
-| **Shape Drawing** | ✅ Complex shapes (heart, star, custom) | ❌ Basic shapes only |
-| **Batch Processing** | ✅ Built-in | ❌ Manual implementation |
-| **Text Metrics API** | ✅ Advanced (Canvas API + extensions) | ❌ Not available |
-| **Pixel Data API** | ✅ Advanced (get/set/manipulate) | ❌ Not available |
-| **Path2D API** | ✅ Advanced (full Canvas compatibility) | ⚠️ Basic only |
-| **Hit Detection** | ✅ Advanced (multi-region, custom) | ❌ Not available |
-| **TypeScript Support** | ✅ Full type safety | ⚠️ Partial or none |
-| **Performance** | ✅ Rust-powered (@napi-rs) | ⚠️ JavaScript-only |
+Apexify.js combines:
 
-### **Why Developers Choose Apexify.js**
+- canvas rendering
+- image composition
+- text rendering
+- shape drawing
+- chart generation
+- GIF creation
+- video processing
+- batch output utilities
+- pixel/path/hit-testing APIs
 
-✅ **Zero Configuration** - Works out of the box, no complex setup  
-✅ **TypeScript First** - Complete type definitions for everything  
-✅ **Rust-Powered Performance** - Built on @napi-rs/canvas for blazing speed  
-✅ **Modular Architecture** - Clean, maintainable codebase  
-✅ **Comprehensive Features** - 200+ methods covering every use case  
-✅ **Canvas API Compatible** - Full Canvas API support with advanced extensions  
-✅ **Advanced APIs** - Text Metrics, Pixel Data, Path2D, Hit Detection  
-✅ **Active Development** - Regular updates with new features  
-✅ **Production Ready** - Used in production by thousands of projects  
+under one programmable workflow.
 
 ---
 
-## 🎯 Where Apexify.js Shines
-
-### **Perfect For:**
-
-- 🚀 **Next.js Applications** - Server-side image generation, API routes, ISR
-- 🤖 **Discord Bots** - Welcome cards, level-up graphics, profile images
-- 🛒 **E-commerce** - Product image generation, banners, marketing materials
-- 📱 **Social Media** - Profile pictures, cover images, post graphics
-- 🎮 **Gaming** - Game assets, UI elements, character cards
-- 💼 **Business** - Business cards, certificates, professional documents
-- 🎨 **Design Tools** - Build Photoshop-like applications
-- 📊 **Data Visualization** - Charts, graphs, infographics
-- 🎬 **Video Editing** - Thumbnails, previews, effects, transitions
-- 🔄 **Automation** - Batch processing, thumbnail generation, asset creation
-
----
-
-## ✨ Complete Feature List
-
-### 🎨 **Canvas & Backgrounds**
-
-| Feature | Description |
-|---------|-------------|
-| **Solid Colors** | Custom background colors with opacity control |
-| **Gradients** | Linear, radial, and conic gradients with custom stops |
-| **Image Backgrounds** | Custom images with filters, opacity, and positioning |
-| **Video Backgrounds** | Extract frames from videos as backgrounds |
-| **Patterns** | Professional pattern overlays (dots, lines, grids, custom) |
-| **Noise Effects** | Add texture and grain to backgrounds |
-| **Zoom Effects** | Apply zoom transformations to backgrounds |
-| **Layered backgrounds (`bgLayers`)** | Stack color, gradient, image, pattern, or noise passes after the base fill — each layer supports opacity and blend mode |
-
-### 🖼️ **Image Processing**
-
-| Feature | Description |
-|---------|-------------|
-| **Image Drawing** | Draw images with positioning, scaling, rotation |
-| **Image Filters** | Blur, sharpen, brightness, contrast, saturation |
-| **Color Filters** | Grayscale, sepia, invert, custom color adjustments |
-| **Professional Filters** | Vintage, cinematic, black & white, custom presets |
-| **Image Effects** | Vignette, lens flare, chromatic aberration, film grain |
-| **Image Masking** | Alpha, luminance, and inverse masking modes |
-| **Image Distortion** | Perspective, bulge/pinch, mesh warping |
-| **Image Cropping** | Inner and outer cropping with precise control |
-| **Image Resizing** | Smart resizing with aspect ratio preservation |
-| **Background Removal** | AI-powered background removal |
-| **Color Detection** | Extract dominant colors from images |
-| **Color Removal** | Remove specific colors from images |
-| **Image Rotation** | Rotate images with custom angles |
-| **Image Blending** | 15+ blend modes (multiply, screen, overlay, etc.); **`createImage`** supports per-layer **`blendMode`** (bitmaps & shapes) and **`blendMode`** on grouped **`createImage`** options |
-| **Image Stitching** | Stitch multiple images together (horizontal, vertical, grid) |
-| **Image Collage** | Create collages with grid, masonry, carousel layouts |
-| **Image Compression** | Compress images (JPEG, WebP, AVIF) with quality control |
-| **Color Palette Extraction** | Extract color palettes using k-means, median-cut, octree |
-
-### 📝 **Text Rendering**
-
-| Feature | Description |
-|---------|-------------|
-| **Basic Text** | Simple text rendering with fonts and colors |
-| **Enhanced Text** | Advanced text with shadows, strokes, glows |
-| **Text Gradients** | Gradient text fills (linear, radial, conic) |
-| **Text on Paths** | Render text along curves, arcs, and bezier paths |
-| **Custom Fonts** | Load custom fonts (.ttf, .otf, .woff) |
-| **Text Decorations** | Bold, italic, underline, strikethrough |
-| **Text Effects** | Shadows, strokes, glows, outlines |
-| **Text Alignment** | Left, center, right, justify alignment |
-| **Text Wrapping** | Automatic text wrapping with custom widths |
-| **Text Rotation** | Rotate text at any angle |
-| **Text Spacing** | Letter spacing and line height control |
-| **Text Metrics API** | Advanced text measurement (Canvas API + extensions) |
-| **Character Metrics** | Per-character width and position metrics |
-| **Multi-line Metrics** | Line-by-line text metrics for wrapped text |
-
-### 🔷 **Shape Drawing**
-
-| Feature | Description |
-|---------|-------------|
-| **Basic Shapes** | Rectangle, circle, ellipse, line, polygon |
-| **Complex Shapes** | Heart, star, custom path shapes |
-| **Shape Fills** | Solid colors, gradients, patterns, images |
-| **Shape Strokes** | Custom stroke width, color, style (solid, dashed, dotted) |
-| **Shape Shadows** | Drop shadows with blur, offset, color |
-| **Shape Rotation** | Rotate shapes with custom angles |
-| **Shape Scaling** | Scale shapes with custom factors |
-| **Advanced Strokes** | Groove, ridge, double, inset, outset styles |
-| **Arc & PieSlice** | Draw arcs and pie slice sectors with custom angles |
-| **Path2D API** | Advanced path creation and manipulation |
-| **Hit Detection** | Point-in-shape detection with custom regions |
-
-### 📊 **Chart Generation**
-
-| Feature | Description |
-|---------|-------------|
-| **Pie Charts** | Standard and donut pie charts with gradients |
-| **Bar Charts** | Standard, grouped, stacked, waterfall, lollipop charts |
-| **Horizontal Bar Charts** | All bar chart types in horizontal orientation |
-| **Line Charts** | Multi-series line charts with gradients |
-| **Axis readability** | Tick labels inherit axis colors (readable on dark chart backgrounds); rotated Y-axis titles spaced from tick numbers; X-axis title spaced below tick labels |
-| **Line chart frame** | Optional **`borderRadius` / `borderWidth` / `borderColor`** on line chart appearance — frame drawn after plot content |
-| **Comparison Charts** | Side-by-side comparison of any two chart types |
-| **Chart Customization** | Gradients, custom fonts, legends, labels, titles |
-| **Data Visualization** | Professional charts for data presentation |
-
-### 🎬 **Video Processing** (33+ Features)
-
-| Feature | Description |
-|---------|-------------|
-| **Video Info** | Extract video metadata (duration, resolution, FPS, bitrate) |
-| **Frame Extraction** | Extract single or multiple frames at specific times |
-| **Video Thumbnails** | Generate thumbnail grids from videos |
-| **Video Conversion** | Convert between formats (MP4, WebM, AVI, MOV, MKV) |
-| **Video Trimming** | Trim videos to specific time ranges |
-| **Audio Extraction** | Extract audio tracks from videos |
-| **Video Watermarking** | Add image or text watermarks to videos |
-| **Speed Control** | Change video playback speed (slow motion, time-lapse) |
-| **Video Effects** | Apply filters (blur, brightness, contrast, saturation) |
-| **Video Merging** | Merge multiple videos (sequential, side-by-side, grid) |
-| **Segment Replacement** | Replace video segments with other videos or frames |
-| **Video Rotation** | Rotate videos (90°, 180°, 270°) |
-| **Video Cropping** | Crop videos to specific regions |
-| **Video Compression** | Compress videos with quality presets |
-| **Text Overlays** | Add text/subtitles to videos with positioning |
-| **Fade Effects** | Add fade in/out transitions |
-| **Reverse Playback** | Reverse video and audio |
-| **Video Loops** | Create seamless video loops |
-| **Batch Processing** | Process multiple videos in parallel |
-| **Scene Detection** | Detect scene changes in videos |
-| **Video Stabilization** | Reduce camera shake and stabilize footage |
-| **Color Correction** | Professional color grading (brightness, contrast, saturation, hue) |
-| **Picture-in-Picture** | Add overlay videos with positioning |
-| **Split Screen** | Create multi-video layouts (side-by-side, grid) |
-| **Time-lapse Creation** | Speed up videos to create time-lapses |
-| **Audio Control** | Mute, adjust volume, normalize audio levels |
-| **Format Detection** | Analyze video properties and formats |
-| **Freeze Frame** | Hold a frame for dramatic effect |
-| **Export Presets** | Platform-optimized presets (YouTube, Instagram, TikTok, etc.) |
-| **Progress Tracking** | Real-time progress callbacks for all operations |
-| **Audio Normalization** | Professional audio leveling (LUFS, Peak, RMS) |
-| **LUT Support** | Apply Look-Up Tables for cinematic color grading |
-| **Video Transitions** | 9 transition types (fade, wipe, slide, zoom, rotate, etc.) |
-| **Animated Text** | 8 animation types (fadeIn, slideIn, zoom, bounce, typewriter, etc.) |
-| **Frame-to-Video (`createFromFrames`)** | Encode a sequence of image paths or buffers to MP4/WebM/etc. (requires **FFmpeg** on the host) |
-
-### 🎞️ **GIF Creation**
-
-| Feature | Description |
-|---------|-------------|
-| **GIF Generation** | Create animated GIFs from image sequences |
-| **Typed frames** | **`GIFInputFrame`** / **`GIFEncodedFrame`** — buffers, paths, URLs, durations, optional per-frame **`dispose`**, **`transparentColor`**, **`watermark`** |
-| **Programmatic frames (`onStart`)** | Build frames in code without passing all frames up front; return an array or **`AsyncIterable`** of encoded frames for streaming / lower peak memory |
-| **Globals & hints** | **`transparentColor`**, **`defaultDispose`**, global watermark, **`skipResizeWhenDimensionsMatch`**, **`delay`** / **`frameCount`** / **`duration`** hints, **`textOverlay`**, **`onEnd`** (post-process final composite) |
-| **Frame Management** | Add frames with custom durations |
-| **GIF Watermarking** | Global or per-frame watermarks (**`GIFWatermarkSpec`**) |
-| **Text Overlays** | Add text to GIF frames |
-| **Output Formats** | File, buffer, base64, attachment output |
-| **Quality Control** | Adjust GIF quality and optimization |
-
-### 🔬 **Advanced APIs** ⭐ NEW!
-
-| Feature | Description |
-|---------|-------------|
-| **Text Metrics API** | Complete text measurement matching Canvas API + extensions |
-| **Pixel Data API** | Direct pixel manipulation (get/set/manipulate pixels) |
-| **Pixel Filters** | Built-in filters (grayscale, invert, sepia, brightness, contrast) |
-| **Custom Pixel Processors** | Custom functions for pixel-level processing |
-| **Path2D API** | Advanced path creation with commands (moveTo, lineTo, arc, bezier, etc.) |
-| **Path Drawing** | Draw paths with stroke, fill, and transform options |
-| **Hit Detection** | Point-in-path and point-in-region detection |
-| **Custom Regions** | Rectangle, circle, ellipse, polygon, path, and custom function regions |
-| **Multi-Region Detection** | Test points against multiple regions simultaneously |
-| **Distance Calculation** | Calculate distances from points to region edges |
-
-### 🛠️ **Utilities & Tools**
-
-| Feature | Description |
-|---------|-------------|
-| **Batch Operations** | Process multiple operations in parallel |
-| **Chain Operations** | Chain operations sequentially |
-| **Format Conversion** | Convert between PNG, JPEG, WebP, AVIF, SVG |
-| **Smart Saving** | Save with timestamps, counters, custom naming |
-| **Multiple Formats** | Export to PNG, JPEG, WebP, AVIF, GIF |
-| **Custom Lines** | Advanced line drawing with arrows, markers, patterns |
-| **Smooth Paths** | Create smooth curves with tension control |
-| **Catmull-Rom Splines** | Professional curve interpolation |
-
----
-
-## 🚀 Quick Start
+## Install
 
 ```bash
 npm install apexify.js
 ```
 
-```typescript
-import { ApexPainter } from 'apexify.js';
-
-const painter = new ApexPainter();
-
-// Create a canvas
-  const canvas = await painter.createCanvas({
-    width: 1200,
-    height: 630,
-    gradientBg: {
-      type: 'linear',
-      colors: [
-        { stop: 0, color: '#667EEA' },
-        { stop: 1, color: '#764BA2' }
-      ]
-    }
-  });
-  
-// Add text
-const text = await painter.createText({
-  text: 'Hello, World!',
-    x: 600,
-    y: 315,
-  fontSize: 48,
-    color: '#FFFFFF',
-  fontFamily: 'Arial'
-}, canvas);
-
-// Add image
-const image = await painter.createImage({
-  source: 'path/to/image.png',
-  x: 100,
-  y: 100,
-  width: 200,
-  height: 200
-  }, canvas);
-
-// Advanced: Text Metrics API
-const metrics = await painter.measureText({
-  text: 'Hello, World!',
-  fontSize: 48,
-  fontFamily: 'Arial',
-  includeCharMetrics: true
-});
-console.log(`Text width: ${metrics.width}px`);
-
-// Advanced: Pixel Data API
-const pixelData = await painter.getPixelData(image.buffer, {
-  x: 0, y: 0, width: 100, height: 100
-});
-const processed = await painter.manipulatePixels(image.buffer, {
-  filter: 'grayscale',
-  intensity: 1.0
-});
-
-// Advanced: Path2D API
-const path = painter.createPath2D([
-  { type: 'moveTo', x: 0, y: 0 },
-  { type: 'lineTo', x: 100, y: 100 },
-  { type: 'arc', x: 150, y: 150, radius: 50, startAngle: 0, endAngle: Math.PI }
-]);
-await painter.drawPath(canvas.buffer, path, {
-  stroke: { color: '#ff0000', width: 2 },
-  fill: { color: '#00ff00', opacity: 0.5 }
-});
-
-// Advanced: Hit Detection API
-const hitResult = await painter.isPointInRegion({
-  type: 'circle',
-  x: 100, y: 100, radius: 50
-}, 120, 120);
-console.log(`Point hit: ${hitResult.hit}`);
-  
-// Save result
-await painter.save(image, { 
-  path: './output.png',
-  format: 'png'
-});
-```
-
----
-
-## 📦 Installation
-
 ```bash
-npm install apexify.js
-# or
 yarn add apexify.js
-# or
+```
+
+```bash
 pnpm add apexify.js
 ```
 
-**Requirements:**
-- Node.js 16+ 
-- TypeScript 5+ (optional but recommended)
+### Requirements
+
+- Node.js 16+
+- TypeScript recommended
+- FFmpeg required only for video features
 
 ---
 
-## 🎯 Use Cases
+## Quick Start
 
-### **Next.js Applications**
-Generate images in API routes, server actions, and edge functions. Perfect for dynamic OG images, social media previews, and on-demand image generation.
+Create a canvas, draw text on it, and save the result.
 
-### **Discord Bots**
-Create stunning welcome cards, level-up graphics, profile images, and leaderboards. All with a simple API.
+```ts
+import { ApexPainter } from "apexify.js";
+import fs from "fs";
 
-### **E-commerce Platforms**
-Generate product images, banners, marketing materials, and promotional graphics automatically.
+const painter = new ApexPainter();
 
-### **Social Media Tools**
-Create profile pictures, cover images, post graphics, and story templates programmatically.
+const { buffer: base } = await painter.createCanvas({
+  width: 1200,
+  height: 630,
+  gradientBg: {
+    type: "linear",
+    colors: [
+      { stop: 0, color: "#667eea" },
+      { stop: 1, color: "#764ba2" },
+    ],
+  },
+});
 
-### **Design Tools**
-Build Photoshop-like applications with code export capabilities and professional image processing.
+const output = await painter.createText(
+  {
+    text: "Hello Apexify.js",
+    x: 600,
+    y: 315,
+    font: {
+      size: 72,
+      family: "Arial",
+    },
+    bold: true,
+    color: "#ffffff",
+    textAlign: "center",
+    textBaseline: "middle",
+    shadow: {
+      color: "rgba(0,0,0,0.35)",
+      offsetX: 0,
+      offsetY: 14,
+      blur: 28,
+      opacity: 1,
+    },
+  },
+  base
+);
 
-### **Data Visualization**
-Generate charts, graphs, and infographics for reports, dashboards, and presentations.
-
-### **Video Production**
-Create thumbnails, previews, apply effects, transitions, and process videos at scale.
-
----
-
-## 🔥 Performance
-
-- **Rust-Powered**: Built on @napi-rs/canvas for native performance
-- **Optimized Algorithms**: Efficient image processing and rendering
-- **Batch Processing**: Process multiple operations in parallel
-- **Memory Efficient**: Smart resource management and cleanup
-- **Canvas API Native**: Direct access to Canvas APIs for maximum performance
-
----
-
-## 📚 Documentation
-
-- **Full Documentation**: [https://apexifyjs.vercel.app](https://apexifyjs.vercel.app)
-- **GitHub Repository**: [https://github.com/EIAS79/Apexify.js](https://github.com/EIAS79/Apexify.js)
-- **Changelog**: See [CHANGELOG.md](./CHANGELOG.md) for version history
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](./LICENSE) file for details.
+fs.writeFileSync("output.png", output);
+```
 
 ---
 
-## ⭐ Star History
+## Core Workflow
 
-If you find Apexify.js useful, please consider giving it a star on GitHub!
+Apexify.js uses a simple buffer-based rendering flow:
+
+```txt
+createCanvas()
+     ↓
+createText() / createImage() / createChart()
+     ↓
+save / export / return buffer
+```
+
+Most APIs return a `Buffer`, which can be saved to disk, sent through an API route, uploaded, attached to a bot message, or passed into another Apexify operation.
+
+---
+
+## Why Use Apexify.js?
+
+Apexify.js is useful when your application needs to generate visuals automatically.
+
+Examples:
+
+- dynamic Open Graph images
+- social media banners
+- Discord welcome cards
+- product cards
+- certificates
+- reports and chart images
+- dashboard snapshots
+- animated GIFs
+- video thumbnails
+- frame-based videos
+- batch-generated marketing assets
+
+Instead of designing every asset manually, you define the visual structure in code and generate outputs on demand.
+
+---
+
+## Main Features
+
+### Canvas & Backgrounds
+
+Create base canvases with solid colors, gradients, images, layered backgrounds, patterns, noise, shadows, borders, and transformations.
+
+```ts
+const { buffer } = await painter.createCanvas({
+  width: 1200,
+  height: 630,
+  colorBg: "#0f172a",
+});
+```
+
+Supported background tools include:
+
+- solid colors
+- linear, radial, and conic gradients
+- image backgrounds
+- video frame backgrounds
+- layered backgrounds with `bgLayers`
+- pattern overlays
+- noise effects
+- borders and shadows
+
+---
+
+### Text Rendering
+
+Render styled text with layout control, gradients, shadows, strokes, glow effects, decorations, wrapping, custom fonts, rotation, and curved text.
+
+```ts
+const output = await painter.createText(
+  {
+    text: "Apexify.js",
+    x: 600,
+    y: 300,
+    font: {
+      size: 80,
+      family: "Arial",
+    },
+    bold: true,
+    color: "#ffffff",
+    textAlign: "center",
+    textBaseline: "middle",
+  },
+  canvasBuffer
+);
+```
+
+Text capabilities include:
+
+- font size and family
+- custom fonts
+- bold and italic
+- alignment and baseline control
+- wrapping
+- gradients
+- shadows
+- strokes
+- glows
+- underline, overline, strikethrough
+- curved text
+- text metrics
+
+---
+
+### Images & Shapes
+
+Draw images or vector-style shapes on top of an existing canvas.
+
+```ts
+const output = await painter.createImage(
+  {
+    source: "rectangle",
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 220,
+    shape: {
+      fill: true,
+      color: "#ffffff",
+    },
+    borderRadius: 32,
+    shadow: {
+      color: "rgba(0,0,0,0.25)",
+      offsetX: 0,
+      offsetY: 16,
+      blur: 32,
+    },
+  },
+  canvasBuffer
+);
+```
+
+Image and shape features include:
+
+- bitmap drawing
+- shape drawing
+- resizing
+- cropping
+- masking
+- clipping
+- rotation
+- opacity
+- shadows
+- strokes
+- blend modes
+- filters
+- group transforms
+- perspective and distortion tools
+
+---
+
+### Charts
+
+Generate static chart images directly from data.
+
+```ts
+const chart = await painter.createChart(
+  "line",
+  [
+    {
+      label: "Revenue",
+      data: [12, 18, 24, 31, 42],
+      color: "#7c3aed",
+    },
+  ],
+  {
+    width: 900,
+    height: 500,
+    title: "Revenue Growth",
+  }
+);
+```
+
+Supported chart types include:
+
+- pie
+- donut
+- bar
+- horizontal bar
+- line
+- scatter
+- radar
+- polar area
+- comparison charts
+- combo charts
+
+---
+
+### GIF Creation
+
+Create animated GIFs from frames, buffers, image paths, or programmatic frame generation.
+
+```ts
+const gif = await painter.createGIF(
+  undefined,
+  {
+    width: 600,
+    height: 600,
+    frameCount: 30,
+    delay: 40,
+    outputFormat: "buffer",
+    async onStart(frameCount, painter) {
+      const frames = [];
+
+      for (let i = 0; i < frameCount; i++) {
+        const { buffer } = await painter.createCanvas({
+          width: 600,
+          height: 600,
+          colorBg: "#111827",
+        });
+
+        const frame = await painter.createText(
+          {
+            text: `Frame ${i + 1}`,
+            x: 300,
+            y: 300,
+            font: { size: 48, family: "Arial" },
+            color: "#ffffff",
+            textAlign: "center",
+            textBaseline: "middle",
+          },
+          buffer
+        );
+
+        frames.push({
+          buffer: frame,
+          duration: 40,
+        });
+      }
+
+      return frames;
+    },
+  }
+);
+```
+
+GIF features include:
+
+- frame-based animation
+- custom frame duration
+- programmatic frame generation
+- transparent color support
+- per-frame disposal
+- watermark support
+- buffer, file, base64, and attachment outputs
+
+---
+
+### Video Processing
+
+Apexify.js includes FFmpeg-backed video utilities for workflows such as metadata extraction, frame extraction, conversion, trimming, thumbnails, audio operations, transitions, and frame-to-video encoding.
+
+```ts
+const info = await painter.createVideo({
+  source: "./input.mp4",
+  getInfo: true,
+});
+```
+
+Create a video from generated frames:
+
+```ts
+await painter.createVideo({
+  source: "./placeholder.mp4",
+  createFromFrames: {
+    frames: ["./frame-001.png", "./frame-002.png", "./frame-003.png"],
+    outputPath: "./output.mp4",
+    fps: 30,
+    format: "mp4",
+  },
+});
+```
+
+> Video features require FFmpeg and ffprobe to be available on the host system.
+
+---
+
+### Advanced APIs
+
+Apexify.js also exposes lower-level APIs for advanced rendering and analysis.
+
+#### Text Metrics
+
+```ts
+const metrics = await painter.measureText({
+  text: "Hello Apexify.js",
+  font: {
+    size: 48,
+    family: "Arial",
+  },
+  includeCharMetrics: true,
+});
+```
+
+#### Pixel Data
+
+```ts
+const pixelData = await painter.getPixelData(canvasBuffer, {
+  x: 0,
+  y: 0,
+  width: 100,
+  height: 100,
+});
+```
+
+#### Pixel Manipulation
+
+```ts
+const processed = await painter.manipulatePixels(canvasBuffer, {
+  filter: "grayscale",
+  intensity: 1,
+});
+```
+
+#### Path2D
+
+```ts
+const path = painter.createPath2D([
+  { type: "moveTo", x: 100, y: 100 },
+  { type: "lineTo", x: 300, y: 100 },
+  { type: "lineTo", x: 300, y: 300 },
+  { type: "closePath" },
+]);
+
+const output = await painter.drawPath(canvasBuffer, path, {
+  stroke: {
+    color: "#ffffff",
+    width: 4,
+  },
+  fill: {
+    color: "#7c3aed",
+    opacity: 0.6,
+  },
+});
+```
+
+#### Hit Detection
+
+```ts
+const hit = await painter.isPointInRegion(
+  {
+    type: "circle",
+    x: 200,
+    y: 200,
+    radius: 80,
+  },
+  220,
+  210
+);
+```
+
+---
+
+## API Overview
+
+The main entry point is:
+
+```ts
+import { ApexPainter } from "apexify.js";
+
+const painter = new ApexPainter();
+```
+
+Common methods:
+
+| Method | Purpose |
+|---|---|
+| `createCanvas()` | Create a base canvas |
+| `createText()` | Draw text on an existing canvas |
+| `createImage()` | Draw images or shapes on an existing canvas |
+| `createCustom()` | Draw custom lines, arrows, and connectors |
+| `createChart()` | Generate a chart image |
+| `createComparisonChart()` | Generate multi-chart comparison layouts |
+| `createComboChart()` | Generate combined bar/line charts |
+| `createGIF()` | Generate animated GIFs |
+| `createVideo()` | Run FFmpeg-backed video operations |
+| `measureText()` | Measure text layout |
+| `getPixelData()` | Read pixel data from a canvas |
+| `setPixelData()` | Write pixel data back to a canvas |
+| `manipulatePixels()` | Apply pixel-level processing |
+| `createPath2D()` | Build a path from path commands |
+| `drawPath()` | Draw a path onto a canvas |
+| `isPointInRegion()` | Test whether a point is inside a region |
+| `batch()` | Run multiple operations |
+| `chain()` | Run sequential operations |
+| `save()` | Save output files |
+| `outPut()` | Convert output to configured format |
+
+---
+
+## Output Formats
+
+Apexify.js can work with multiple output forms depending on the operation and configuration:
+
+- `Buffer`
+- file output
+- base64
+- data URL
+- Blob-like output
+- ArrayBuffer
+- URL/upload helpers where supported
+
+Most rendering APIs return a `Buffer`, which gives you full control over how the result is stored or sent.
+
+---
+
+## Use Cases
+
+### Server-side image generation
+
+Generate Open Graph images, banners, reports, cards, and previews from API routes or background jobs.
+
+### Discord and bot graphics
+
+Create welcome cards, profile images, level cards, badges, and generated attachments.
+
+### Marketing and social media automation
+
+Generate post images, product visuals, quote cards, thumbnails, and campaign assets in bulk.
+
+### Data visualization
+
+Render chart images for reports, dashboards, email attachments, and static exports.
+
+### Media pipelines
+
+Extract frames, generate thumbnails, build GIFs, create video from frames, or process videos through FFmpeg-backed workflows.
+
+---
+
+## Documentation
+
+Full documentation is available at:
+
+[https://apexifyjs.vercel.app/docs#00-start-here](https://apexifyjs.vercel.app/docs#00-start-here)
+
+Useful links:
+
+- [Start Here](https://apexifyjs.vercel.app/docs#00-start-here)
+- [Gallery](https://apexifyjs.vercel.app/gallery)
+- [Studio](https://apexifyjs.vercel.app/studio)
+- [API Reference](https://apexifyjs.vercel.app/docs#api-reference)
+- [npm package](https://www.npmjs.com/package/apexify.js)
+
+---
+
+## Gallery and Studio
+
+The gallery contains real generated outputs with matching TypeScript and JavaScript snippets.
+
+Use it to explore what Apexify.js can produce:
+
+[Open Gallery](https://apexifyjs.vercel.app/gallery)
+
+The Studio lets you edit and run snippets in a browser-based code playground:
+
+[Open Studio](https://apexifyjs.vercel.app/studio)
+
+---
+
+## TypeScript
+
+Apexify.js is written in TypeScript and ships type definitions.
+
+```ts
+import { ApexPainter, CanvasTypes } from "apexify.js";
+
+const painter = new ApexPainter();
+
+const config: CanvasTypes.CanvasConfig = {
+  width: 1200,
+  height: 630,
+  colorBg: "#111827",
+};
+
+const { buffer } = await painter.createCanvas(config);
+```
+
+---
+
+## Performance
+
+Apexify.js is built on top of `@napi-rs/canvas`, using native rendering foundations for server-side canvas workloads.
+
+Performance depends on:
+
+- canvas size
+- number of layers
+- image filters
+- chart complexity
+- GIF frame count
+- video duration and codec
+- available CPU/memory
+- FFmpeg availability for video workflows
+
+For heavy workloads, use batching carefully and benchmark with your own input sizes.
+
+---
+
+## Notes
+
+- Apexify.js is primarily designed for Node.js/server-side usage.
+- Video features require FFmpeg and ffprobe.
+- Some advanced image/video workflows may require additional host capabilities.
+- Large images, long GIFs, and video pipelines can be memory-intensive.
+- For browser-based exploration, use the Studio.
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
+
+---
+
+## Contributing
+
+Contributions are welcome.
+
+Recommended contribution areas:
+
+- examples
+- documentation
+- bug fixes
+- additional recipes
+- chart improvements
+- performance benchmarks
+- test cases
+
+Open an issue before major architectural changes.
+
+---
+
+## License
+
+MIT License. See [LICENSE](./LICENSE).
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by the Apexify.js community**
+**Apexify.js**  
+Programmatic visual generation for Node.js.
 
-[Documentation](https://apexifyjs.vercel.app) • [GitHub](https://github.com/EIAS79/Apexify.js) • [npm](https://www.npmjs.com/package/apexify.js) • [Report Bug](https://github.com/EIAS79/Apexify.js/issues)
+[Documentation](https://apexifyjs.vercel.app/docs#00-start-here) ·
+[Gallery](https://apexifyjs.vercel.app/gallery) ·
+[Studio](https://apexifyjs.vercel.app/studio) ·
+[npm](https://www.npmjs.com/package/apexify.js) ·
+[Issues](https://github.com/EIAS79/Apexify.js/issues)
 
 </div>

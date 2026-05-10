@@ -20,7 +20,6 @@ import { OutputFormat, CanvasConfig, TextProperties, ImageProperties, GIFOptions
     SaveOptions, SaveResult,
     CreateImageOptions,
     TextMetrics, PixelData, PixelManipulationOptions,
-
     PathCommand, Path2DDrawOptions, HitRegion, HitDetectionOptions, HitDetectionResult,
     getErrorMessage, getCanvasContext
     } from "./utils/canvasUtils";
@@ -229,8 +228,8 @@ export class ApexPainter {
    *   - width: Image/shape width (optional, defaults to original size)
    *   - height: Image/shape height (optional, defaults to original size)
    *   - inherit: Use original image dimensions (boolean)
-   *   - fit: Image fitting mode ('fill', 'contain', 'cover', 'scale-down', 'none')
-   *   - align: Image alignment ('center', 'start', 'end')
+   *   - fit: Image fitting mode ('fill', 'contain', 'cover') — see `FitMode`
+   *   - align: Image alignment (`AlignMode`: corners & edges + `'center'`)
    *   - rotation: Rotation angle in degrees (default: 0)
    *   - opacity: Opacity level 0-1 (default: 1)
    *   - blur: Blur radius in pixels (default: 0)
