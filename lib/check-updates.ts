@@ -1,5 +1,3 @@
-// lib/checkUpdates.ts
-
 export type ApexifyUpdateStatus = {
     packageName: string;
     currentVersion: string | null;
