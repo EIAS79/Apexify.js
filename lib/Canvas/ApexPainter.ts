@@ -36,6 +36,14 @@ import {
     PixelDataCreator,
     Path2DCreator,
     HitDetectionCreator,
+    SceneCreator,
+    SceneBuilder,
+    type SceneLayer,
+    type SceneRenderInput,
+    type SceneGifInputFrame,
+    type SceneVideoFrameSlot,
+    expandSceneGifFrames,
+    expandSceneVideoFrames,
 } from "./services";
 import { VideoHelpers } from "./utils/video/videoHelpers";
 import type { PieSlice, PieChartOptions } from "./utils/chart/piechart";
@@ -62,6 +70,7 @@ export class ApexPainter {
   private pixelDataCreator: PixelDataCreator;
   private path2DCreator: Path2DCreator;
   private hitDetectionCreator: HitDetectionCreator;
+  private sceneCreator: SceneCreator;
 
   constructor({ type }: OutputFormat = { type: 'buffer' }) {
     this.format = { type: type || 'buffer' };
@@ -78,6 +87,13 @@ export class ApexPainter {
     this.pixelDataCreator = new PixelDataCreator();
     this.path2DCreator = new Path2DCreator();
     this.hitDetectionCreator = new HitDetectionCreator();
+    this.sceneCreator = new SceneCreator({
+      canvasCreator: this.canvasCreator,
+      imageCreator: this.imageCreator,
+      textCreator: this.textCreator,
+      path2DCreator: this.path2DCreator,
+      chartCreator: this.chartCreator,
+    });
 
 
     this.canvasCreator.setExtractVideoFrame(
@@ -216,6 +232,124 @@ export class ApexPainter {
 
   async createCanvas(canvas: CanvasConfig): Promise<CanvasResults> {
     return this.canvasCreator.createCanvas(canvas);
+  }
+
+  /**
+   * Builds a layered scene on one root canvas and encodes to PNG once on {@link SceneBuilder.render}.
+   * Use this for complex compositions; keep using {@link createCanvas}, {@link createImage}, {@link createText},
+   * etc. when you prefer the buffer-chaining style.
+   */
+  createScene(config: {
+    width: number;
+    height: number;
+    background?: SceneRenderInput["background"];
+    layers?: SceneLayer[];
+  }): SceneBuilder;
+  createScene(width: number, height: number): SceneBuilder;
+  createScene(
+    widthOrConfig: number | {
+      width: number;
+      height: number;
+      background?: SceneRenderInput["background"];
+      layers?: SceneLayer[];
+    },
+    height?: number
+  ): SceneBuilder {
+    if (typeof widthOrConfig === "object") {
+      const { width, height: h, background, layers } = widthOrConfig;
+      const b = new SceneBuilder(this.sceneCreator, width, h, layers);
+      if (background !== undefined) {
+        b.setBackground(background);
+      }
+      return b;
+    }
+    if (height === undefined) {
+      throw new Error("createScene: height is required when the first argument is numeric width.");
+    }
+    return new SceneBuilder(this.sceneCreator, widthOrConfig, height, []);
+  }
+
+  /**
+   * Renders a scene from a plain config object (same pipeline as {@link createScene}().{@link SceneBuilder.render}).
+   */
+  async renderScene(input: SceneRenderInput): Promise<Buffer> {
+    return this.sceneCreator.render(input);
+  }
+
+  /**
+   * Renders the scene to one PNG, then encodes a GIF (GIF/video are not scene layers — use this or {@link createGIF}).
+   */
+  async renderSceneToGIF(
+    scene: SceneRenderInput,
+    gif: {
+      options: GIFOptions;
+      gifFrames?: SceneGifInputFrame[];
+      prependComposedRaster?: boolean;
+      composedFrameDuration?: number;
+      composedFrameRepeat?: number;
+    }
+  ): Promise<Awaited<ReturnType<GIFCreator["createGIF"]>>> {
+    const composedPng = await this.sceneCreator.render(scene);
+    if (gif.options.onStart) {
+      throw new Error(
+        "renderSceneToGIF: use createGIF with onStart alone, or remove onStart when building from a composed scene."
+      );
+    }
+    const prepend = gif.prependComposedRaster !== false;
+    const duration =
+      gif.composedFrameDuration ??
+      (typeof gif.options.delay === "number" ? gif.options.delay : 100);
+    const composedRepeat = Math.max(1, Math.floor(gif.composedFrameRepeat ?? 1));
+    const tail = expandSceneGifFrames(gif.gifFrames ?? []);
+    const frames: GIFInputFrame[] = [];
+    if (prepend) {
+      const base: GIFInputFrame = { buffer: composedPng, duration };
+      for (let i = 0; i < composedRepeat; i++) {
+        frames.push({ ...base });
+      }
+    }
+    frames.push(...tail);
+    if (frames.length === 0) {
+      throw new Error("renderSceneToGIF: need at least one frame (prepend and/or gifFrames).");
+    }
+    return this.gifCreator.createGIF(frames, gif.options);
+  }
+
+  /**
+   * Renders the scene to one PNG, then runs {@link createVideo} with `createFromFrames` (prepend composed frame by default).
+   */
+  async renderSceneToVideoFrames(
+    scene: SceneRenderInput,
+    video: {
+      options: VideoCreationOptions;
+      prependComposedToFrames?: boolean;
+      framesWithRepeats?: SceneVideoFrameSlot[];
+    }
+  ): Promise<Awaited<ReturnType<VideoCreator["createVideo"]>>> {
+    const composedPng = await this.sceneCreator.render(scene);
+    const opt = video.options;
+    if (!opt.createFromFrames) {
+      throw new Error("renderSceneToVideoFrames: options.createFromFrames is required.");
+    }
+    const cf = opt.createFromFrames;
+    const prepend = video.prependComposedToFrames !== false;
+    const body =
+      video.framesWithRepeats != null
+        ? expandSceneVideoFrames(video.framesWithRepeats)
+        : [...cf.frames];
+    const frames = prepend ? [composedPng, ...body] : body;
+    if (frames.length === 0) {
+      throw new Error("renderSceneToVideoFrames: no frames after expansion.");
+    }
+    const merged: VideoCreationOptions = {
+      ...opt,
+      source: opt.source ?? composedPng,
+      createFromFrames: {
+        ...cf,
+        frames,
+      },
+    };
+    return this.videoCreator.createVideo(merged);
   }
 
   /**

@@ -16,3 +16,17 @@ export { TextMetricsCreator } from "./TextMetricsCreator";
 export { PixelDataCreator } from "./PixelDataCreator";
 export { Path2DCreator } from "./Path2DCreator";
 export { HitDetectionCreator } from "./HitDetectionCreator";
+export {
+  SceneCreator,
+  SceneBuilder,
+  type SceneLayer,
+  type SceneRenderInput,
+  type SceneSurfacePlacement,
+  type SceneChartType,
+  type SceneCreatorDeps,
+  type SceneRenderResult,
+  type SceneGifInputFrame,
+  type SceneVideoFrameSlot,
+  expandSceneGifFrames,
+  expandSceneVideoFrames,
+} from "./SceneCreator";

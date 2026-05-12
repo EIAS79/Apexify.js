@@ -111,6 +111,131 @@ export class Path2DCreator {
   }
 
   /**
+   * Draws path stroke/fill onto an existing 2D context. Used by {@link drawPath} and scene rendering.
+   */
+  drawPathOntoContext(
+    ctx: SKRSContext2D,
+    path: any | PathCommand[],
+    canvasSize: { width: number; height: number },
+    options?: Path2DDrawOptions
+  ): void {
+    const path2D = Array.isArray(path) ? this.createPath2D(path) : path;
+
+    ctx.save();
+
+    if (options?.transform) {
+      const { translateX, translateY, rotate, scaleX, scaleY, originX, originY } = options.transform;
+
+      if (originX !== undefined && originY !== undefined) {
+        ctx.translate(originX, originY);
+
+        if (rotate !== undefined) {
+          ctx.rotate((rotate * Math.PI) / 180);
+        }
+
+        if (scaleX !== undefined || scaleY !== undefined) {
+          ctx.scale(scaleX ?? 1, scaleY ?? 1);
+        }
+
+        ctx.translate(-originX, -originY);
+      } else {
+        if (translateX !== undefined || translateY !== undefined) {
+          ctx.translate(translateX ?? 0, translateY ?? 0);
+        }
+
+        if (rotate !== undefined) {
+          ctx.rotate((rotate * Math.PI) / 180);
+        }
+
+        if (scaleX !== undefined || scaleY !== undefined) {
+          ctx.scale(scaleX ?? 1, scaleY ?? 1);
+        }
+      }
+    }
+
+    const rootOpacity = clamp01(options?.opacity ?? 1);
+    const gradBounds = options?.gradientBounds ?? {
+      x: 0,
+      y: 0,
+      w: canvasSize.width,
+      h: canvasSize.height,
+    };
+
+    if (options?.globalCompositeOperation) {
+      ctx.globalCompositeOperation = options.globalCompositeOperation as GlobalCompositeOperation;
+    }
+
+    if (options?.shadow) {
+      applyCanvasShadow(ctx, options.shadow, gradBounds);
+    }
+
+    if (options?.stroke) {
+      const stroke = options.stroke;
+
+      if (stroke.gradient) {
+        ctx.strokeStyle = createGradientFill(ctx, stroke.gradient, gradBounds);
+      } else if (stroke.color) {
+        ctx.strokeStyle = stroke.color;
+      }
+
+      if (stroke.width !== undefined) {
+        ctx.lineWidth = stroke.width;
+      }
+
+      if (stroke.lineCap) {
+        ctx.lineCap = stroke.lineCap;
+      }
+
+      if (stroke.lineJoin) {
+        ctx.lineJoin = stroke.lineJoin;
+      }
+
+      if (stroke.miterLimit !== undefined) {
+        ctx.miterLimit = stroke.miterLimit;
+      }
+
+      if (stroke.dashArray && stroke.dashArray.length > 0) {
+        ctx.setLineDash(stroke.dashArray);
+      } else if (stroke.style === "dashed") {
+        ctx.setLineDash([10, 6]);
+      } else if (stroke.style === "dotted") {
+        ctx.setLineDash([2, 5]);
+      } else {
+        ctx.setLineDash([]);
+      }
+
+      if (stroke.dashOffset !== undefined) {
+        ctx.lineDashOffset = stroke.dashOffset;
+      }
+
+      ctx.globalAlpha = rootOpacity * clamp01(stroke.opacity ?? 1);
+
+      ctx.stroke(path2D);
+      ctx.setLineDash([]);
+    }
+
+    if (options?.fill) {
+      const fill = options.fill;
+
+      if (fill.gradient) {
+        ctx.fillStyle = createGradientFill(ctx, fill.gradient, gradBounds);
+      } else if (fill.color) {
+        ctx.fillStyle = fill.color;
+      }
+
+      ctx.globalAlpha = rootOpacity * clamp01(fill.opacity ?? 1);
+
+      if (fill.rule) {
+        ctx.fill(path2D, fill.rule);
+      } else {
+        ctx.fill(path2D);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
    * Draws a Path2D object onto a canvas buffer
    * @param canvasBuffer - Canvas buffer or CanvasResults
    * @param path - Path2D object or commands array
@@ -137,118 +262,7 @@ export class Path2DCreator {
 
       const path2D = Array.isArray(path) ? this.createPath2D(path) : path;
 
-      ctx.save();
-
-      if (options?.transform) {
-        const { translateX, translateY, rotate, scaleX, scaleY, originX, originY } = options.transform;
-
-        if (originX !== undefined && originY !== undefined) {
-          ctx.translate(originX, originY);
-
-          if (rotate !== undefined) {
-            ctx.rotate((rotate * Math.PI) / 180);
-          }
-
-          if (scaleX !== undefined || scaleY !== undefined) {
-            ctx.scale(scaleX ?? 1, scaleY ?? 1);
-          }
-
-          ctx.translate(-originX, -originY);
-        } else {
-          if (translateX !== undefined || translateY !== undefined) {
-            ctx.translate(translateX ?? 0, translateY ?? 0);
-          }
-
-          if (rotate !== undefined) {
-            ctx.rotate((rotate * Math.PI) / 180);
-          }
-
-          if (scaleX !== undefined || scaleY !== undefined) {
-            ctx.scale(scaleX ?? 1, scaleY ?? 1);
-          }
-        }
-      }
-
-      const rootOpacity = clamp01(options?.opacity ?? 1);
-      const gradBounds = options?.gradientBounds ?? {
-        x: 0,
-        y: 0,
-        w: image.width,
-        h: image.height,
-      };
-
-      if (options?.globalCompositeOperation) {
-        ctx.globalCompositeOperation = options.globalCompositeOperation as GlobalCompositeOperation;
-      }
-
-      if (options?.shadow) {
-        applyCanvasShadow(ctx, options.shadow, gradBounds);
-      }
-
-      if (options?.stroke) {
-        const stroke = options.stroke;
-
-        if (stroke.gradient) {
-          ctx.strokeStyle = createGradientFill(ctx, stroke.gradient, gradBounds);
-        } else if (stroke.color) {
-          ctx.strokeStyle = stroke.color;
-        }
-
-        if (stroke.width !== undefined) {
-          ctx.lineWidth = stroke.width;
-        }
-
-        if (stroke.lineCap) {
-          ctx.lineCap = stroke.lineCap;
-        }
-
-        if (stroke.lineJoin) {
-          ctx.lineJoin = stroke.lineJoin;
-        }
-
-        if (stroke.miterLimit !== undefined) {
-          ctx.miterLimit = stroke.miterLimit;
-        }
-
-        if (stroke.dashArray && stroke.dashArray.length > 0) {
-          ctx.setLineDash(stroke.dashArray);
-        } else if (stroke.style === "dashed") {
-          ctx.setLineDash([10, 6]);
-        } else if (stroke.style === "dotted") {
-          ctx.setLineDash([2, 5]);
-        } else {
-          ctx.setLineDash([]);
-        }
-
-        if (stroke.dashOffset !== undefined) {
-          ctx.lineDashOffset = stroke.dashOffset;
-        }
-
-        ctx.globalAlpha = rootOpacity * clamp01(stroke.opacity ?? 1);
-
-        ctx.stroke(path2D);
-        ctx.setLineDash([]);
-      }
-
-      if (options?.fill) {
-        const fill = options.fill;
-
-        if (fill.gradient) {
-          ctx.fillStyle = createGradientFill(ctx, fill.gradient, gradBounds);
-        } else if (fill.color) {
-          ctx.fillStyle = fill.color;
-        }
-
-        ctx.globalAlpha = rootOpacity * clamp01(fill.opacity ?? 1);
-
-        if (fill.rule) {
-          ctx.fill(path2D, fill.rule);
-        } else {
-          ctx.fill(path2D);
-        }
-      }
-
-      ctx.restore();
+      this.drawPathOntoContext(ctx, path2D, { width: image.width, height: image.height }, options);
 
       return canvas.toBuffer("image/png");
     } catch (error) {

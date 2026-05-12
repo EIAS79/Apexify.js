@@ -670,39 +670,29 @@ export class ImageCreator {
   }
 
   /**
-   * Draws one or more images (or shapes) on an existing canvas buffer.
+   * Paints one or more images/shapes onto an existing 2D context. The context must already
+   * reflect the destination pixels (e.g. background drawn). Used by {@link createImage} and scene rendering.
    *
-   * @param images - Single ImageProperties object or array of ImageProperties
-   * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
-   * @param options - Optional options for grouped drawing
-   * @returns Promise<Buffer> - Updated canvas buffer in PNG format
+   * @param ctx - Target context (same dimensions as canvasSize)
+   * @param images - Image properties (single or array)
+   * @param canvasSize - Width/height of the target surface (replaces reading from a base bitmap)
+   * @param options - Optional grouped drawing options
    */
-  async createImage(
+  async paintImageLayersOntoContext(
+    ctx: SKRSContext2D,
     images: ImageProperties | ImageProperties[],
-    canvasBuffer: CanvasResults | Buffer,
+    canvasSize: { width: number; height: number },
     options?: CreateImageOptions
-  ): Promise<Buffer> {
-    try {
-      if (!canvasBuffer) {
-        throw new Error("createImage: canvasBuffer is required.");
-      }
-      this.validateImageArray(images);
+  ): Promise<void> {
+    this.validateImageArray(images);
+    const list = Array.isArray(images) ? images : [images];
+    const cw = canvasSize.width;
+    const ch = canvasSize.height;
 
-      const list = Array.isArray(images) ? images : [images];
+    const isGrouped = options?.isGrouped && list.length > 1;
+    const groupTransform = options?.groupTransform;
 
-      const base: Image = Buffer.isBuffer(canvasBuffer)
-        ? await loadImage(canvasBuffer)
-        : await loadImage((canvasBuffer as CanvasResults).buffer);
-
-      const cv = createCanvas(base.width, base.height);
-      const ctx = getCanvasContext(cv);
-
-      ctx.drawImage(base, 0, 0);
-
-      const isGrouped = options?.isGrouped && list.length > 1;
-      const groupTransform = options?.groupTransform;
-
-      if (isGrouped && groupTransform) {
+    if (isGrouped && groupTransform) {
         // GROUPED MODE: Apply transformations and effects to all elements together
         
         // Calculate group bounding box (before transformations)
@@ -797,7 +787,7 @@ export class ImageCreator {
           ctx.drawImage(tempCanvas, groupBox.x, groupBox.y);
           ctx.filter = "none";
           ctx.restore();
-          return cv.toBuffer("image/png");
+          return;
         }
 
         // Apply group transformations
@@ -859,8 +849,8 @@ export class ImageCreator {
           const tBox = {
             x: Math.max(0, Math.floor(tMinX)),
             y: Math.max(0, Math.floor(tMinY)),
-            w: Math.min(base.width, Math.ceil(tMaxX)) - Math.max(0, Math.floor(tMinX)),
-            h: Math.min(base.height, Math.ceil(tMaxY)) - Math.max(0, Math.floor(tMinY))
+            w: Math.min(cw, Math.ceil(tMaxX)) - Math.max(0, Math.floor(tMinX)),
+            h: Math.min(ch, Math.ceil(tMaxY)) - Math.max(0, Math.floor(tMinY))
           };
           
           if (tBox.w > 0 && tBox.h > 0) {
@@ -961,6 +951,44 @@ export class ImageCreator {
           await this.drawImageBitmap(ctx, ip);
         }
       }
+  }
+
+  /**
+   * Draws one or more images (or shapes) on an existing canvas buffer.
+   *
+   * @param images - Single ImageProperties object or array of ImageProperties
+   * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
+   * @param options - Optional options for grouped drawing
+   * @returns Promise<Buffer> - Updated canvas buffer in PNG format
+   */
+  async createImage(
+    images: ImageProperties | ImageProperties[],
+    canvasBuffer: CanvasResults | Buffer,
+    options?: CreateImageOptions
+  ): Promise<Buffer> {
+    try {
+      if (!canvasBuffer) {
+        throw new Error("createImage: canvasBuffer is required.");
+      }
+      this.validateImageArray(images);
+
+      const list = Array.isArray(images) ? images : [images];
+
+      const base: Image = Buffer.isBuffer(canvasBuffer)
+        ? await loadImage(canvasBuffer)
+        : await loadImage((canvasBuffer as CanvasResults).buffer);
+
+      const cv = createCanvas(base.width, base.height);
+      const ctx = getCanvasContext(cv);
+
+      ctx.drawImage(base, 0, 0);
+
+      await this.paintImageLayersOntoContext(
+        ctx,
+        list,
+        { width: base.width, height: base.height },
+        options
+      );
 
       return cv.toBuffer("image/png");
     } catch (error) {

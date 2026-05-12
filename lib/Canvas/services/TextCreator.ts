@@ -49,6 +49,18 @@ export class TextCreator {
   }
 
   /**
+   * Renders one or more rich text objects onto an existing context (no buffer round-trip).
+   * Used by scene rendering and custom pipelines.
+   */
+  async renderTextsOntoContext(ctx: SKRSContext2D, textArray: TextProperties | TextProperties[]): Promise<void> {
+    this.validateTextArray(textArray);
+    const textList = Array.isArray(textArray) ? textArray : [textArray];
+    for (const textProps of textList) {
+      await this.renderEnhancedText(ctx, textProps);
+    }
+  }
+
+  /**
    * Creates text on an existing canvas buffer with enhanced styling options.
    *
    * @param textArray - Single TextProperties object or array of TextProperties
@@ -84,9 +96,7 @@ export class TextCreator {
 
       ctx.drawImage(existingImage, 0, 0);
 
-      for (const textProps of textList) {
-        await this.renderEnhancedText(ctx, textProps);
-      }
+      await this.renderTextsOntoContext(ctx, textList);
 
       return canvas.toBuffer("image/png");
     } catch (error) {
