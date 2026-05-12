@@ -1,13 +1,13 @@
-import { createPieChart } from '../utils/Charts/piechart';
-import { createBarChart } from '../utils/Charts/barchart';
-import { createHorizontalBarChart } from '../utils/Charts/horizontalbarchart';
-import { createLineChart } from '../utils/Charts/linechart';
-import { createScatterChart } from '../utils/Charts/scatterchart';
-import { createRadarChart } from '../utils/Charts/radarchart';
-import { createPolarAreaChart } from '../utils/Charts/polarareachart';
-import { createComboChart } from '../utils/Charts/combochart';
-import { createComparisonChart } from '../utils/Charts/comparisonchart';
-import { getErrorMessage } from '../utils/core/errorUtils';
+import { createPieChart } from '../utils/chart/piechart';
+import { createBarChart } from '../utils/chart/barchart';
+import { createHorizontalBarChart } from '../utils/chart/horizontalbarchart';
+import { createLineChart } from '../utils/chart/linechart';
+import { createScatterChart } from '../utils/chart/scatterchart';
+import { createRadarChart } from '../utils/chart/radarchart';
+import { createPolarAreaChart } from '../utils/chart/polarareachart';
+import { createComboChart } from '../utils/chart/combochart';
+import { createComparisonChart } from '../utils/chart/comparisonchart';
+import { getErrorMessage } from '../utils/foundation/errorUtils';
 
 /**
  * Extended class for chart creation functionality
@@ -24,38 +24,38 @@ export class ChartCreator {
    */
   async createChart(
     chartType: 'pie',
-    data: import('../utils/Charts/piechart').PieSlice[],
-    options?: import('../utils/Charts/piechart').PieChartOptions
+    data: import('../utils/chart/piechart').PieSlice[],
+    options?: import('../utils/chart/piechart').PieChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'bar',
-    data: import('../utils/Charts/barchart').BarChartData[],
-    options?: import('../utils/Charts/barchart').BarChartOptions
+    data: import('../utils/chart/barchart').BarChartData[],
+    options?: import('../utils/chart/barchart').BarChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'horizontalBar',
-    data: import('../utils/Charts/horizontalbarchart').HorizontalBarChartData[],
-    options?: import('../utils/Charts/horizontalbarchart').HorizontalBarChartOptions
+    data: import('../utils/chart/horizontalbarchart').HorizontalBarChartData[],
+    options?: import('../utils/chart/horizontalbarchart').HorizontalBarChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'line',
-    data: import('../utils/Charts/linechart').LineSeries[],
-    options?: import('../utils/Charts/linechart').LineChartOptions
+    data: import('../utils/chart/linechart').LineSeries[],
+    options?: import('../utils/chart/linechart').LineChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'scatter',
-    data: import('../utils/Charts/scatterchart').ScatterSeries[],
-    options?: import('../utils/Charts/scatterchart').ScatterChartOptions
+    data: import('../utils/chart/scatterchart').ScatterSeries[],
+    options?: import('../utils/chart/scatterchart').ScatterChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'radar',
-    data: import('../utils/Charts/radarchart').RadarSeries[],
-    options?: import('../utils/Charts/radarchart').RadarChartOptions
+    data: import('../utils/chart/radarchart').RadarSeries[],
+    options?: import('../utils/chart/radarchart').RadarChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'polarArea',
-    data: import('../utils/Charts/polarareachart').PolarAreaSlice[],
-    options?: import('../utils/Charts/polarareachart').PolarAreaChartOptions
+    data: import('../utils/chart/polarareachart').PolarAreaSlice[],
+    options?: import('../utils/chart/polarareachart').PolarAreaChartOptions
   ): Promise<Buffer>;
   async createChart(
     chartType: 'pie' | 'bar' | 'horizontalBar' | 'line' | 'scatter' | 'radar' | 'polarArea',
@@ -102,7 +102,7 @@ export class ChartCreator {
    * @returns Promise<Buffer> - Comparison chart image buffer
    */
   async createComparisonChart(
-    options: import('../utils/Charts/comparisonchart').ComparisonChartOptions
+    options: import('../utils/chart/comparisonchart').ComparisonChartOptions
   ): Promise<Buffer> {
     try {
       return await createComparisonChart(options);
@@ -116,7 +116,7 @@ export class ChartCreator {
    * Lines default to the right scale; set `yAxis: 'primary'` to use the bar scale.
    */
   async createComboChart(
-    options: import('../utils/Charts/combochart').ComboChartOptions
+    options: import('../utils/chart/combochart').ComboChartOptions
   ): Promise<Buffer> {
     try {
       return await createComboChart(options);

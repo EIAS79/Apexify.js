@@ -1,7 +1,8 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
 import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions } from "../utils/canvasUtils";
+import type { StrokeOptions } from "../utils/types";
 import type { CanvasResults } from "./CanvasCreator";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 import {
   isShapeSource,
   loadImageCached,
@@ -272,6 +273,18 @@ export class ImageCreator {
     stroke: any,
     shapeProps: any
   ): void {
+    /**
+     * Rectangles/squares were stroked via {@link createShapePath} → `ctx.rect()`, which ignores
+     * `stroke.borderRadius` / `stroke.roundedCorners`. Bitmaps use {@link applyStroke} + `buildPath`.
+     * Delegate here so rounded strokes match `StrokeOptions` (same as `createImage` bitmap layers).
+     */
+    if (shapeType === "rectangle" || shapeType === "square") {
+      const w = shapeType === "square" ? Math.min(width, height) : width;
+      const h = shapeType === "square" ? Math.min(width, height) : height;
+      applyStroke(ctx, { x, y, w, h }, stroke as StrokeOptions);
+      return;
+    }
+
     const {
       color = "#000",
       gradient,

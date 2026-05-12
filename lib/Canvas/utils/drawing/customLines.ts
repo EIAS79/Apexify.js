@@ -1,5 +1,5 @@
 import { SKRSContext2D } from '@napi-rs/canvas';
-import { createGradientFill } from "../Image/imageProperties";
+import { createGradientFill } from "../image/imageProperties";
 import { CustomOptions } from "../types";
 import { drawArrow, drawMarker, createSmoothPath, createCatmullRomPath, applyLinePattern, applyLineTexture, getPointOnLinePath } from "./advancedLines";
 

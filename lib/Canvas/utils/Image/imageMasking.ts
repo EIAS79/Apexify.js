@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
-import { getCanvasContext } from "../core/errorUtils";
+import { getCanvasContext } from "../foundation/errorUtils";
 
 /**
  * Applies a mask to an image

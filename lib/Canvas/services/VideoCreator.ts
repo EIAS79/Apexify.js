@@ -4,7 +4,7 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import type { CanvasResults } from "./CanvasCreator";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 
 const execAsync = promisify(exec);
 

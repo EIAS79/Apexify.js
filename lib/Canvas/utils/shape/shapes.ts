@@ -1,6 +1,6 @@
 import { SKRSContext2D } from '@napi-rs/canvas';
 import { ShapeType, ShapeProperties } from '../types';
-import { createGradientFill } from '../Image/imageProperties';
+import { createGradientFill } from '../image/imageProperties';
 
 /**
  * Draws a shape on the canvas context

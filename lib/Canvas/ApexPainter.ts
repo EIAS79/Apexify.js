@@ -36,15 +36,15 @@ import {
     PixelDataCreator,
     Path2DCreator,
     HitDetectionCreator,
-} from "./extended";
-    import { VideoHelpers } from "./utils/Video/videoHelpers";
-import type { PieSlice, PieChartOptions } from "./utils/Charts/piechart";
-import type { BarChartData, BarChartOptions } from "./utils/Charts/barchart";
-import type { HorizontalBarChartData, HorizontalBarChartOptions } from "./utils/Charts/horizontalbarchart";
-import type { LineSeries, LineChartOptions } from "./utils/Charts/linechart";
-import type { ScatterSeries, ScatterChartOptions } from "./utils/Charts/scatterchart";
-import type { RadarSeries, RadarChartOptions } from "./utils/Charts/radarchart";
-import type { PolarAreaSlice, PolarAreaChartOptions } from "./utils/Charts/polarareachart";
+} from "./services";
+import { VideoHelpers } from "./utils/video/videoHelpers";
+import type { PieSlice, PieChartOptions } from "./utils/chart/piechart";
+import type { BarChartData, BarChartOptions } from "./utils/chart/barchart";
+import type { HorizontalBarChartData, HorizontalBarChartOptions } from "./utils/chart/horizontalbarchart";
+import type { LineSeries, LineChartOptions } from "./utils/chart/linechart";
+import type { ScatterSeries, ScatterChartOptions } from "./utils/chart/scatterchart";
+import type { RadarSeries, RadarChartOptions } from "./utils/chart/radarchart";
+import type { PolarAreaSlice, PolarAreaChartOptions } from "./utils/chart/polarareachart";
 
 export class ApexPainter {
   private format?: OutputFormat;
@@ -300,7 +300,7 @@ export class ApexPainter {
    *   - shadow: Text shadow effect with color, offset, blur, and opacity
    *   - stroke: Text stroke/outline with color, width, gradient, and opacity
    *   - rotation: Text rotation in degrees
-   *   - textOnCurve: Circular arc text — `sweepAngle` (degrees) bends the line; `(x,y)` is the center of the string; optional `radius`, `up` (default true, smile-shaped)
+   *   - textOnCurve: Circular arc — `sweepAngle`, optional `radius`, `up`, `layoutMode` (`fit` | `clamp` | `override`), `baselineOffset`, `startAngleDeg`; `(x,y)` is the mid-string anchor on the arc
    *
    * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
    *
@@ -521,7 +521,11 @@ export class ApexPainter {
   }
 
   /**
-   * Draws a Path2D object onto a canvas buffer
+   * Draws a Path2D (or command array) onto an existing canvas buffer.
+   *
+   * Options include stroke/fill (solid or gradient), root `opacity` (multiplies stroke/fill alpha),
+   * `shadow`, `globalCompositeOperation`, `gradientBounds`, transforms, dash presets (`stroke.style`),
+   * and `stroke.dashArray` / line caps / joins.
    */
   async drawPath(
     canvasBuffer: CanvasResults | Buffer,
@@ -4460,7 +4464,7 @@ break;
    * @returns Promise<Buffer> - Comparison chart image buffer
    */
   async createComparisonChart(
-    options: import('./utils/Charts/comparisonchart').ComparisonChartOptions
+    options: import('./utils/chart/comparisonchart').ComparisonChartOptions
   ): Promise<Buffer> {
     return this.chartCreator.createComparisonChart(options);
   }
@@ -4469,7 +4473,7 @@ break;
    * Single canvas with bars (primary Y) and lines (default: secondary Y on the right).
    */
   async createComboChart(
-    options: import('./utils/Charts/combochart').ComboChartOptions
+    options: import('./utils/chart/combochart').ComboChartOptions
   ): Promise<Buffer> {
     return this.chartCreator.createComboChart(options);
   }

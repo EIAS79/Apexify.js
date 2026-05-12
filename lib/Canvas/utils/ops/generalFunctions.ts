@@ -4,7 +4,7 @@ import { cropOptions, ResizeOptions, GradientConfig, ImageFilter } from '../type
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from '@napi-rs/canvas';
 import fs from "fs";
 import axios from "axios";
-import { getErrorMessage, getCanvasContext } from "../core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../foundation/errorUtils";
 
 export async function loadImages(imagePath: string) {
   try {

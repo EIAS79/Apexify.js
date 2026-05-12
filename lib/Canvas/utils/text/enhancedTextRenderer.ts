@@ -3,6 +3,7 @@ import { TextProperties, gradient } from '../types';
 import { GlobalFonts } from '@napi-rs/canvas';
 import path from 'path';
 import { computeCircularArcPlacements } from '../text/curvedTextLayout';
+
 /**
  * Enhanced text renderer with comprehensive styling options
  */

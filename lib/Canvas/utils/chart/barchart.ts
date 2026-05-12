@@ -1,6 +1,6 @@
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../types";
-import { createGradientFill } from "../Image/imageProperties";
+import { createGradientFill } from "../image/imageProperties";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
 import {
   normalizeLegendPosition,

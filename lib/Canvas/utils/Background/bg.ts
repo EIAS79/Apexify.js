@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
 import type { Image } from "@napi-rs/canvas";
 import { CanvasConfig, gradient } from "../types";
-import { EnhancedPatternRenderer } from "../Patterns/enhancedPatternRenderer";
+import { EnhancedPatternRenderer } from "../pattern/enhancedPatternRenderer";
 import path from "path";
 
 /** Resolve `source` to an absolute filesystem path when it is not an http(s) URL. */

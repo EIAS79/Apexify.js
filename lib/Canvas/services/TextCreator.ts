@@ -1,8 +1,8 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
 import type { TextProperties } from "../utils/canvasUtils";
 import type { CanvasResults } from "./CanvasCreator";
-import { EnhancedTextRenderer } from "../utils/Texts/enhancedTextRenderer";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { EnhancedTextRenderer } from "../utils/text/enhancedTextRenderer";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 
 /**
  * Extended class for text creation functionality

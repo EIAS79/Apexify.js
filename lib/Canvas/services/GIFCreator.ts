@@ -10,7 +10,7 @@ import type {
   GIFWatermarkSpec,
   GIFDisposalMethod,
 } from "../utils/canvasUtils";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 import type { ApexPainter } from "../ApexPainter";
 
 /** Normalized frame — everything {@link createGIF} needs per encoded GIF frame (inside library only). */

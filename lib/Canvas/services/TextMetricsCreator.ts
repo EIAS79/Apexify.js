@@ -1,8 +1,9 @@
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import { TextProperties, TextMetrics } from "../utils/types";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 import { GlobalFonts } from "@napi-rs/canvas";
 import path from "path";
+import { curvedArcBoundingChord, resolveArcRadiusAndSweep } from "../utils/text/curvedTextLayout";
 
 /**
  * Extended class for text metrics functionality
@@ -169,9 +170,8 @@ export class TextMetricsCreator {
         if (sweepDeg > 0 && sweepDeg < 360) {
           const sweepRad = (sweepDeg * Math.PI) / 180;
           const W = metrics.width;
-          const R = c.radius ?? (sweepRad > 0 ? W / sweepRad : W);
-          const chord = 2 * R * Math.sin(sweepRad / 2);
-          const sagitta = R * (1 - Math.cos(sweepRad / 2));
+          const { R, sweepRad: effSweep } = resolveArcRadiusAndSweep(W, sweepRad, c.radius, c.layoutMode);
+          const { chord, sagitta } = curvedArcBoundingChord(effSweep, R);
           metrics.width = chord;
           metrics.height = fontSize + sagitta;
         }

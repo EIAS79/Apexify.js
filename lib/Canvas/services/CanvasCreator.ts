@@ -2,7 +2,7 @@ import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
 import fs from "fs";
 import type { CanvasConfig } from "../utils/canvasUtils";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 import {
   drawBackgroundGradient,
   drawBackgroundColor,
@@ -16,8 +16,8 @@ import {
   drawBackgroundLayers,
   resolveMediaPath,
 } from "../utils/canvasUtils";
-import { EnhancedPatternRenderer } from "../utils/Patterns/enhancedPatternRenderer";
-import { applyProfessionalImageFilters } from "../utils/Image/professionalImageFilters";
+import { EnhancedPatternRenderer } from "../utils/pattern/enhancedPatternRenderer";
+import { applyProfessionalImageFilters } from "../utils/image/professionalImageFilters";
 
 export interface CanvasResults {
   buffer: Buffer;

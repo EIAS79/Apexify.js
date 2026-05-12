@@ -10,8 +10,8 @@ import { promisify } from "util";
 import axios from 'axios';
 import fs from "fs";
 import path from "path";
-import type { CanvasResults } from "../../extended/CanvasCreator";
-import { getCanvasContext } from "../core/errorUtils";
+import type { CanvasResults } from "../../services/CanvasCreator";
+import { getCanvasContext } from "../foundation/errorUtils";
 
 const execAsync = promisify(exec);
 

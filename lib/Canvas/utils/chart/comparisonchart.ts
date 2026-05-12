@@ -1,6 +1,6 @@
 import { createCanvas, SKRSContext2D, loadImage, Image } from "@napi-rs/canvas";
 import type { gradient } from "../types";
-import { createGradientFill } from "../Image/imageProperties";
+import { createGradientFill } from "../image/imageProperties";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "./chartBackground";
 import type { PieSlice, PieChartOptions } from "./piechart";
 import type { BarChartData, BarChartOptions } from "./barchart";

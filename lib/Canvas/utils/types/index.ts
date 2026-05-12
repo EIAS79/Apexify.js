@@ -1,5 +1,6 @@
 import { Canvas, SKRSContext2D } from "@napi-rs/canvas"
 import { PathLike } from "fs";
+import type { CurvedTextLayoutMode } from "../text/curvedTextLayout";
 /**
  * Configuration option to decide the outputformate from ApexPainter
  * @param {type} default - 'buffer', other formates: url, blob, base64, dataURL, arraybuffer.
@@ -691,21 +692,36 @@ export interface TextProperties {
   rotation?: number;
 
   /**
-   * Draw the line on a circular arc (banner / badge). `(x, y)` is the **center** of the string:
-   * the middle glyph sits on the arc apex; `sweepAngle` controls how strongly the ends bend away.
+   * Draw the line on a circular arc (banner / badge). `(x, y)` is the **mid-string** anchor on the arc
+   * (apex for `up: true` at default `startAngleDeg`). Layout uses grapheme clusters when `Intl.Segmenter` is available.
    * Ignores `maxWidth` (use a single visual line; newlines become separate stacked arcs).
-   * Highlight, underline, overline, and strikethrough are drawn per glyph in the arc’s tangent plane.
-   * `letterSpacing` / `wordSpacing` are respected via the same 2D context as straight text (included in `measureText` widths used for arc layout).
+   * Highlight, underline, overline, and strikethrough are drawn per grapheme in the arc’s tangent plane.
+   * `letterSpacing` / `wordSpacing` are respected via the same 2D context as straight text.
    */
   textOnCurve?: {
-    /** Total angle in degrees covered by the full string at the circle center (e.g. 40–120). */
+    /**
+     * Total sweep in degrees. With **`layoutMode: 'override'`**, this is a **minimum** sweep: if `radius` is
+     * too small for the measured width, sweep grows to `width / R` so glyphs do not crowd.
+     */
     sweepAngle: number;
-    /** Circle radius in px. If omitted, `radius ≈ textWidth / sweepRadians` so arc length matches measured width. */
+    /**
+     * Circle radius in px. Meaning depends on **`layoutMode`** (see there). Omitted ⇒ fit radius `width / θ`.
+     */
     radius?: number;
     /**
      * If true (default), the arc bulges **upward** (smile / ∩). If false, bulges **downward** (∪).
      */
     up?: boolean;
+    /**
+     * - **`fit`** — `R = width / θ`; `radius` ignored for geometry (arc length matches text).
+     * - **`clamp`** (default) — `R = max(radius ?? R_fit, R_fit)`; user sweep fixed.
+     * - **`override`** — `R = radius ?? R_fit`; if `R·θ < width`, sweep expands to `width / R`.
+     */
+    layoutMode?: CurvedTextLayoutMode;
+    /** Pixels along the outward radial from the circle center (+ = away from center). */
+    baselineOffset?: number;
+    /** Rotates the entire arc around `(x, y)` (degrees). */
+    startAngleDeg?: number;
   };
 
   /** Include character-level metrics in measureText (optional) */
@@ -1188,3 +1204,5 @@ outputDirectory?: string;
     /** File format */
     format: string;
   }
+
+export type { CurvedTextLayoutMode, GlyphArcPlacement, CircularArcLayoutOptions } from '../text/curvedTextLayout';

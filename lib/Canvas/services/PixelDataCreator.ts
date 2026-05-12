@@ -1,5 +1,5 @@
 import { createCanvas, loadImage, Image } from "@napi-rs/canvas";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
 import type { CanvasResults } from "./CanvasCreator";
 import type { PixelData, PixelManipulationOptions } from "../utils/canvasUtils";
 

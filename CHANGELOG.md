@@ -5,6 +5,12 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Internal (breaking for deep imports only)**: Reorganized `lib/Canvas` for clearer ownership: `extended/` → `services/`; `utils/` subfolders renamed to consistent lowercase domains (`chart/`, `text/`, `image/`, `shape/`, `background/`, `drawing/`, `pattern/`, `video/`, `foundation/`, `ops/`). Published entry points (`apexify.js` root exports, `ApexPainter`, `CanvasUtils`, `export type * from types`) are unchanged. Consumers importing **internal** paths like `.../extended/...` or `.../utils/Charts/...` must update to the new paths. See `lib/Canvas/README.md`.
+
 ## [5.3.20] - 2026-05-03
 
 This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work. It adds new chart kinds, opacity controls, tighter chart typings and fixes, and substantial **video audio** options (mute ranges, strip audio, multi-clip mixing, and loudness / pitch / speed control).
@@ -15,7 +21,7 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 - **Scatter**, **radar** (spider / radial), and **polar area** charts with implementations in **`scatterchart`**, **`radarchart`**, and **`polarareachart`**, wired through **`createChart`** and chart union types / exports.
 - **Opacity** for plot geometry: **bars** and **horizontal bars** (`bars.opacity` / per-row / per-segment), **lines** (`lines.opacity` / per-series), and **pie / donut slices** (`slices.opacity` / per-slice), with **`clampChartOpacity`**-style **0–1** handling where applicable.
 
-##### Video (`VideoCreationOptions`, `lib/Canvas/utils/Video/videoHelpers.ts`)
+##### Video (`VideoCreationOptions`, `lib/Canvas/utils/video/videoHelpers.ts`)
 - **`removeAudio`**: write a **video-only** output (all audio streams removed).
 - **`mute`**: silence **specific time ranges** (seconds), or omit **`ranges`** for a **full** audio strip (same end state as **`removeAudio`**; uses stream copy where appropriate).
 - **`mixAudio`**: mix **multiple** external clips (path, URL, or **`Buffer`**) at chosen **timeline starts**, with trim (**`duration`** / **`sourceStart`**), per-clip **`volume`**, optional **`keepOriginalAudio`**, **`originalVolume`**, and per-track **`speed`** / **`pitchSemitones`** (overlay clips and optional **`originalSpeed`** / **`originalPitchSemitones`** on the source audio).
@@ -43,7 +49,7 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 
 ### ✨ Added
 
-##### Legend text layout (`lib/Canvas/utils/Charts/legendTextLayout.ts`)
+##### Legend text layout (`lib/Canvas/utils/chart/legendTextLayout.ts`)
 - **`wrapLegendLabel`**: Word wrapping plus character-level breaks when a token is still wider than the text column (fixes long **`key:value`** strings, URLs, and unbroken words).
 - **`computeLegendRowMetrics`**, **`legendLineHeight`**, **`legendEntryRowHeightForLines`**: Single code path so legend **width/height** measurement matches **drawing** (line height ratio **~1.38** and small vertical padding for multi-line blocks).
 
@@ -66,25 +72,25 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 
 ### ✨ Added
 
-##### Chart layout (`lib/Canvas/utils/Charts/chartPadding.ts`)
+##### Chart layout (`lib/Canvas/utils/chart/chartPadding.ts`)
 - **`defaultOuterPadding` / `resolveOuterPadding`**: Outer margins scale with canvas size (`min(width,height)`), replacing oversized fixed defaults so plots use more of the frame.
 - **`chartVerticalStackGaps`**: Rhythm between title → legend (full-width top) → plot; scales with canvas short side and respects **`legend.spacing`**.
 - **`computeChartVerticalStack`**: Shared **`chartAreaTopStart`**, **`legendInsetGap`**, **`legendCornerTopY`**, and **`legendAtTop`** (excluding corner placements) for consistent vertical stacking across charts.
 
-##### Legend placement (`lib/Canvas/utils/Charts/legendPlacement.ts`)
+##### Legend placement (`lib/Canvas/utils/chart/legendPlacement.ts`)
 - **`legendIsCornerTop`**: Identifies **`top-left`** / **`top-right`** for layout that must not reserve a full-width band above the plot.
 - **`applyLegendChartAreaInset`**: **`top-left`** / **`top-right`** only inset horizontally (left/right); vertical strip reserved only for **`top`**, **`bottom`**, and bottom corners as before.
 
-##### Combo chart (`lib/Canvas/utils/Charts/combochart.ts`)
+##### Combo chart (`lib/Canvas/utils/chart/combochart.ts`)
 - **`barsType`**: **`'standard'`** | **`'grouped'`** | **`'stacked'`** — bars may use **`BarChartData.values`** (`BarSegment[]`) with per-segment **`color`** / **`label`**; **`barStyle.groupSpacing`** controls grouped gaps.
 - **`collectComboBarScaleValues`**: Primary Y auto-scale uses segment values (grouped), category totals (stacked), or **`value`** (standard / fallback rows).
 - Auto-legend expands grouped/stacked rows into per-segment entries when **`legend.entries`** is omitted.
 - **Dual-axis tinting**: When **`axes.y.color`** / **`axes.ySecondary.color`** are omitted, tick strokes, spines, and default axis title colors follow the first bar (or first segment color) and the first **`yAxis: 'secondary'`** line color (RGBA alpha stripped for strokes).
 
-##### Exports (`lib/Canvas/utils/Charts/index.ts`)
+##### Exports (`lib/Canvas/utils/chart/index.ts`)
 - **`ComboBarsType`** re-exported alongside existing combo types.
 
-##### Axis types (`lib/Canvas/utils/Charts/linechart.ts`)
+##### Axis types (`lib/Canvas/utils/chart/linechart.ts`)
 - **`AxisConfig.color`**: Documented that combo charts may infer tick/label styling from matching series colors when unset.
 
 ### 🔧 Improved
@@ -127,7 +133,7 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 - **`ImageProperties.blendMode`**: Optional `GlobalCompositeOperation` (e.g. `screen`, `overlay`, `soft-light`) applied when drawing each bitmap or vector shape layer onto the existing canvas. Defaults to normal stacking (`source-over`).
 - **`GroupTransformOptions.blendMode`**: Same idea when **`CreateImageOptions.isGrouped`** is used — sets composite mode for the whole group pass.
 
-##### Line charts (`lib/Canvas/utils/Charts/linechart.ts`)
+##### Line charts (`lib/Canvas/utils/chart/linechart.ts`)
 - **Tick label color**: Y/X tick text follows **`axes.*.color`** (and falls back to **`appearance.axisColor`**) instead of hardcoded black, so light axes stay readable on dark chart backgrounds.
 - **Y-axis layout**: **`computeMaxYTickLabelWidth`** + **`reserveHorizontalForRotatedYAxisTitle`** reserve horizontal space so rotated **Y-axis titles** no longer collide with numeric tick labels; **`originX`** is derived from **`chartAreaLeft` + title reserve + gap + max tick width + gap**.
 - **X-axis title & legend (bottom)**: Axis title Y-position uses shared constants (**`X_AXIS_TICK_TOP_OFFSET`**, **`X_AXIS_TITLE_GAP_BELOW_TICKS`**, etc.) so the title sits **below** tick labels with consistent padding; bottom legend placement uses the same vertical extents.
@@ -155,13 +161,13 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 
 ##### Canvas & backgrounds (see README — *Canvas & Backgrounds*)
 - **`bgLayers` on `CanvasConfig`**: Ordered background stack (bottom → top) after the base fill (`colorBg`, `gradientBg`, `customBg`, etc.). Each entry is a small discriminated union: `color`, `gradient`, `image`, `pattern`, or `noise`, so you can stack tints, photos, patterns, and grain like the README’s layered composition story.
-- **`drawBackgroundLayers` (`lib/Canvas/utils/Background/bg.ts`)**: Renders each layer in sequence with `source-over`, per-layer `save`/`restore`, and guarded `try`/`catch` so one bad asset does not abort the whole canvas.
+- **`drawBackgroundLayers` (`lib/Canvas/utils/background/bg.ts`)**: Renders each layer in sequence with `source-over`, per-layer `save`/`restore`, and guarded `try`/`catch` so one bad asset does not abort the whole canvas.
 
 ##### Charts — shared background helper
-- **`chartBackground.ts`**: `paintChartCanvasBackground` and `ChartAppearanceExtended` centralize chart canvas backgrounds (gradient/color, image, `customBg`, `bgLayers`, patterns, noise) aligned with `CanvasCreator`. Re-exported from `lib/Canvas/utils/Charts/index.ts` and used by pie, bar, horizontal bar, line, and comparison charts.
+- **`chartBackground.ts`**: `paintChartCanvasBackground` and `ChartAppearanceExtended` centralize chart canvas backgrounds (gradient/color, image, `customBg`, `bgLayers`, patterns, noise) aligned with `CanvasCreator`. Re-exported from `lib/Canvas/utils/chart/index.ts` and used by pie, bar, horizontal bar, line, and comparison charts.
 
 ##### Path commands — single implementation
-- **`lib/Canvas/utils/core/pathCmd.ts`**: Shared `PathCommand` type, `appendPathCommands`, and `buildPath2DFromCommands` (rounded rect, star, arrow, etc.) used by **`Path2DCreator`** and **`HitDetectionCreator`** so hit-testing supports the same path vocabulary as drawing.
+- **`lib/Canvas/utils/foundation/pathCmd.ts`**: Shared `PathCommand` type, `appendPathCommands`, and `buildPath2DFromCommands` (rounded rect, star, arrow, etc.) used by **`Path2DCreator`** and **`HitDetectionCreator`** so hit-testing supports the same path vocabulary as drawing.
 
 ##### Rectangular stroke & shadow (canvas frame, images, groups — README *Image Processing* / grouped cards)
 - **`StrokeOptions.roundedCorners`**: Same vocabulary as clip/corner masks (`'all'`, `'top-left'`, `'top'`, …). Controls **which corners** use `stroke.borderRadius` on the stroke outline.
@@ -172,12 +178,12 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 ### 🗑️ Removed
 
 - **Duplicate / conflicting utils barrel**: Removed the extra `lib/Canvas/utils/utils.ts` barrel that duplicated `canvasUtils` imports and caused TypeScript casing/path conflicts with `./general` vs `./General`.
-- **Legacy filename**: Removed `general functions.ts` (space in name) in favor of a single **`generalFunctions.ts`** under the canonical **`lib/Canvas/utils/general/`** tree.
+- **Legacy filename**: Removed `general functions.ts` (space in name) in favor of a single **`generalFunctions.ts`** under the canonical **`lib/Canvas/utils/ops/`** tree.
 
 ### 🔧 Improved
 
 ##### Module layout & exports
-- **`lib/Canvas/utils/general/`** (lowercase) is the canonical folder for `generalFunctions`, `conversion`, `batchOperations`, `imageStitching`, `imageCompression`; Git history normalized from `General/` to avoid case-only duplicates on Windows.
+- **`lib/Canvas/utils/ops/`** (lowercase) is the canonical folder for `generalFunctions`, `conversion`, `batchOperations`, `imageStitching`, `imageCompression`; Git history normalized from `General/` to avoid case-only duplicates on Windows.
 - **`canvasUtils.ts`** remains the primary export surface; types come from **`lib/Canvas/utils/types/`** (`types/index.ts`).
 
 ##### TypeScript — `CanvasConfig` aligned with shared stroke/shadow types
@@ -226,7 +232,7 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 ### 🐛 Fixed
 
 - **TS / tooling**: Eliminated **`TS1149` / duplicate module** issues from parallel `utils.ts` + `canvasUtils` and mixed `General` vs `general` paths.
-- **Path command runtime**: Shared **`pathCmd`** module lives next to **`pathUtils`** under **`lib/Canvas/utils/core/`** (fixes broken import when a stray copy existed outside that tree).
+- **Path command runtime**: Shared **`pathCmd`** module lives next to **`pathUtils`** under **`lib/Canvas/utils/foundation/`** (fixes broken import when a stray copy existed outside that tree).
 
 ##### Text rendering (see README — *Text Rendering*)
 - **Scope clarification**: README still describes **glyph** strokes and glows (`strokeText`, enhanced renderer). Those paths are unchanged. The new **`borderPosition` / `roundedCorners`** split applies to **box** strokes—canvas borders, image bounds, and group strokes—where the stroke follows a rounded rectangle, not individual letter outlines.
@@ -574,7 +580,7 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
     - Reduced `ApexPainter.ts` from monolithic to clean orchestrator
 
 - **Video Helpers Modularization**: Moved all video processing helper methods to dedicated `VideoHelpers` class
-  - Extracted 33+ video helper methods from `ApexPainter.ts` to `utils/Video/videoHelpers.ts`
+  - Extracted 33+ video helper methods from `ApexPainter.ts` to `utils/video/videoHelpers.ts`
   - Moved `executeFFmpegWithProgress` method to `VideoHelpers` where it belongs
   - Improved code organization and maintainability
   - Reduced `ApexPainter.ts` size by ~2300+ lines
@@ -610,7 +616,7 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
   - **Type Safety**: Improved TypeScript types with proper interface exports from Creator classes
 
 ##### Chart Architecture
-- **Code Organization**: Charts moved to dedicated `lib/Canvas/utils/Charts/` directory
+- **Code Organization**: Charts moved to dedicated `lib/Canvas/utils/chart/` directory
 - **Unified API**: All charts accessible through single `ApexPainter.createChart()` method
 - **Type Safety**: Enhanced TypeScript types for all chart options
 - **Modularity**: Better code organization with shared utilities

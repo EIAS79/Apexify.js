@@ -9,23 +9,23 @@
  */
 
 import { OutputFormat, CanvasConfig, ImageProperties, TextObject, TextProperties, GIFOptions, GIFResults, GIFInputFrame, GIFEncodedFrame, GIFDisposalMethod, GIFWatermarkSpec, CustomOptions, cropOptions, GradientConfig, Frame, PatternOptions, ExtractFramesOptions, ResizeOptions, CropOptions, MaskOptions, BlendOptions, ShapeType, ShapeProperties, ImageFilter, BatchOperation, ChainOperation, StitchOptions, CollageLayout, CompressionOptions, PaletteOptions, SaveOptions, SaveResult, CreateImageOptions, GroupTransformOptions, TextMetrics, PixelData, PixelManipulationOptions, BackgroundLayer, BackgroundPatternRepeat, BackgroundImageAlign } from "./types";
-import { drawBackgroundColor, drawBackgroundGradient, customBackground, applyCanvasZoom, drawPattern, applyNoise, drawBackgroundLayers, resolveMediaPath } from "./Background/bg";
-import { buildPath, applyRotation, createGradientFill, fitInto, loadImageCached, applyStroke, drawBoxBackground, applyShadow } from './Image/imageProperties'
-import { applyImageFilters } from './Image/imageFilters'
-import { applyProfessionalImageFilters } from './Image/professionalImageFilters'
-import { drawText, WrappedText } from "./Texts/textProperties";
-import { loadImages, resizingImg, converter, applyColorFilters, imgEffects, cropOuter, cropInner, detectColors, removeColor, bgRemoval } from "./general/generalFunctions";
-import { customLines } from "./Custom/customLines";
-import { url, arrayBuffer, base64, dataURL, blob  } from "./general/conversion";
-import { drawShape, isShapeSource, createShapePath } from "./Shapes/shapes";
-import { applyImageMask, applyClipPath, applyPerspectiveDistortion, applyBulgeDistortion, applyMeshWarp } from "./Image/imageMasking";
-import { applyVignette, applyLensFlare, applyChromaticAberration, applyFilmGrain } from "./Image/imageEffects";
-import { drawArrow, drawMarker, createSmoothPath, createCatmullRomPath, applyLinePattern, applyLineTexture, getPointOnLinePath } from "./Custom/advancedLines";
-import { batchOperations, chainOperations } from "./general/batchOperations";
-import { stitchImages, createCollage } from "./general/imageStitching";
-import { compressImage, extractPalette } from "./general/imageCompression";
-import * as Charts from "./Charts/index";
-import { getErrorMessage, getCanvasContext } from "./core/errorUtils";
+import { drawBackgroundColor, drawBackgroundGradient, customBackground, applyCanvasZoom, drawPattern, applyNoise, drawBackgroundLayers, resolveMediaPath } from "./background/bg";
+import { buildPath, applyRotation, createGradientFill, fitInto, loadImageCached, applyStroke, drawBoxBackground, applyShadow } from './image/imageProperties'
+import { applyImageFilters } from './image/imageFilters'
+import { applyProfessionalImageFilters } from './image/professionalImageFilters'
+import { drawText, WrappedText } from "./text/textProperties";
+import { loadImages, resizingImg, converter, applyColorFilters, imgEffects, cropOuter, cropInner, detectColors, removeColor, bgRemoval } from "./ops/generalFunctions";
+import { customLines } from "./drawing/customLines";
+import { url, arrayBuffer, base64, dataURL, blob  } from "./ops/conversion";
+import { drawShape, isShapeSource, createShapePath } from "./shape/shapes";
+import { applyImageMask, applyClipPath, applyPerspectiveDistortion, applyBulgeDistortion, applyMeshWarp } from "./image/imageMasking";
+import { applyVignette, applyLensFlare, applyChromaticAberration, applyFilmGrain } from "./image/imageEffects";
+import { drawArrow, drawMarker, createSmoothPath, createCatmullRomPath, applyLinePattern, applyLineTexture, getPointOnLinePath } from "./drawing/advancedLines";
+import { batchOperations, chainOperations } from "./ops/batchOperations";
+import { stitchImages, createCollage } from "./ops/imageStitching";
+import { compressImage, extractPalette } from "./ops/imageCompression";
+import * as Charts from "./chart/index";
+import { getErrorMessage, getCanvasContext } from "./foundation/errorUtils";
 
 export {
     url,
@@ -147,6 +147,6 @@ export {
 };
 
 // Export Path2D and Hit Detection types
-export type { PathCommand } from "./core/pathCmd";
-export type { Path2DDrawOptions } from "../extended/Path2DCreator";
-export type { HitRegion, HitDetectionOptions, HitDetectionResult } from "../extended/HitDetectionCreator";
+export type { PathCommand } from "./foundation/pathCmd";
+export type { Path2DDrawOptions } from "../services/Path2DCreator";
+export type { HitRegion, HitDetectionOptions, HitDetectionResult } from "../services/HitDetectionCreator";

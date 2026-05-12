@@ -1,9 +1,9 @@
 import { Canvas, createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
 import type { BackgroundLayer, CanvasConfig, gradient, PatternOptions } from "../types";
-import { createGradientFill } from "../Image/imageProperties";
-import { applyProfessionalImageFilters } from "../Image/professionalImageFilters";
-import { customBackground, drawBackgroundLayers, resolveMediaPath, applyNoise } from "../Background/bg";
-import { EnhancedPatternRenderer } from "../Patterns/enhancedPatternRenderer";
+import { createGradientFill } from "../image/imageProperties";
+import { applyProfessionalImageFilters } from "../image/professionalImageFilters";
+import { customBackground, drawBackgroundLayers, resolveMediaPath, applyNoise } from "../background/bg";
+import { EnhancedPatternRenderer } from "../pattern/enhancedPatternRenderer";
 
 function fillWithGradientOrColor(
   ctx: SKRSContext2D,

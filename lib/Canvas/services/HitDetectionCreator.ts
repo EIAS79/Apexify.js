@@ -1,7 +1,7 @@
 import { createCanvas } from "@napi-rs/canvas";
-import { getErrorMessage, getCanvasContext } from "../utils/core/errorUtils";
-import type { PathCommand } from "../utils/core/pathCmd";
-import { buildPath2DFromCommands } from "../utils/core/pathCmd";
+import { getErrorMessage, getCanvasContext } from "../utils/foundation/errorUtils";
+import type { PathCommand } from "../utils/foundation/pathCmd";
+import { buildPath2DFromCommands } from "../utils/foundation/pathCmd";
 
 /**
  * Region types for hit detection
