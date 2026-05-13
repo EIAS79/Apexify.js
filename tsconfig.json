@@ -1,27 +1,28 @@
 {
+  "compilerOptions": {
+    "module": "NodeNext",
+    "target": "ES2022",
+    "moduleResolution": "nodenext",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "typeRoots": ["./node_modules/@types"],
+    "types": []
+  },
+  "ts-node": {
+    "files": true,
     "compilerOptions": {
-        "module": "NodeNext",
-        "target": "ES2022",
-        "moduleResolution": "nodenext",
-        "declaration": true,
-        "declarationMap": true,
-        "sourceMap": true,
-        "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true,
-        "typeRoots": ["./node_modules/@types", "./types"],
-        "types": []
-    },
-    "ts-node": {
-        "files": true,
-        "compilerOptions": {
-            "module": "CommonJS",
-            "moduleResolution": "node"
-        }
-    },
-    "include": ["lib/**/*", "./types/**/*", "scripts/**/*"],
-    "exclude": ["node_modules"]
+      "module": "CommonJS",
+      "moduleResolution": "node"
+    }
+  },
+  "files": ["lib-next/index.ts"],
+  "include": ["lib-next/**/*.ts", "lib/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

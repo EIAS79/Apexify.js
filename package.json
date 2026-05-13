@@ -23,6 +23,11 @@
       "types": "./dist/esm/index.d.ts",
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
+    },
+    "./types": {
+      "types": "./dist/esm/types/index.d.ts",
+      "import": "./dist/esm/types/index.js",
+      "require": "./dist/cjs/types/index.js"
     }
   },
   "scripts": {
@@ -285,7 +290,6 @@
   ],
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
-    "apexify.js": "^5.3.21",
     "axios": "^1.15.0",
     "fs-extra": "^11.3.1",
     "gifencoder": "^2.0.1",

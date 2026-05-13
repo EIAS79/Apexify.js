@@ -1,7 +1,10 @@
 {
-    "extends": "./tsconfig.json",
-    "compilerOptions": {
-      "module": "NodeNext",
-      "outDir": "./dist/esm"
-    }
-  }
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "rootDir": "./lib-next",
+    "outDir": "./dist/esm"
+  },
+  "include": ["lib-next/**/*.ts"]
+}
