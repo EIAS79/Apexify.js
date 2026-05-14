@@ -1,6 +1,20 @@
 import type { gradient } from "./gradient";
 
 /**
+ * Text styling types for {@link TextProperties}, used by **`createText`**, **`measureText`**, **`TextCreator.renderTextsOntoContext`**, and scene **`text`** layers.
+ *
+ * ### Nested groups vs flat (legacy) fields
+ * Prefer **`font`**, **`decorations`**, **`effects`**, **`layout`**, **`placement`**, and **`fill`**.
+ * Top-level aliases (**`fontSize`**, **`bold`**, **`maxWidth`**, **`color`**, **`shadow`**, …) remain for backward compatibility.
+ * When both a nested object and a legacy field are set, **the nested value wins** — see **`resolveTextDecorations`**, **`resolveTextEffects`**, **`resolveTextLayout`**, **`resolveTextPlacement`**, and **`resolveTextFill`** in this file (used from **`lib-next/text/text-layout.ts`** and **`enhanced-text-renderer.ts`**).
+ *
+ * ### Where behaviour is implemented
+ * **`EnhancedTextRenderer`**, **`text-layout`**, **`text-style`**, **`text-curved`** under **`lib-next/text/`**.
+ *
+ * **`{@link TextObject}`** is deprecated; use **`{@link TextProperties}`** for new code.
+ */
+
+/**
  * How measured line width **W**, user **radius**, and **sweep** (radians) are reconciled on a circle.
  *
  * - **fit** — `R = W / θ`. Arc length equals typographic width; `radius` is ignored for geometry.

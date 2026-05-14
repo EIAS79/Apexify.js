@@ -5,11 +5,63 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [5.4.0] - 2026-05-13
 
-### Changed
+This release is a **structural and packaging pivot**: the published library is now built from **`lib-next/`** instead of the legacy monolith under **`lib/Canvas/...`** (**5.3.20** and earlier). **`ApexPainter`**-centric behavior is preserved where APIs were intentionally carried forward; **the npm entry surface and on-disk layout changed**.
 
-- **Internal (breaking for deep imports only)**: Reorganized `lib/Canvas` for clearer ownership: `extended/` → `services/`; `utils/` subfolders renamed to consistent lowercase domains (`chart/`, `text/`, `image/`, `shape/`, `background/`, `drawing/`, `pattern/`, `video/`, `foundation/`, `ops/`). Published entry points (`apexify.js` root exports, `ApexPainter`, `CanvasUtils`, `export type * from types`) are unchanged. Consumers importing **internal** paths like `.../extended/...` or `.../utils/Charts/...` must update to the new paths. See `lib/Canvas/README.md`.
+### `lib/` (5.3.20) vs `lib-next/` (5.4.0)
+
+| Area | **5.3.20 (`lib/`)** | **5.4.0 (`lib-next/`)** |
+|------|---------------------|---------------------------|
+| **Build input** | `lib/Canvas/...` + monolithic `ApexPainter` | **`lib-next/**/*.ts`** only (`tsconfig.esm.json` / `tsconfig.cjs.json`: **`rootDir`: `./lib-next`**) |
+| **Package root** | Wider legacy / utils re-exports | **`ApexPainter`** + **`export type *` from `./types`** (`lib-next/index.ts`) |
+| **Types** | Under `lib/Canvas/utils/types` and chart modules | **`lib-next/types/`** barrel; **`apexify.js/types`** via **`package.json` → `exports["./types"]`** |
+| **ApexPainter** | Single huge `lib/Canvas/ApexPainter.ts` | **`lib-next/apex-painter/`**: `main.ts`, **`creates/`** (canvas, image+text, scene, chart, gif, video, batch, output-save), **`facets.ts`**, **`public-types.ts`**, **`path-custom-lines.ts`** |
+| **Video** | Split across painter + services | **`VideoStack`** + **`VideoCreator`** in **`lib-next/video/`**; **`painter.video`**; flat **`createVideo` / `getVideoInfo` / `extract*`** on **`ApexPainter`** |
+| **Raster / stitch / filters** | Many flat `ApexPainter` methods | **`painter.image`** (`PainterImageUtils`, **`lib-next/image/painter-image-utils.ts`**) |
+| **Scene** | **`SceneCreator`**, **`SceneBuilder`**, helpers inline with **`lib/Canvas/ApexPainter.ts`** + services | **`lib-next/scene/`** (builder, render, GIF/video frame helpers) + **`apex-painter/creates/scene-create.ts`**; **`ApexPainter`** still exposes **`createScene`**, **`renderScene`**, **`renderSceneToGIF`**, **`renderSceneToVideoFrames`** |
+| **Path2D / hit detection** | Flat **`createPath2D`**, **`drawPath`**, **`createCustom`**, **`isPointInPath`**, **`isPointInRegion`**, **`isPointInAnyRegion`**, **`getDistanceToRegion`** on **`ApexPainter`** (`lib/Canvas/ApexPainter.ts`) | Lazy getters **`painter.path2d`** and **`painter.detect`** (`lib-next/apex-painter/main.ts`); implementations in **`lib-next/apex-painter/facets.ts`** + **`public-types.ts`** — **`path2d.create` / `.draw` / `.custom`** (`.custom` wraps **`runDrawCustomLines`**, replacing **`createCustom`**), **`detect.path` / `.region` / `.anyRegion` / `.distance`** |
+| **Legacy `@legacy` shims** | Some `lib-next` files pointed at `lib/` | Removed from **`lib-next`**; **`path-builder`**, **`core/math`** use **`lib-next`** sources |
+| **Scene exports on root index** | `SceneCreator`, `SceneBuilder`, `expandSceneGifFrames`, `renderSceneToVideoFrames`, … | **Removed** from main index; use **`ApexPainter`** or in-repo **`lib-next/scene/...`** imports |
+
+### ✨ Added
+
+- **`lib-next/`** as the **only** tree compiled into **`dist/`** for npm.
+- **`exports["./types"]`** for `import type { … } from "apexify.js/types"`.
+- **`painter.image`** — stitch, collage, compress, palette, resize, convert, effects, color tools, blend, crop, mask, gradient, **`validHex`**.
+- **`VideoStack`** — shared FFmpeg session behind **`painter.video`** and video delegates.
+- **`lib-next/types/video.ts`** — re-exports **`VideoCreationOptions`**, **`MixAudioOverlayClip`**, **`MixAudioOperation`**, **`SceneToVideoResult`** into the types barrel.
+- **`lib-next/apex-painter/creates/`** — per-domain create/save modules to keep the façade small.
+- **`lib-next/scene/`** — scene composition pipeline (**`SceneCreator`**, **`SceneBuilder`**, scene→GIF / scene→video frame utilities) wired through **`SceneCreate`**; consumed from **`ApexPainter`** via **`createScene`**, **`renderScene`**, **`renderSceneToGIF`**, **`renderSceneToVideoFrames`**.
+- Root **`tsconfig.json`**: **`"files": ["lib-next/index.ts"]`** so the language service always has a program root; **`.vscode/settings.json`** pins the workspace TypeScript SDK.
+
+### 🔧 Changed
+
+- **`lib/`** is **legacy / reference** for migration; **do not** treat it as the publish source for **5.4.0**.
+- **`lib-next/chart/index.ts`**: removed **`export type * from "../types/chart"`** to avoid duplicate type names with the root types barrel.
+- **Path2D / custom lines / hit testing**: moved from a long list of **`ApexPainter`** methods to **lazy facet objects** — **`painter.path2d`** (**`create`**, **`draw`**, **`custom`**) and **`painter.detect`** (**`path`**, **`region`**, **`anyRegion`**, **`distance`**), matching the grouping in **`PainterPath2D`** / **`PainterHitDetect`** (`lib-next/apex-painter/public-types.ts`).
+
+### ⚠️ Breaking changes
+
+- **Main entry** (`"apexify.js"`) exports only **`ApexPainter`** and **types** (no **`ChartCreator`**, **`foundation`**, **`checkApexifyUpdates`**, **`CanvasUtils` / `CanvasTypes`**, or extra scene symbols on the root index).
+- **`import { ChartCreator } from "apexify.js"`** is invalid unless you add another **`exports`** entry; use **`lib-next/chart/...`** in-repo or extend **`package.json` `exports`** yourself.
+- **`chain`**: nested APIs use dotted method names (e.g. **`"image.resize"`**, **`"image.stitchImages"`**) — see **`lib-next/batch/batch-operations.ts`**.
+- **Path2D / hit detection method names** on **`ApexPainter`** are gone: use **`painter.path2d.create`** (was **`createPath2D`**), **`.draw`** (was **`drawPath`**), **`.custom`** (was **`createCustom`**); **`painter.detect.path`** (was **`isPointInPath`**), **`.region`** / **`.anyRegion`** / **`.distance`** (were **`isPointInRegion`**, **`isPointInAnyRegion`**, **`getDistanceToRegion`**).
+
+### Migration
+
+```ts
+import { ApexPainter } from "apexify.js";
+import type { SceneRenderInput, CanvasConfig } from "apexify.js";
+// or: import type { … } from "apexify.js/types";
+
+const painter = new ApexPainter({ type: "buffer" });
+await painter.createVideo({ source: "./in.mov", convert: { outputPath: "./out.mp4", quality: "high" } });
+await painter.image.stitchImages([a, b], { direction: "horizontal" });
+const path = painter.path2d.create(commands);
+await painter.path2d.draw(canvasBuffer, path);
+const hit = await painter.detect.path(path, x, y);
+```
 
 ## [5.3.20] - 2026-05-03
 

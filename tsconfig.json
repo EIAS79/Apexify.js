@@ -23,6 +23,6 @@
     }
   },
   "files": ["lib-next/index.ts"],
-  "include": ["lib-next/**/*.ts", "lib/**/*.ts"],
+  "include": ["lib-next/**/*.ts", ],
   "exclude": ["node_modules", "dist"]
 }
