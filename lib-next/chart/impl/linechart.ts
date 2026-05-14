@@ -414,6 +414,35 @@ function formatDate(value: number, format: string): string {
     .replace(/ss/g, seconds);
 }
 
+const TICK_INT_EPS = 1e-6;
+
+/**
+ * Human-readable tick labels for numeric axes (replaces blind `toFixed(1)` everywhere).
+ * - Whole numbers & typical years: no trailing `.0`
+ * - Large magnitudes: compact notation (e.g. `7.91B`)
+ */
+function formatNumericTickLabel(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < TICK_INT_EPS) {
+    if (Math.abs(rounded) < 1_000_000) {
+      return String(rounded);
+    }
+  }
+  try {
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    const av = Math.abs(value);
+    if (av >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
+    if (av >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
+    if (av >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
+    return Math.abs(value - rounded) < TICK_INT_EPS ? String(rounded) : value.toFixed(2);
+  }
+}
+
 /**
  * Converts a linear value to logarithmic scale position
  */
@@ -444,7 +473,7 @@ function computeMaxYTickLabelWidth(
     if (isDateTime && dateFormat) {
       label = formatDate(value, dateFormat);
     } else {
-      label = value.toFixed(1);
+      label = formatNumericTickLabel(value);
     }
     maxW = Math.max(maxW, ctx.measureText(label).width);
   };
@@ -523,7 +552,7 @@ function drawYAxisTicks(
       if (isDateTime && dateFormat) {
         labelText = formatDate(value, dateFormat);
       } else {
-        labelText = value.toFixed(1);
+        labelText = formatNumericTickLabel(value);
       }
       ctx.fillText(labelText, originX - 10, y);
       lastLabelY = y;
@@ -557,7 +586,7 @@ function drawYAxisTicks(
         if (isDateTime && dateFormat) {
           labelText = formatDate(value, dateFormat);
         } else {
-          labelText = value.toFixed(1);
+          labelText = formatNumericTickLabel(value);
         }
         ctx.fillText(labelText, originX - 10, y);
         lastLabelY = y;
@@ -582,7 +611,7 @@ function drawYAxisTicks(
         if (isDateTime && dateFormat) {
           labelText = formatDate(value, dateFormat);
         } else {
-          labelText = value.toFixed(1);
+          labelText = formatNumericTickLabel(value);
         }
         ctx.fillText(labelText, originX - 10, y);
         lastLabelY = y;
@@ -649,7 +678,7 @@ function drawRightYAxisTicks(
       if (isDateTime && dateFormat) {
         labelText = formatDate(value, dateFormat);
       } else {
-        labelText = value.toFixed(1);
+        labelText = formatNumericTickLabel(value);
       }
       ctx.fillText(labelText, rightAxisX + 10, y);
       lastLabelY = y;
@@ -682,7 +711,7 @@ function drawRightYAxisTicks(
         if (isDateTime && dateFormat) {
           labelText = formatDate(value, dateFormat);
         } else {
-          labelText = value.toFixed(1);
+          labelText = formatNumericTickLabel(value);
         }
         ctx.fillText(labelText, rightAxisX + 10, y);
         lastLabelY = y;
@@ -706,7 +735,7 @@ function drawRightYAxisTicks(
         if (isDateTime && dateFormat) {
           labelText = formatDate(value, dateFormat);
         } else {
-          labelText = value.toFixed(1);
+          labelText = formatNumericTickLabel(value);
         }
         ctx.fillText(labelText, rightAxisX + 10, y);
         lastLabelY = y;
@@ -841,7 +870,7 @@ function drawXAxisTicks(
       if (isDateTime && dateFormat) {
         labelText = formatDate(value, dateFormat);
       } else {
-        labelText = value.toFixed(1);
+        labelText = formatNumericTickLabel(value);
       }
       if (drawLabels) {
         ctx.fillStyle = tickLabelColor;

@@ -38,6 +38,9 @@ chart-verify-output/
 coverage/
 .nyc_output/
 
+# Example script outputs
+examples/output/
+
 # Temporary files
 *.tmp
 *.temp
@@ -59,6 +62,7 @@ video-thumbnail.png
 *.wav
 !logo.png
 !banner.png
+!Apex-Banner.png
 
 # TypeScript
 *.tsbuildinfo

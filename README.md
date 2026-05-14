@@ -2,11 +2,11 @@
 
 <div align="center">
 
-![Apexify.js Banner](https://imgur.com/0E9GTmP)
+![Apexify.js banner — charts, canvas, TypeScript](Apex-Banner.png)
 
 **Programmatic visual generation for Node.js.**
 
-Create images, charts, text effects, shapes, GIFs, and video outputs from JavaScript or TypeScript.
+Create images, charts, text effects, shapes, GIFs, MP4/video, and scene compositions from JavaScript or TypeScript.
 
 [![npm version](https://badge.fury.io/js/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![npm downloads](https://img.shields.io/npm/dt/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
@@ -72,16 +72,20 @@ pnpm add apexify.js
 Create a canvas, draw text on it, and save the result.
 
 ```ts
+import { writeFileSync } from "node:fs";
 import { ApexPainter } from "apexify.js";
-import fs from "fs";
 
-const painter = new ApexPainter();
+const painter = new ApexPainter({ type: "buffer" });
 
-const { buffer: base } = await painter.createCanvas({
+const base = await painter.createCanvas({
   width: 1200,
   height: 630,
   gradientBg: {
     type: "linear",
+    startX: 0,
+    startY: 0,
+    endX: 1200,
+    endY: 630,
     colors: [
       { stop: 0, color: "#667eea" },
       { stop: 1, color: "#764ba2" },
@@ -94,26 +98,24 @@ const output = await painter.createText(
     text: "Hello Apexify.js",
     x: 600,
     y: 315,
-    font: {
-      size: 72,
-      family: "Arial",
-    },
-    bold: true,
-    color: "#ffffff",
-    textAlign: "center",
-    textBaseline: "middle",
-    shadow: {
-      color: "rgba(0,0,0,0.35)",
-      offsetX: 0,
-      offsetY: 14,
-      blur: 28,
-      opacity: 1,
+    font: { size: 72, family: "Arial" },
+    decorations: { bold: true },
+    fill: { color: "#ffffff" },
+    placement: { textAlign: "center", textBaseline: "middle" },
+    effects: {
+      shadow: {
+        color: "rgba(0,0,0,0.35)",
+        offsetX: 0,
+        offsetY: 14,
+        blur: 28,
+        opacity: 1,
+      },
     },
   },
   base
 );
 
-fs.writeFileSync("output.png", output);
+writeFileSync("output.png", output);
 ```
 
 ---
@@ -125,9 +127,9 @@ Apexify.js uses a simple buffer-based rendering flow:
 ```txt
 createCanvas()
      ↓
-createText() / createImage() / createChart()
+createText() / createImage() / createChart() / createScene()…
      ↓
-save / export / return buffer
+save() / outPut() / return Buffer
 ```
 
 Most APIs return a `Buffer`, which can be saved to disk, sent through an API route, uploaded, attached to a bot message, or passed into another Apexify operation.
@@ -193,14 +195,10 @@ const output = await painter.createText(
     text: "Apexify.js",
     x: 600,
     y: 300,
-    font: {
-      size: 80,
-      family: "Arial",
-    },
-    bold: true,
-    color: "#ffffff",
-    textAlign: "center",
-    textBaseline: "middle",
+    font: { size: 80, family: "Arial" },
+    decorations: { bold: true },
+    fill: { color: "#ffffff" },
+    placement: { textAlign: "center", textBaseline: "middle" },
   },
   canvasBuffer
 );
@@ -280,14 +278,21 @@ const chart = await painter.createChart(
   [
     {
       label: "Revenue",
-      data: [12, 18, 24, 31, 42],
+      data: [
+        { x: 1, y: 12 },
+        { x: 2, y: 18 },
+        { x: 3, y: 24 },
+        { x: 4, y: 31 },
+        { x: 5, y: 42 },
+      ],
       color: "#7c3aed",
     },
   ],
   {
-    width: 900,
-    height: 500,
-    title: "Revenue Growth",
+    dimensions: { width: 900, height: 500 },
+    labels: {
+      title: { text: "Revenue growth", fontSize: 18, color: "#0f172a" },
+    },
   }
 );
 ```
@@ -312,47 +317,43 @@ Supported chart types include:
 Create animated GIFs from frames, buffers, image paths, or programmatic frame generation.
 
 ```ts
-const gif = await painter.createGIF(
-  undefined,
-  {
-    width: 600,
-    height: 600,
-    frameCount: 30,
-    delay: 40,
-    outputFormat: "buffer",
-    async onStart(frameCount, painter) {
-      const frames = [];
+const gif = await painter.createGIF(undefined, {
+  width: 600,
+  height: 600,
+  frameCount: 30,
+  delay: 40,
+  outputFormat: "buffer",
+  async onStart(frameCountHint, _painter) {
+    const frames: { buffer: Buffer; duration: number }[] = [];
 
-      for (let i = 0; i < frameCount; i++) {
-        const { buffer } = await painter.createCanvas({
-          width: 600,
-          height: 600,
-          colorBg: "#111827",
-        });
+    for (let i = 0; i < frameCountHint; i++) {
+      const canvas = await painter.createCanvas({
+        width: 600,
+        height: 600,
+        colorBg: "#111827",
+      });
 
-        const frame = await painter.createText(
-          {
-            text: `Frame ${i + 1}`,
-            x: 300,
-            y: 300,
-            font: { size: 48, family: "Arial" },
-            color: "#ffffff",
-            textAlign: "center",
-            textBaseline: "middle",
-          },
-          buffer
-        );
+      const frame = await painter.createText(
+        {
+          text: `Frame ${i + 1}`,
+          x: 300,
+          y: 300,
+          font: { size: 48, family: "Arial" },
+          fill: { color: "#ffffff" },
+          placement: { textAlign: "center", textBaseline: "middle" },
+        },
+        canvas
+      );
 
-        frames.push({
-          buffer: frame,
-          duration: 40,
-        });
-      }
+      frames.push({
+        buffer: frame,
+        duration: 40,
+      });
+    }
 
-      return frames;
-    },
-  }
-);
+    return frames;
+  },
+});
 ```
 
 GIF features include:
@@ -378,16 +379,17 @@ const info = await painter.createVideo({
 });
 ```
 
-Create a video from generated frames:
+Create a video from generated image buffers (requires FFmpeg):
 
 ```ts
 await painter.createVideo({
-  source: "./placeholder.mp4",
+  source: "",
   createFromFrames: {
-    frames: ["./frame-001.png", "./frame-002.png", "./frame-003.png"],
+    frames: [frameBuf1, frameBuf2, frameBuf3],
     outputPath: "./output.mp4",
     fps: 30,
     format: "mp4",
+    quality: "high",
   },
 });
 ```
@@ -398,7 +400,7 @@ await painter.createVideo({
 
 ### Advanced APIs
 
-Apexify.js also exposes lower-level APIs for advanced rendering and analysis.
+Apexify.js also exposes lower-level APIs on **`painter.path2d`**, **`painter.pixels`**, **`painter.detect`**, **`painter.output`**, and **`painter.image`** (paths, pixels, hit tests, encodings, raster utilities).
 
 #### Text Metrics
 
@@ -416,7 +418,7 @@ const metrics = await painter.measureText({
 #### Pixel Data
 
 ```ts
-const pixelData = await painter.getPixelData(canvasBuffer, {
+const pixelData = await painter.pixels.getData(canvasBuffer, {
   x: 0,
   y: 0,
   width: 100,
@@ -427,7 +429,7 @@ const pixelData = await painter.getPixelData(canvasBuffer, {
 #### Pixel Manipulation
 
 ```ts
-const processed = await painter.manipulatePixels(canvasBuffer, {
+const processed = await painter.pixels.manipulate(canvasBuffer, {
   filter: "grayscale",
   intensity: 1,
 });
@@ -436,14 +438,18 @@ const processed = await painter.manipulatePixels(canvasBuffer, {
 #### Path2D
 
 ```ts
-const path = painter.createPath2D([
+import type { PathCommand } from "apexify.js";
+
+const commands: PathCommand[] = [
   { type: "moveTo", x: 100, y: 100 },
   { type: "lineTo", x: 300, y: 100 },
   { type: "lineTo", x: 300, y: 300 },
   { type: "closePath" },
-]);
+];
 
-const output = await painter.drawPath(canvasBuffer, path, {
+const path = painter.path2d.create(commands);
+
+const output = await painter.path2d.draw(canvasBuffer, path, {
   stroke: {
     color: "#ffffff",
     width: 4,
@@ -458,7 +464,7 @@ const output = await painter.drawPath(canvasBuffer, path, {
 #### Hit Detection
 
 ```ts
-const hit = await painter.isPointInRegion(
+const hit = await painter.detect.region(
   {
     type: "circle",
     x: 200,
@@ -479,33 +485,33 @@ The main entry point is:
 ```ts
 import { ApexPainter } from "apexify.js";
 
-const painter = new ApexPainter();
+const painter = new ApexPainter({ type: "buffer" });
 ```
 
-Common methods:
+Common methods and grouped APIs:
 
-| Method | Purpose |
+| Method / API | Purpose |
 |---|---|
-| `createCanvas()` | Create a base canvas |
-| `createText()` | Draw text on an existing canvas |
+| `createCanvas()` | Create a base canvas (`CanvasResults`: `buffer` + config) |
+| `createText()` | Draw text on an existing canvas or `CanvasResults` |
 | `createImage()` | Draw images or shapes on an existing canvas |
-| `createCustom()` | Draw custom lines, arrows, and connectors |
-| `createChart()` | Generate a chart image |
-| `createComparisonChart()` | Generate multi-chart comparison layouts |
-| `createComboChart()` | Generate combined bar/line charts |
-| `createGIF()` | Generate animated GIFs |
-| `createVideo()` | Run FFmpeg-backed video operations |
-| `measureText()` | Measure text layout |
-| `getPixelData()` | Read pixel data from a canvas |
-| `setPixelData()` | Write pixel data back to a canvas |
-| `manipulatePixels()` | Apply pixel-level processing |
-| `createPath2D()` | Build a path from path commands |
-| `drawPath()` | Draw a path onto a canvas |
-| `isPointInRegion()` | Test whether a point is inside a region |
-| `batch()` | Run multiple operations |
-| `chain()` | Run sequential operations |
-| `save()` | Save output files |
-| `outPut()` | Convert output to configured format |
+| `image.*` | Raster helpers: stitch, collage, compress, resize, filters, blend, crop, mask, palette, … |
+| `createChart()` | Generate a chart image (`"line"`, `"bar"`, …) |
+| `createComparisonChart()` | Multi-chart comparison layouts |
+| `createComboChart()` | Combined bar / line charts |
+| `createScene()` / `renderScene()` | Layered composition → PNG |
+| `createGIF()` | Animated GIFs |
+| `createVideo()` | FFmpeg-backed video (encode, trim, convert, …) |
+| `measureText()` | Text layout metrics |
+| `path2d.create()` / `path2d.draw()` | Path2D from commands + draw |
+| `path2d.custom()` | Custom lines, arrows, connectors |
+| `pixels.getData()` / `pixels.setData()` | Read / write pixel buffers |
+| `pixels.manipulate()` | Pixel-level filters |
+| `detect.region()` / `detect.path()` | Hit testing |
+| `output.dataURL()` / `output.base64()` | Encode buffers |
+| `batch()` / `chain()` | Batch / pipeline helpers |
+| `save()` / `saveMultiple()` | Persist files |
+| `outPut()` | Convert buffer to configured format |
 
 ---
 
@@ -584,11 +590,12 @@ The Studio lets you edit and run snippets in a browser-based code playground:
 Apexify.js is written in TypeScript and ships type definitions.
 
 ```ts
-import { ApexPainter, CanvasTypes } from "apexify.js";
+import { ApexPainter } from "apexify.js";
+import type { CanvasConfig } from "apexify.js";
 
-const painter = new ApexPainter();
+const painter = new ApexPainter({ type: "buffer" });
 
-const config: CanvasTypes.CanvasConfig = {
+const config: CanvasConfig = {
   width: 1200,
   height: 630,
   colorBg: "#111827",
