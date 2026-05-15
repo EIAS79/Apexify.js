@@ -1,13 +1,16 @@
 import type {
   SceneLayer,
   SceneRenderInput,
+  SceneRenderOptions,
   SceneGifInputFrame,
   SceneVideoFrameSlot,
 } from "../../types/scene";
 import type { GIFOptions, GIFInputFrame } from "../../types/gif";
 import type { VideoCreationOptions } from "../../video/video-stack";
 import type { SceneToVideoResult } from "../../scene/render-scene-to-video";
-import { SceneCreator, SceneBuilder } from "../../scene/scene-creator";
+import { SceneCreator } from "../../scene/scene-creator";
+import { SceneBuilder } from "../../scene/scene-builder";
+import { validateSceneRenderInput } from "../../scene/scene-validation";
 import { expandSceneGifFrames } from "../../scene/gif-scene";
 import { renderSceneToVideoFrames } from "../../scene/render-scene-to-video";
 import type { GIFCreator } from "../../gif/gif-creator";
@@ -52,8 +55,19 @@ export class SceneCreate {
     return new SceneBuilder(this.sceneCreator, widthOrConfig, height, []);
   }
 
-  renderScene(input: SceneRenderInput): Promise<Buffer> {
-    return this.sceneCreator.render(input);
+  renderScene(input: SceneRenderInput, options?: SceneRenderOptions): Promise<Buffer> {
+    return this.sceneCreator.render(input, options);
+  }
+
+  /**
+   * Throws if `SceneRenderInput` is structurally invalid (dimensions, nested `surface` depth).
+   * Use before persisting or accepting untrusted scene JSON.
+   */
+  validateRenderInput(
+    input: SceneRenderInput,
+    options?: Pick<SceneRenderOptions, "maxSurfaceDepth">
+  ): void {
+    validateSceneRenderInput(input, options);
   }
 
   async renderSceneToGIF(
@@ -64,9 +78,11 @@ export class SceneCreate {
       prependComposedRaster?: boolean;
       composedFrameDuration?: number;
       composedFrameRepeat?: number;
+      /** Passed to {@link SceneCreator.render} for the composed raster frame. */
+      sceneRender?: SceneRenderOptions;
     }
   ): Promise<Awaited<ReturnType<GIFCreator["createGIF"]>>> {
-    const composedPng = await this.sceneCreator.render(scene);
+    const composedPng = await this.sceneCreator.render(scene, gif.sceneRender);
     if (gif.options.onStart) {
       throw new Error(
         "renderSceneToGIF: use createGIF with onStart alone, or remove onStart when building from a composed scene."
@@ -98,6 +114,7 @@ export class SceneCreate {
       options: VideoCreationOptions;
       prependComposedToFrames?: boolean;
       framesWithRepeats?: SceneVideoFrameSlot[];
+      sceneRender?: SceneRenderOptions;
     }
   ): Promise<SceneToVideoResult> {
     return renderSceneToVideoFrames(this.sceneCreator, videoCreator, scene, video);

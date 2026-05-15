@@ -5,6 +5,36 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.02] - 2026-05-13
+
+Scene composition is easier to discover and safer by default: **`SceneBuilder`** now lives in its own module, the fluent API can append or reorder layers in bulk, and **`renderScene`** / **`SceneCreator.render`** optionally validate inputs before allocating the root canvas.
+
+### ✨ Added
+
+##### Scene — `SceneBuilder` (`scene-builder.ts`)
+
+- **`addLayers(layers)`** — append many layers in paint order; **`addLayer(layer)`** is equivalent to **`addLayers([layer])`**.
+- **Stack editing:** **`insertLayer`**, **`insertLayers`**, **`removeLayer`**, **`moveLayer`**, **`replaceLayers`**, **`clearLayers`**, and **`layerCount`** (getter).
+- **`toRenderInput()`** — returns a plain **`SceneRenderInput`** with a **copied** **`layers`** array for **`renderScene`**, **`renderSceneToGIF`**, **`renderSceneToVideoFrames`**, caching, or tests.
+
+##### Scene — validation and render options
+
+- **`SceneRenderOptions`** on **`SceneCreator.render`**, **`ApexPainter.renderScene`**, and **`SceneBuilder.render`**: **`validate`** (default **`true`**) and **`maxSurfaceDepth`** (default **64**); set **`{ validate: false }`** only for trusted hot paths.
+- **`validateSceneRenderInput`** — exported from the main package entry and the **`scene`** barrel; **`SceneCreate.validateRenderInput`** and **`ApexPainter.validateSceneRenderInput`** delegate to it.
+
+##### Scene — GIF and video helpers
+
+- **`renderSceneToGIF`**: optional **`gif.sceneRender`** — same options as **`renderScene`** for the composed raster step.
+- **`renderSceneToVideoFrames`**: optional **`video.sceneRender`** — forwarded when rasterizing the scene PNG before FFmpeg.
+
+### 🔧 Changed
+
+- **`SceneBuilder`** implementation moved from **`scene-creator.ts`** into **`scene-builder.ts`** so the builder API is visible in one file; **`scene-creator.ts`** holds **`SceneCreator`** only. **`scene-renderer.ts`** re-exports both symbols.
+
+### 📚 Documentation
+
+- Scene chapter docs (**`scene/*.mdx`**) updated for **`addLayers`**, stack helpers, **`toRenderInput`**, validation, and **`sceneRender`** on GIF/video, written for the public docs site (no internal repo paths in overviews).
+
 ## [5.4.0] - 2026-05-13
 
 This release is a **structural and packaging pivot**: the published library is now built from **`lib-next/`** instead of the legacy monolith under **`lib/Canvas/...`** (**5.3.20** and earlier). **`ApexPainter`**-centric behavior is preserved where APIs were intentionally carried forward; **the npm entry surface and on-disk layout changed**.

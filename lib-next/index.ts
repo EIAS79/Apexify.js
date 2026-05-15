@@ -3,5 +3,6 @@
  */
 
 export { ApexPainter } from "./apex-painter";
+export { validateSceneRenderInput } from "./scene/scene-validation";
 
 export type * from "./types";

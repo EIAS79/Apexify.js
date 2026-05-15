@@ -1,5 +1,5 @@
 import type { SceneCreator } from "./scene-creator";
-import type { SceneRenderInput, SceneVideoFrameSlot } from "../types/scene";
+import type { SceneRenderInput, SceneRenderOptions, SceneVideoFrameSlot } from "../types/scene";
 import type { VideoCreationOptions, VideoCreator } from "../video/video-creator";
 import { expandSceneVideoFrames } from "./video-scene";
 
@@ -17,9 +17,11 @@ export async function renderSceneToVideoFrames(
     options: VideoCreationOptions;
     prependComposedToFrames?: boolean;
     framesWithRepeats?: SceneVideoFrameSlot[];
+    /** Passed to {@link SceneCreator.render} when composing the scene PNG. */
+    sceneRender?: SceneRenderOptions;
   }
 ): Promise<SceneToVideoResult> {
-  const composedPng = await sceneCreator.render(scene);
+  const composedPng = await sceneCreator.render(scene, video.sceneRender);
   const opt = video.options;
   if (!opt.createFromFrames) {
     throw new Error("renderSceneToVideoFrames: options.createFromFrames is required.");

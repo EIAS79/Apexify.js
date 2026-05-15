@@ -106,6 +106,19 @@ export interface SceneRenderInput {
 }
 
 /**
+ * Optional flags for {@link SceneCreator.render}, {@link SceneBuilder.render}, and `SceneCreate.renderScene`.
+ */
+export interface SceneRenderOptions {
+  /**
+   * When true (default), validates dimensions and nested `surface` depth before allocating the root canvas.
+   * Set `false` only for trusted hot paths.
+   */
+  validate?: boolean;
+  /** Maximum nested `surface` levels (default 64). Ignored when `validate` is `false`. */
+  maxSurfaceDepth?: number;
+}
+
+/**
  * Injectable services for {@link SceneCreator} / {@link SceneBuilder}.
  * Shapes match the ApexPainter service implementations; chart options stay `unknown` at the type level.
  */

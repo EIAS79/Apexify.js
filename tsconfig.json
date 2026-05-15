@@ -22,6 +22,6 @@
       "moduleResolution": "node"
     }
   },
-  "include": ["lib-next/**/*.ts", "examples/**/*.ts"],
+  "include": ["lib-next/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

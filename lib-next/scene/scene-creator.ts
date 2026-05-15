@@ -7,9 +7,11 @@ import type {
   SceneRenderResult,
   SceneSurfacePlacement,
   SceneCreatorDeps,
+  SceneRenderOptions,
 } from "../types/scene";
 import { customLines } from "../path/custom-lines";
 import { validateSceneCustomLinesOptions } from "./scene-normalizer";
+import { validateSceneRenderInput } from "./scene-validation";
 
 function drawSurfaceOntoParent(
   ctx: SKRSContext2D,
@@ -162,9 +164,13 @@ export class SceneCreator {
 
   /**
    * Root scene → single PNG. Background uses {@link CanvasCreator.composeCanvasForScene} (no PNG encode/decode hop).
+   * @param options Pass `{ validate: false }` to skip upfront checks; otherwise width/height and nested `surface` depth are validated.
    */
-  async render(input: SceneRenderInput): Promise<SceneRenderResult> {
+  async render(input: SceneRenderInput, options?: SceneRenderOptions): Promise<SceneRenderResult> {
     try {
+      if (options?.validate !== false) {
+        validateSceneRenderInput(input, { maxSurfaceDepth: options?.maxSurfaceDepth });
+      }
       const { width, height, background, layers } = input;
 
       const rootWork: CanvasConfig = {
@@ -180,41 +186,5 @@ export class SceneCreator {
     } catch (error) {
       throw new Error(`SceneCreator.render failed: ${getErrorMessage(error)}`);
     }
-  }
-}
-
-/**
- * Mutable builder for incremental scene setup; call {@link SceneBuilder.render} once.
- */
-export class SceneBuilder {
-  private background?: SceneRenderInput["background"];
-  private layers: SceneLayer[];
-
-  constructor(
-    private readonly sceneCreator: SceneCreator,
-    readonly width: number,
-    readonly height: number,
-    initialLayers?: SceneLayer[]
-  ) {
-    this.layers = initialLayers ? [...initialLayers] : [];
-  }
-
-  setBackground(bg: NonNullable<SceneRenderInput["background"]>): this {
-    this.background = bg;
-    return this;
-  }
-
-  addLayer(layer: SceneLayer): this {
-    this.layers.push(layer);
-    return this;
-  }
-
-  async render(): Promise<SceneRenderResult> {
-    return this.sceneCreator.render({
-      width: this.width,
-      height: this.height,
-      background: this.background,
-      layers: this.layers,
-    });
   }
 }

@@ -15,6 +15,7 @@ import type {
   SceneRenderInput,
   SceneGifInputFrame,
   SceneVideoFrameSlot,
+  SceneRenderOptions,
 } from "../types/scene";
 import type { PieSlice, PieChartOptions } from "../types/chart";
 import type { BarChartData, BarChartOptions } from "../chart/impl/barchart";
@@ -27,7 +28,7 @@ import type { VideoCreationOptions } from "../video/video-stack";
 import type { ExtractAllFramesOptions } from "../video/extract-all-frames";
 import type { SceneToVideoResult } from "../scene/render-scene-to-video";
 import type { CanvasResults } from "../canvas/canvas-creator";
-import type { SceneBuilder } from "../scene/scene-creator";
+import type { SceneBuilder } from "../scene/scene-builder";
 import { CanvasCreator } from "../canvas/canvas-creator";
 import { GIFCreator } from "../gif/gif-creator";
 import { ImageCreator } from "../image/image-creator";
@@ -187,7 +188,8 @@ export class ApexPainter {
   }
 
   /**
-   * Layered scene composition (chart / image / text / path / surface). Renders to one PNG on {@link SceneBuilder.render}.
+   * Layered scene composition (chart / image / text / path / surface). Use {@link SceneBuilder} methods
+   * (`addLayers`, `insertLayer`, `moveLayer`, …); renders to one PNG on {@link SceneBuilder.render}.
    */
   createScene(config: {
     width: number;
@@ -216,8 +218,18 @@ export class ApexPainter {
     return this.sceneCreate.createScene(widthOrConfig, height);
   }
 
-  renderScene(input: SceneRenderInput): Promise<Buffer> {
-    return this.sceneCreate.renderScene(input);
+  renderScene(input: SceneRenderInput, options?: SceneRenderOptions): Promise<Buffer> {
+    return this.sceneCreate.renderScene(input, options);
+  }
+
+  /**
+   * Validates a scene description (dimensions, nested `surface` depth). Throws on invalid input.
+   */
+  validateSceneRenderInput(
+    input: SceneRenderInput,
+    options?: Pick<SceneRenderOptions, "maxSurfaceDepth">
+  ): void {
+    this.sceneCreate.validateRenderInput(input, options);
   }
 
   renderSceneToGIF(
@@ -228,6 +240,7 @@ export class ApexPainter {
       prependComposedRaster?: boolean;
       composedFrameDuration?: number;
       composedFrameRepeat?: number;
+      sceneRender?: SceneRenderOptions;
     }
   ): Promise<Awaited<ReturnType<GIFCreator["createGIF"]>>> {
     return this.sceneCreate.renderSceneToGIF(scene, gif);
@@ -239,6 +252,7 @@ export class ApexPainter {
       options: VideoCreationOptions;
       prependComposedToFrames?: boolean;
       framesWithRepeats?: SceneVideoFrameSlot[];
+      sceneRender?: SceneRenderOptions;
     }
   ): Promise<SceneToVideoResult> {
     return this.sceneCreate.renderSceneToVideoFrames(this.video.creator, scene, video);

@@ -6,5 +6,6 @@ export type {
   SceneChartType,
   SceneLayer,
   SceneRenderInput,
+  SceneRenderOptions,
   SceneCreatorDeps,
 } from "../types/scene";
