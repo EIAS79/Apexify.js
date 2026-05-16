@@ -114,8 +114,13 @@ export interface SceneRenderOptions {
    * Set `false` only for trusted hot paths.
    */
   validate?: boolean;
-  /** Maximum nested `surface` levels (default 64). Ignored when `validate` is `false`. */
+  /** Max nesting depth for `surface` layers during validation (default from validation util). */
   maxSurfaceDepth?: number;
+  /**
+   * When true, resolves **`$name`** / **`$palette.key`** in string leaves via {@link AssetManager} before painting.
+   * {@link ApexPainter.renderScene} defaults this to **true**; {@link SceneBuilder.render} defaults to **false** (opt-in).
+   */
+  resolveAssetRefs?: boolean;
 }
 
 /**

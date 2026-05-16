@@ -2,7 +2,15 @@ import type { CanvasConfig } from "../types/canvas";
 import type { ImageProperties } from "../types/image";
 import type { TextProperties } from "../types/text";
 import type { BatchOperation, ChainOperation } from "../types/batch";
+import type { PainterAssetRefsOptions } from "../types/painter-resolve";
+import type { AssetResolveFn } from "../assets/asset-strings";
+import { resolveAssetRefsDeep } from "../assets/asset-strings";
 import { getErrorMessage } from "../core/errors";
+
+export interface BatchChainAssetOpts {
+  resolveAssetRefs?: boolean;
+  resolve?: AssetResolveFn;
+}
 
 function resolveChainMethod(painter: object, path: string): unknown {
   const segments = path.split(".");
@@ -20,15 +28,17 @@ function resolveChainMethod(painter: object, path: string): unknown {
  * Minimal painter surface for batch helpers. Implemented by legacy and lib-next ApexPainter.
  */
 export interface BatchChainPainter {
-  createCanvas(config: CanvasConfig): Promise<{ buffer: Buffer }>;
+  createCanvas(config: CanvasConfig, painterOpts?: PainterAssetRefsOptions): Promise<{ buffer: Buffer }>;
   createImage(
     images: ImageProperties | ImageProperties[],
     canvasBuffer: unknown,
-    options?: unknown
+    options?: unknown,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer>;
   createText(
     textArray: TextProperties | TextProperties[],
-    canvasBuffer: unknown
+    canvasBuffer: unknown,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer>;
 }
 
@@ -37,31 +47,44 @@ export interface BatchChainPainter {
  */
 export async function batchOperations(
   painter: BatchChainPainter,
-  operations: BatchOperation[]
+  operations: BatchOperation[],
+  opts?: BatchChainAssetOpts
 ): Promise<Buffer[]> {
   if (!operations || operations.length === 0) {
     throw new Error("batch: operations array is required");
+  }
+  if (opts?.resolveAssetRefs && !opts.resolve) {
+    throw new Error("batch: resolveAssetRefs requires opts.resolve (use ApexPainter.batch).");
   }
 
   const promises = operations.map(async (op) => {
     try {
       switch (op.type) {
         case "canvas": {
-          const canvasResult = await painter.createCanvas(op.config as CanvasConfig);
+          const canvasResult = await painter.createCanvas(op.config as CanvasConfig, {
+            resolveAssetRefs: opts?.resolveAssetRefs,
+          });
           return canvasResult.buffer;
         }
         case "image": {
-          const baseCanvas = await painter.createCanvas({ width: 800, height: 600 });
+          const baseCanvas = await painter.createCanvas({ width: 800, height: 600 }, {
+            resolveAssetRefs: opts?.resolveAssetRefs,
+          });
           return await painter.createImage(
             op.config as ImageProperties | ImageProperties[],
-            baseCanvas
+            baseCanvas,
+            undefined,
+            { resolveAssetRefs: opts?.resolveAssetRefs }
           );
         }
         case "text": {
-          const textBaseCanvas = await painter.createCanvas({ width: 800, height: 600 });
+          const textBaseCanvas = await painter.createCanvas({ width: 800, height: 600 }, {
+            resolveAssetRefs: opts?.resolveAssetRefs,
+          });
           return await painter.createText(
             op.config as TextProperties | TextProperties[],
-            textBaseCanvas
+            textBaseCanvas,
+            { resolveAssetRefs: opts?.resolveAssetRefs }
           );
         }
         default:
@@ -81,10 +104,14 @@ export async function batchOperations(
  */
 export async function chainOperations(
   painter: BatchChainPainter,
-  operations: ChainOperation[]
+  operations: ChainOperation[],
+  opts?: BatchChainAssetOpts
 ): Promise<Buffer> {
   if (!operations || operations.length === 0) {
     throw new Error("chain: operations array is required");
+  }
+  if (opts?.resolveAssetRefs && !opts.resolve) {
+    throw new Error("chain: resolveAssetRefs requires opts.resolve (use ApexPainter.chain).");
   }
 
   let currentBuffer: Buffer | undefined;
@@ -99,6 +126,7 @@ export async function chainOperations(
         throw new Error(`chain: Method "${op.method}" does not exist on painter`);
       }
 
+      const resolve = opts?.resolveAssetRefs ? opts.resolve : undefined;
       const args = op.args.map((arg) => {
         if (
           arg === "current" ||
@@ -107,6 +135,9 @@ export async function chainOperations(
             (arg as { __isCurrentBuffer?: boolean }).__isCurrentBuffer)
         ) {
           return currentBuffer;
+        }
+        if (resolve) {
+          return resolveAssetRefsDeep(arg, resolve);
         }
         return arg;
       });

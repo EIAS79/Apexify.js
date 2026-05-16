@@ -1,5 +1,9 @@
 /**
  * lib-next `ApexPainter` — façade; per-domain logic lives in `./creates/*`, facets in `./facets.ts`.
+ *
+ * ### Named assets (`$id`, `$palette.key`)
+ * **`renderScene`**, **`renderSceneToGIF`**, and **`renderSceneToVideoFrames`** resolve **`$refs`** **by default** (set **`resolveAssetRefs: false`** to skip).
+ * **`SceneBuilder.render`** and imperative methods (**`createCanvas`**, **`createImage`**, **`createText`**, **`measureText`**, charts, **`createGIF`**, **`animate`**, **`createVideo`**, **`batch`** / **`chain`**) resolve only when **`{ resolveAssetRefs: true }`** is passed, or when you preprocess with **`prepareForRender`**. Templates resolve during **`TemplateHandle.render`**.
  */
 
 import type { OutputFormat } from "../types/common";
@@ -59,6 +63,16 @@ import { GifCreate } from "./creates/gif-create";
 import { VideoCreate } from "./creates/video-create";
 import { OutputSaveCreate } from "./creates/output-save";
 import { runBatch, runChain } from "./creates/batch-create";
+import type { TemplateOptions, TemplateSceneDefinition } from "../types/template";
+import { TemplateHandle } from "../template/template-handle";
+import { AssetManager } from "../assets/asset-manager";
+import { PluginHost } from "../plugins/plugin-host";
+import { createPainterComponents, type PainterComponents } from "../components/painter-components";
+import { resolveAssetRefsDeep } from "../assets/asset-strings";
+import { resolveSceneRenderInputAssets } from "../assets/resolve-scene-assets";
+import type { PainterAssetRefsOptions } from "../types/painter-resolve";
+import type { ApexifyPlugin } from "../plugins/apexify-plugin";
+import type { BatchChainAssetOpts } from "../batch/batch-operations";
 
 export class ApexPainter {
   private readonly _outputFormat: OutputFormat;
@@ -87,6 +101,18 @@ export class ApexPainter {
    */
   readonly video: VideoStack;
   /**
+   * Named images, fonts, and palettes for **`$id`** resolution (templates, scenes, and opt-in imperative APIs).
+   */
+  readonly assets: AssetManager;
+  /**
+   * Optional extension APIs registered with {@link ApexPainter.plugins.use}.
+   */
+  readonly plugins: PluginHost;
+  /**
+   * Reusable scene fragments (**`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`**) returning {@link SceneLayer}[].
+   */
+  readonly components: PainterComponents;
+  /**
    * Stitch, collage, compress, palette, resize, convert, filters, blend, crop, mask, gradient, hex check.
    */
   readonly image: PainterImageUtils = painterImageUtils;
@@ -96,6 +122,7 @@ export class ApexPainter {
   private _pixels: PainterPixels | undefined;
   private _output: PainterOutput | undefined;
   private readonly _saveSession: SaveCounterSession = { saveCounter: 1 };
+  private readonly _installedPluginNames = new Set<string>();
 
   constructor({ type }: OutputFormat = { type: "buffer" }) {
     this._outputFormat = { type: type || "buffer" };
@@ -117,10 +144,12 @@ export class ApexPainter {
       chartCreator: this.chartCreator,
     });
 
+    this.assets = new AssetManager();
+
     this.video = new VideoStack();
     this.canvasCreate = new CanvasCreate(this.canvasCreator);
     this.imageTextCreate = new ImageTextCreate(this.imageCreator, this.textCreator, this.textMetricsCreator);
-    this.sceneCreate = new SceneCreate(this.sceneCreator, this.gifCreator);
+    this.sceneCreate = new SceneCreate(this.sceneCreator, this.gifCreator, (ref) => this.assets.resolve(ref));
     this.chartCreate = new ChartCreate(this.chartCreator);
     this.gifCreate = new GifCreate(this.gifCreator);
     this.videoCreate = new VideoCreate(this.video);
@@ -128,6 +157,9 @@ export class ApexPainter {
       () => this._outputFormat?.type || "buffer",
       this._saveSession
     );
+
+    this.plugins = new PluginHost();
+    this.components = createPainterComponents();
   }
 
   get outputFormat(): OutputFormat {
@@ -164,32 +196,53 @@ export class ApexPainter {
     return this._output;
   }
 
-  createCanvas(canvas: CanvasConfig): Promise<CanvasResults> {
-    return this.canvasCreate.createCanvas(canvas);
+  private maybeResolveRefs<T>(value: T, resolveAssetRefs?: boolean): T {
+    if (!resolveAssetRefs) return value;
+    return resolveAssetRefsDeep(value, (ref) => this.assets.resolve(ref)) as T;
+  }
+
+  /**
+   * Deep-resolves **`$name`** / **`$palette.key`** string leaves across a JSON-like value (cloned), using {@link assets}.
+   * Use ahead of imperative calls when you keep **`resolveAssetRefs: false`** on individual methods.
+   */
+  prepareForRender<T>(value: T): T {
+    return resolveAssetRefsDeep(value, (ref) => this.assets.resolve(ref)) as T;
+  }
+
+  createCanvas(canvas: CanvasConfig, painterOpts?: PainterAssetRefsOptions): Promise<CanvasResults> {
+    return this.canvasCreate.createCanvas(this.maybeResolveRefs(canvas, painterOpts?.resolveAssetRefs));
   }
 
   createImage(
     images: ImageProperties | ImageProperties[],
     canvasBuffer: CanvasResults | Buffer,
-    options?: CreateImageOptions
+    options?: CreateImageOptions,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer> {
-    return this.imageTextCreate.createImage(images, canvasBuffer, options);
+    const imgs = this.maybeResolveRefs(images, painterOpts?.resolveAssetRefs);
+    const opts =
+      painterOpts?.resolveAssetRefs && options !== undefined ? this.prepareForRender(options) : options;
+    return this.imageTextCreate.createImage(imgs, canvasBuffer, opts);
   }
 
   createText(
     textArray: TextProperties | TextProperties[],
-    canvasBuffer: CanvasResults | Buffer
+    canvasBuffer: CanvasResults | Buffer,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer> {
-    return this.imageTextCreate.createText(textArray, canvasBuffer);
+    const texts = this.maybeResolveRefs(textArray, painterOpts?.resolveAssetRefs);
+    return this.imageTextCreate.createText(texts, canvasBuffer);
   }
 
-  measureText(textProps: TextProperties): Promise<TextMetrics> {
-    return this.imageTextCreate.measureText(textProps);
+  measureText(textProps: TextProperties, painterOpts?: PainterAssetRefsOptions): Promise<TextMetrics> {
+    const p = this.maybeResolveRefs(textProps, painterOpts?.resolveAssetRefs);
+    return this.imageTextCreate.measureText(p);
   }
 
   /**
    * Layered scene composition (chart / image / text / path / surface). Use {@link SceneBuilder} methods
    * (`addLayers`, `insertLayer`, `moveLayer`, …); renders to one PNG on {@link SceneBuilder.render}.
+   * Use **`scene.render({ resolveAssetRefs: true })`** when layer strings contain **`$...`** asset refs (same resolver as {@link renderScene}).
    */
   createScene(config: {
     width: number;
@@ -218,8 +271,31 @@ export class ApexPainter {
     return this.sceneCreate.createScene(widthOrConfig, height);
   }
 
+  /**
+   * Reusable scene design: **`{{placeholders}}`**, **`$namedAssets`**, optional flex **`layout`** nodes,
+   * **`visible`** conditionals, and **`id`** + render-time **`overrides`**. Resolves to {@link renderScene}.
+   */
+  createTemplate(definition: TemplateSceneDefinition, options?: TemplateOptions): TemplateHandle {
+    return new TemplateHandle(this, definition, options);
+  }
+
+  /**
+   * Optional extensions: run **`install`** once per **`name`** (e.g. register APIs on {@link ApexPainter.plugins}).
+   */
+  use(plugin: ApexifyPlugin<ApexPainter>): void {
+    if (this._installedPluginNames.has(plugin.name)) {
+      throw new Error(`ApexPainter.use: plugin "${plugin.name}" is already installed.`);
+    }
+    void plugin.install(this);
+    this._installedPluginNames.add(plugin.name);
+  }
+
   renderScene(input: SceneRenderInput, options?: SceneRenderOptions): Promise<Buffer> {
-    return this.sceneCreate.renderScene(input, options);
+    const { resolveAssetRefs = true, ...sceneOptions } = options ?? {};
+    const prepared = resolveAssetRefs
+      ? resolveSceneRenderInputAssets(input, (ref) => this.assets.resolve(ref))
+      : input;
+    return this.sceneCreate.renderScene(prepared, sceneOptions);
   }
 
   /**
@@ -243,7 +319,11 @@ export class ApexPainter {
       sceneRender?: SceneRenderOptions;
     }
   ): Promise<Awaited<ReturnType<GIFCreator["createGIF"]>>> {
-    return this.sceneCreate.renderSceneToGIF(scene, gif);
+    const { resolveAssetRefs = true, ...sr } = gif.sceneRender ?? {};
+    const resolved = resolveAssetRefs
+      ? resolveSceneRenderInputAssets(scene, (ref) => this.assets.resolve(ref))
+      : scene;
+    return this.sceneCreate.renderSceneToGIF(resolved, { ...gif, sceneRender: sr });
   }
 
   renderSceneToVideoFrames(
@@ -255,11 +335,22 @@ export class ApexPainter {
       sceneRender?: SceneRenderOptions;
     }
   ): Promise<SceneToVideoResult> {
-    return this.sceneCreate.renderSceneToVideoFrames(this.video.creator, scene, video);
+    const { resolveAssetRefs = true, ...sr } = video.sceneRender ?? {};
+    const resolved = resolveAssetRefs
+      ? resolveSceneRenderInputAssets(scene, (ref) => this.assets.resolve(ref))
+      : scene;
+    return this.sceneCreate.renderSceneToVideoFrames(this.video.creator, resolved, {
+      ...video,
+      sceneRender: sr,
+    });
   }
 
-  createVideo(options: VideoCreationOptions): Promise<SceneToVideoResult> {
-    return this.videoCreate.createVideo(options);
+  createVideo(
+    options: VideoCreationOptions,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<SceneToVideoResult> {
+    const o = this.maybeResolveRefs(options, painterOpts?.resolveAssetRefs);
+    return this.videoCreate.createVideo(o);
   }
 
   getVideoInfo(source: string | Buffer, skipFfmpegCheck?: boolean) {
@@ -332,24 +423,40 @@ export class ApexPainter {
                 ? RadarChartOptions
                 : T extends "polarArea"
                   ? PolarAreaChartOptions
-                  : never
+                  : never,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer> {
-    return this.chartCreate.createChart(chartType, data, options);
+    const d = this.maybeResolveRefs(data, painterOpts?.resolveAssetRefs);
+    const o =
+      painterOpts?.resolveAssetRefs && options !== undefined ? this.prepareForRender(options) : options;
+    return this.chartCreate.createChart(chartType, d as never, o as never);
   }
 
-  createComparisonChart(options: import("../chart/impl/comparisonchart").ComparisonChartOptions): Promise<Buffer> {
-    return this.chartCreate.createComparisonChart(options);
+  createComparisonChart(
+    options: import("../chart/impl/comparisonchart").ComparisonChartOptions,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<Buffer> {
+    const o = this.maybeResolveRefs(options, painterOpts?.resolveAssetRefs);
+    return this.chartCreate.createComparisonChart(o);
   }
 
-  createComboChart(options: import("../chart/impl/combochart").ComboChartOptions): Promise<Buffer> {
-    return this.chartCreate.createComboChart(options);
+  createComboChart(
+    options: import("../chart/impl/combochart").ComboChartOptions,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<Buffer> {
+    const o = this.maybeResolveRefs(options, painterOpts?.resolveAssetRefs);
+    return this.chartCreate.createComboChart(o);
   }
 
   createGIF(
     gifFrames: GIFInputFrame[] | undefined,
-    options: GIFOptions
+    options: GIFOptions,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Awaited<ReturnType<GIFCreator["createGIF"]>>> {
-    return this.gifCreate.createGIF(gifFrames, options);
+    const f =
+      gifFrames !== undefined ? this.maybeResolveRefs(gifFrames, painterOpts?.resolveAssetRefs) : undefined;
+    const o = this.maybeResolveRefs(options, painterOpts?.resolveAssetRefs);
+    return this.gifCreate.createGIF(f, o);
   }
 
   animate(
@@ -357,17 +464,33 @@ export class ApexPainter {
     defaultDuration: number,
     defaultWidth: number = 800,
     defaultHeight: number = 600,
-    options?: import("../gif/animate-frames").AnimateOptions
+    options?: import("../gif/animate-frames").AnimateOptions,
+    painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer[] | undefined> {
-    return this.gifCreate.animate(frames, defaultDuration, defaultWidth, defaultHeight, options);
+    const fr = this.maybeResolveRefs(frames, painterOpts?.resolveAssetRefs);
+    const opt =
+      painterOpts?.resolveAssetRefs && options !== undefined ? this.prepareForRender(options) : options;
+    return this.gifCreate.animate(fr, defaultDuration, defaultWidth, defaultHeight, opt);
   }
 
-  batch(operations: BatchOperation[]): Promise<Buffer[]> {
-    return runBatch(this, operations);
+  batch(operations: BatchOperation[], opts?: BatchChainAssetOpts): Promise<Buffer[]> {
+    return runBatch(this, operations, {
+      resolveAssetRefs: opts?.resolveAssetRefs,
+      resolve:
+        opts?.resolveAssetRefs
+          ? opts.resolve ?? ((ref: string) => this.assets.resolve(ref))
+          : undefined,
+    });
   }
 
-  chain(operations: ChainOperation[]): Promise<Buffer> {
-    return runChain(this, operations);
+  chain(operations: ChainOperation[], opts?: BatchChainAssetOpts): Promise<Buffer> {
+    return runChain(this, operations, {
+      resolveAssetRefs: opts?.resolveAssetRefs,
+      resolve:
+        opts?.resolveAssetRefs
+          ? opts.resolve ?? ((ref: string) => this.assets.resolve(ref))
+          : undefined,
+    });
   }
 
   outPut(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {

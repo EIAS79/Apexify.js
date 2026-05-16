@@ -6,7 +6,7 @@
 
 **Programmatic visual generation for Node.js.**
 
-Create images, charts, text effects, shapes, GIFs, MP4/video, and scene compositions from JavaScript or TypeScript.
+Create images, charts, text effects, shapes, GIFs, MP4/video, **scenes**, **templates**, and composed layouts from JavaScript or TypeScript.
 
 [![npm version](https://badge.fury.io/js/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![npm downloads](https://img.shields.io/npm/dt/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
@@ -38,7 +38,10 @@ Apexify.js combines:
 - chart generation
 - GIF creation
 - video processing
-- batch output utilities
+- layered **scenes** and **templates** (`renderScene`, placeholders, **`$`** assets)
+- lightweight **components** (**`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`** → **`SceneLayer[]`**)
+- **plugins** (**`PluginHost`** + **`ApexPainter.use`**)
+- batch / chain helpers and batch output utilities
 - pixel/path/hit-testing APIs
 
 under one programmable workflow.
@@ -120,9 +123,61 @@ writeFileSync("output.png", output);
 
 ---
 
+## Named assets (`$name`, `$palette.key`)
+
+Register images, fonts, and color palettes on **`painter.assets`**.
+
+- **Scenes** (`renderScene`, `renderSceneToGIF`, `renderSceneToVideoFrames`): `$refs` in strings are resolved **by default** (use `{ resolveAssetRefs: false }` to skip).
+- **Templates**: resolved when you call **`TemplateHandle.render`**.
+- **`SceneBuilder.render`**: opt in with **`{ resolveAssetRefs: true }`**.
+
+**Imperative** APIs (`createCanvas`, `createImage`, `createText`, `measureText`, chart methods, `createGIF`, `animate`, `createVideo`) leave **`$refs`** unchanged unless you pass **`{ resolveAssetRefs: true }`** on the trailing options argument (where supported), or preprocess once with **`painter.prepareForRender(config)`**. **`batch`** and **`chain`** accept **`{ resolveAssetRefs: true }`** (and optional **`resolve`**) to resolve each batch **`config`** or each chained **`args`** value.
+
+Minimal example:
+
+```ts
+painter.assets.loadPalette("brand", { primary: "#6366f1", ink: "#0f172a" });
+await painter.createCanvas(
+  { width: 400, height: 200, colorBg: "$brand.primary" },
+  { resolveAssetRefs: true }
+);
+// or build config first:
+const cfg = painter.prepareForRender({
+  width: 400,
+  height: 200,
+  colorBg: "$brand.primary",
+});
+await painter.createCanvas(cfg);
+```
+
+---
+
+## Scenes, templates, and components
+
+**Scenes** — Layered compositions (**`SceneLayer[]`**: image, text, path, chart, nested **`surface`**, …).
+
+- **`createScene`** returns **`SceneBuilder`**: **`addLayers`**, stack editing (**`insertLayer`**, **`moveLayer`**, …), **`toRenderInput()`**, **`render()`**. Use **`render({ resolveAssetRefs: true })`** when layers contain **`$…`** asset strings (same rules as **`renderScene`** if the builder was created via **`createScene`**).
+- **`renderScene`**, **`renderSceneToGIF`**, **`renderSceneToVideoFrames`** — PNG / GIF / video; string **`$refs`** resolve **by default** (pass **`{ resolveAssetRefs: false }`** on the matching options bag to skip).
+- **`validateSceneRenderInput`** — checks dimensions and nested **`surface`** depth for untrusted payloads.
+
+**Templates** — **`createTemplate(definition, options?)`** returns **`TemplateHandle`**: placeholders **`{{key}}`** / **`{{key \| default}}`**, **`$`** assets, flex **`layout`**, **`visible`**, layer **`id`** + render **`overrides`**.
+
+**Components** — **`painter.components`**: **`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`**; each **`toLayers(options)`** returns **`SceneLayer[]`** for **`renderScene`** or **`SceneBuilder.addLayers`**.
+
+**Plugins** — **`painter.plugins.use(name, api)`** registers a named API object; **`painter.use(plugin)`** installs an **`ApexifyPlugin`** once per **`plugin.name`** (**`plugin.install(this)`**).
+
+---
+
 ## Core Workflow
 
-Apexify.js uses a simple buffer-based rendering flow:
+Typical flows:
+
+```txt
+Imperative → createCanvas → createText / createImage / … → Buffer → save()
+Scenes     → renderScene | createTemplate().render() | SceneBuilder.render()
+```
+
+Classic buffer pipeline:
 
 ```txt
 createCanvas()
@@ -132,7 +187,7 @@ createText() / createImage() / createChart() / createScene()…
 save() / outPut() / return Buffer
 ```
 
-Most APIs return a `Buffer`, which can be saved to disk, sent through an API route, uploaded, attached to a bot message, or passed into another Apexify operation.
+Most drawing APIs return a **`Buffer`**; **`createCanvas`** returns **`CanvasResults`** (`buffer` plus metadata). Results can be saved, streamed, chained, or passed into **`renderScene`**, GIF/video helpers, or **`batch`** / **`chain`**.
 
 ---
 
@@ -492,24 +547,30 @@ Common methods and grouped APIs:
 
 | Method / API | Purpose |
 |---|---|
-| `createCanvas()` | Create a base canvas (`CanvasResults`: `buffer` + config) |
-| `createText()` | Draw text on an existing canvas or `CanvasResults` |
-| `createImage()` | Draw images or shapes on an existing canvas |
+| `assets` (`AssetManager`) | Register **`loadImage`**, **`loadFont`**, **`loadPalette`**; resolve **`$id`** / **`$palette.key`** |
+| `prepareForRender()` | Deep-resolve **`$refs`** on any JSON-like config (manual or before imperative calls) |
+| `createCanvas()` | Base canvas (**`CanvasResults`**: **`buffer`** + metadata); supports trailing **`PainterAssetRefsOptions`** |
+| `createText()` / `createImage()` | Draw on canvas; optional **`{ resolveAssetRefs: true }`** |
 | `image.*` | Raster helpers: stitch, collage, compress, resize, filters, blend, crop, mask, palette, … |
-| `createChart()` | Generate a chart image (`"line"`, `"bar"`, …) |
-| `createComparisonChart()` | Multi-chart comparison layouts |
-| `createComboChart()` | Combined bar / line charts |
-| `createScene()` / `renderScene()` | Layered composition → PNG |
-| `createGIF()` | Animated GIFs |
-| `createVideo()` | FFmpeg-backed video (encode, trim, convert, …) |
-| `measureText()` | Text layout metrics |
+| `createChart()` / comparison / combo | Chart PNGs; optional asset resolution on **data/options** |
+| `createScene()` | Returns **`SceneBuilder`** (layers, **`toRenderInput()`**, **`render()`**) |
+| `renderScene()` | Layer stack → PNG; **`resolveAssetRefs`** default **true** |
+| `renderSceneToGIF()` / `renderSceneToVideoFrames()` | Scene raster → GIF / video frames |
+| `validateSceneRenderInput()` | Validate **`SceneRenderInput`** before untrusted renders |
+| `createTemplate()` | **`TemplateHandle`**: placeholders, **`$`** assets, flex **layout**, **`render()`** |
+| `components.*` | **`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`** → **`SceneLayer[]`** |
+| `plugins.use()` | Register named buckets on **`PluginHost`** |
+| `use(plugin)` | Install **`ApexifyPlugin`** once per **`name`** |
+| `createGIF()` / `animate()` | GIF / frame sequences (optional **`resolveAssetRefs`** on options) |
+| `createVideo()` | FFmpeg-backed video (**`resolveAssetRefs`** on options when needed) |
+| `measureText()` | Text layout metrics (optional **`resolveAssetRefs`** on props) |
 | `path2d.create()` / `path2d.draw()` | Path2D from commands + draw |
 | `path2d.custom()` | Custom lines, arrows, connectors |
 | `pixels.getData()` / `pixels.setData()` | Read / write pixel buffers |
 | `pixels.manipulate()` | Pixel-level filters |
 | `detect.region()` / `detect.path()` | Hit testing |
 | `output.dataURL()` / `output.base64()` | Encode buffers |
-| `batch()` / `chain()` | Batch / pipeline helpers |
+| `batch()` / `chain()` | Parallel / sequential pipelines; optional **`{ resolveAssetRefs, resolve }`** |
 | `save()` / `saveMultiple()` | Persist files |
 | `outPut()` | Convert buffer to configured format |
 
@@ -527,7 +588,7 @@ Apexify.js can work with multiple output forms depending on the operation and co
 - ArrayBuffer
 - URL/upload helpers where supported
 
-Most rendering APIs return a `Buffer`, which gives you full control over how the result is stored or sent.
+Most **`create*`** raster APIs return a **`Buffer`**. **`CanvasResults`** (**`createCanvas`**) exposes **`buffer`** for chaining into **`createText`** / **`createImage`** / **`batch`** / **`chain`**.
 
 ---
 
@@ -566,7 +627,8 @@ Useful links:
 - [Start Here](https://apexifyjs.vercel.app/docs#00-start-here)
 - [Gallery](https://apexifyjs.vercel.app/gallery)
 - [Studio](https://apexifyjs.vercel.app/studio)
-- [API Reference](https://apexifyjs.vercel.app/docs#api-reference)
+- [Recipes](https://apexifyjs.vercel.app/docs#00-recipes-overview)
+- [Feature guides hub](https://apexifyjs.vercel.app/docs#feature-guides-hub)
 - [npm package](https://www.npmjs.com/package/apexify.js)
 
 ---
@@ -591,7 +653,8 @@ Apexify.js is written in TypeScript and ships type definitions.
 
 ```ts
 import { ApexPainter } from "apexify.js";
-import type { CanvasConfig } from "apexify.js";
+import type { CanvasConfig, SceneRenderInput } from "apexify.js";
+// Alternative: import type { … } from "apexify.js/types";
 
 const painter = new ApexPainter({ type: "buffer" });
 
@@ -602,6 +665,13 @@ const config: CanvasConfig = {
 };
 
 const { buffer } = await painter.createCanvas(config);
+
+const ogCard: SceneRenderInput = {
+  width: 1200,
+  height: 630,
+  layers: [],
+};
+painter.validateSceneRenderInput(ogCard);
 ```
 
 ---
@@ -650,7 +720,7 @@ Recommended contribution areas:
 - examples
 - documentation
 - bug fixes
-- additional recipes
+- templates / scene recipes (OG cards, dashboards)
 - chart improvements
 - performance benchmarks
 - test cases

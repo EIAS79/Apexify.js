@@ -5,6 +5,74 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.03] - 2026-05-13
+
+Higher-level composition on top of **`lib-next`**: **templates** (placeholders + assets + flex layout), a centralized **asset** registry, lightweight **components** that emit **`SceneLayer[]`**, a small **plugin** host, **opt-in `$ref` resolution** on imperative **`ApexPainter`** APIs and **batch/chain**, **`prepareForRender`**, plus **`SceneBuilder.render`** asset resolution aligned with **`renderScene`**.
+
+### ✨ Added
+
+##### Templates — `ApexPainter.createTemplate`
+
+- **`createTemplate(definition, options?)`** returns **`TemplateHandle`** with **`render(data, options?)`** and **`toRenderInput(data, options?)`**.
+- Placeholders **`{{key}}`** and **`{{key | default}}`** in string fields; missing keys throw a clear **`TemplateResolveError`**.
+- Asset refs **`$name`** and **`$paletteKey.color`** (after registering via **`painter.assets`**), or a custom **`resolveAssetRef`** on the template options.
+- Optional layer **`id`** plus render-time **`overrides`** (merge by id); optional **`visible`** (boolean, string, or **`{{flag}}`**).
+- Shorthand **`type: "text", text: "…"`** and **`type: "image", source: "…"`** normalized to scene **`texts` / `images`**.
+- **Flex `layout`** nodes (**`type: "layout"`**, **`layout.type: "flex"`**, **`row` | `column`**, **`gap`**, **`padding`**, **`align`**, **`justify`**) expand to absolutely positioned children (text sizes via **`measureText`**).
+
+##### Assets — `painter.assets` (`AssetManager`)
+
+- **`loadImage`**, **`loadFont`**, **`loadPalette`**; **`resolve("logo")`** or **`resolve("dark.text")`** for nested palette keys; **`clear`** / **`unregister*`** helpers.
+
+##### Components — `painter.components`
+
+- **`badge.toLayers(options)`** and **`progressBar.toLayers(options)`** return **`SceneLayer[]`** for **`renderScene`**.
+
+##### Plugins — `painter.plugins` (`PluginHost`)
+
+- **`use(name, api)`**, **`get<T>(name)`**, **`has`**, **`remove`** for optional feature objects without extending the core class.
+
+##### `prepareForRender` and imperative **`resolveAssetRefs`**
+
+- **`ApexPainter.prepareForRender<T>(value: T): T`** — deep JSON-like walk; resolves **`$name`** / **`$palette.key`** string leaves via **`painter.assets.resolve`** (same as **`renderScene`**, via **`resolveAssetRefsDeep`** in **`lib-next/assets/asset-strings.ts`**).
+- **`PainterAssetRefsOptions`** — **`{ resolveAssetRefs?: boolean }`** in **`lib-next/types/painter-resolve.ts`**, exported from **`lib-next/types/index.ts`** and the root types barrel.
+- **`ApexPainter` module/class docs** note defaults: **`renderScene`** / **`renderSceneToGIF`** / **`renderSceneToVideoFrames`** resolve **by default**; imperative APIs resolve only when flagged or after **`prepareForRender`**.
+- **`createCanvas(config, painterOpts?)`**, **`createImage(..., options?, painterOpts?)`**, **`createText(..., painterOpts?)`**, **`measureText(..., painterOpts?)`** — trailing **`PainterAssetRefsOptions`**; default **`resolveAssetRefs: false`**.
+- **`createChart(..., options?, painterOpts?)`**, **`createComparisonChart`**, **`createComboChart`** — optional resolution of **`data`** and **`options`** (charts).
+- **`createGIF`**, **`animate(..., options?, painterOpts?)`**, **`createVideo`** — same pattern for **`GIFInputFrame`**, **`GIFOptions`**, **`Frame[]`**, **`AnimateOptions`**, **`VideoCreationOptions`** (paths and other strings).
+
+##### `SceneBuilder` and **`SceneCreate`**
+
+- **`SceneBuilder`** accepts optional **`assetResolve?: AssetResolveFn`** (**fifth** constructor argument).
+- **`SceneCreate`** receives **`assetResolve`** from **`ApexPainter`**; **`AssetManager`** is constructed **before** **`SceneCreate`** so **`(ref) => this.assets.resolve(ref)`** is injected into every **`createScene`** builder.
+- **`SceneBuilder.render`**: **`resolveAssetRefs`** stripped before **`SceneCreator.render`** (like **`renderScene`**). Defaults **`false`**; **`true`** uses **`resolveSceneRenderInputAssets`** when a resolver exists, else throws with guidance.
+
+##### Batch and chain
+
+- **`BatchChainAssetOpts`** — **`resolveAssetRefs`**, optional **`resolve`**, in **`lib-next/batch/batch-operations.ts`**; exported from **`lib-next/index.ts`** / **`creates/batch-create.ts`**.
+- **`BatchChainPainter`** accepts trailing **`PainterAssetRefsOptions`** on **`createCanvas`**, **`createImage`**, **`createText`**.
+- **`batch(operations, opts?)`** / **`runBatch`** and **`batchOperations`** forward **`resolveAssetRefs`** into **`canvas`** / **`image`** / **`text`** ops.
+- **`chain`** / **`runChain`** / **`chainOperations`**: **`resolveAssetRefs`** runs **`resolveAssetRefsDeep`** on each arg except **`"current"`** / **`__isCurrentBuffer`**; default **`resolve`** is **`assets.resolve`** (overridable). Throws if **`resolveAssetRefs`** without **`resolve`**.
+
+### 🔧 Changed
+
+- **`ApexPainter.use(plugin)`** — **`void plugin.install(this)`** only; removed async **`.catch`** that could not surface errors reliably.
+- **`assets` JSDoc** — imperative opt-in resolution alongside templates/scenes.
+
+### 🐛 Fixed
+
+- **`SceneRenderOptions`** (**`lib-next/types/scene.ts`**) — fixed broken interface boundary around **`resolveAssetRefs`**; **`maxSurfaceDepth`** remains on **`SceneRenderOptions`** for **`SceneCreator`** / **`validateSceneRenderInput`** typing.
+- **`lib-next/assets/asset-strings.ts`** — unused **`replace`** callback param renamed **`_full`** (**`noUnusedLocals`**).
+
+### 📚 Types
+
+- **`lib-next/types/template.ts`** — **`TemplateSceneDefinition`**, **`TemplateRenderOptions`**, etc.
+- **`lib-next/types/painter-resolve.ts`** — **`PainterAssetRefsOptions`**.
+
+### 📚 Documentation
+
+- **README** — **“Named assets (`$name`, `$palette.key`)”**: scenes vs templates vs **`SceneBuilder`**, **`prepareForRender`**, **`batch`** / **`chain`**.
+
 ## [5.4.02] - 2026-05-13
 
 Scene composition is easier to discover and safer by default: **`SceneBuilder`** now lives in its own module, the fluent API can append or reorder layers in bulk, and **`renderScene`** / **`SceneCreator.render`** optionally validate inputs before allocating the root canvas.

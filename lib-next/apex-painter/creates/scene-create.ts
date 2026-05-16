@@ -15,12 +15,14 @@ import { expandSceneGifFrames } from "../../scene/gif-scene";
 import { renderSceneToVideoFrames } from "../../scene/render-scene-to-video";
 import type { GIFCreator } from "../../gif/gif-creator";
 import type { VideoCreator } from "../../video/video-creator";
+import type { AssetResolveFn } from "../../assets/asset-strings";
 
 /** Scene builder, render, scene→GIF, scene→video frames. */
 export class SceneCreate {
   constructor(
     private readonly sceneCreator: SceneCreator,
-    private readonly gifCreator: GIFCreator
+    private readonly gifCreator: GIFCreator,
+    private readonly assetResolve?: AssetResolveFn
   ) {}
 
   createScene(config: {
@@ -43,7 +45,7 @@ export class SceneCreate {
   ): SceneBuilder {
     if (typeof widthOrConfig === "object") {
       const { width, height: h, background, layers } = widthOrConfig;
-      const b = new SceneBuilder(this.sceneCreator, width, h, layers);
+      const b = new SceneBuilder(this.sceneCreator, width, h, layers, this.assetResolve);
       if (background !== undefined) {
         b.setBackground(background);
       }
@@ -52,7 +54,7 @@ export class SceneCreate {
     if (height === undefined) {
       throw new Error("createScene: height is required when the first argument is numeric width.");
     }
-    return new SceneBuilder(this.sceneCreator, widthOrConfig, height, []);
+    return new SceneBuilder(this.sceneCreator, widthOrConfig, height, [], this.assetResolve);
   }
 
   renderScene(input: SceneRenderInput, options?: SceneRenderOptions): Promise<Buffer> {

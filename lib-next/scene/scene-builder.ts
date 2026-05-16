@@ -5,12 +5,15 @@ import type {
   SceneRenderOptions,
 } from "../types/scene";
 import type { SceneCreator } from "./scene-creator";
+import type { AssetResolveFn } from "../assets/asset-strings";
+import { resolveSceneRenderInputAssets } from "../assets/resolve-scene-assets";
 
 /**
  * Mutable builder for incremental scene setup; call {@link SceneBuilder.render} once.
  *
  * **Layer stack:** `addLayers` / `addLayer`, `insertLayer` / `insertLayers`, `removeLayer`, `moveLayer`,
  * `replaceLayers`, `clearLayers`, `layerCount`. **Snapshot:** `toRenderInput()` for `renderScene` / GIF / video.
+ * Use **`render({ resolveAssetRefs: true })`** to resolve **`$...`** asset strings (builders from {@link ApexPainter.createScene} only).
  */
 export class SceneBuilder {
   private background?: SceneRenderInput["background"];
@@ -20,7 +23,8 @@ export class SceneBuilder {
     private readonly sceneCreator: SceneCreator,
     readonly width: number,
     readonly height: number,
-    initialLayers?: SceneLayer[]
+    initialLayers?: SceneLayer[],
+    private readonly assetResolve?: AssetResolveFn
   ) {
     this.layers = initialLayers ? [...initialLayers] : [];
   }
@@ -121,7 +125,22 @@ export class SceneBuilder {
     };
   }
 
+  /**
+   * Renders this scene to PNG. Pass **`{ resolveAssetRefs: true }`** to resolve **`$...`** tokens the same way as
+   * {@link ApexPainter.renderScene} when the builder was created with {@link ApexPainter.createScene} (has an internal
+   * resolver). Resolving is **off by default** here so programmatic scenes stay a no-op unless you opt in.
+   */
   async render(options?: SceneRenderOptions): Promise<SceneRenderResult> {
+    const { resolveAssetRefs = false, ...sceneOptions } = options ?? {};
+    if (resolveAssetRefs) {
+      if (!this.assetResolve) {
+        throw new Error(
+          "SceneBuilder.render: resolveAssetRefs is true but this builder has no asset resolver — use ApexPainter#createScene(), or construct SceneBuilder with an AssetResolveFn."
+        );
+      }
+      const input = resolveSceneRenderInputAssets(this.toRenderInput(), this.assetResolve);
+      return this.sceneCreator.render(input, sceneOptions);
+    }
     return this.sceneCreator.render(
       {
         width: this.width,
@@ -129,7 +148,7 @@ export class SceneBuilder {
         background: this.background,
         layers: this.layers,
       },
-      options
+      sceneOptions
     );
   }
 }

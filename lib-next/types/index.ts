@@ -9,6 +9,7 @@ export * from "./canvas";
 export * from "./text";
 export * from "./chart";
 export * from "./scene";
+export * from "./template";
 export * from "./pathCommands";
 export * from "./path2d-draw";
 export * from "./hit-detection";
@@ -18,6 +19,7 @@ export * from "./video";
 export * from "./path";
 export * from "./batch";
 export * from "./output";
+export * from "./painter-resolve";
 
 export type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput } from "../apex-painter/public-types";
 export type { PainterImageUtils } from "../image/painter-image-utils";
