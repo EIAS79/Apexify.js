@@ -5,6 +5,17 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.4] - 2026-05-13
+
+### 🔧 Changed
+
+- **`painter.image.resize`** (**`ResizeOptions.imagePath`**): **`string`** **`|`** **`Buffer`** **`→`** **`sharpFromResolvableInput`** — **`Buffer`** raster bytes, **`http(s):`** URLs (**fetched**), **`data:image/...;base64,...`** (**parameters allowed before **`;base64,`**, e.g. **`charset`**), filesystem paths (**absolute** **`/`** relative to **`process.cwd()`**).
+- **`painter.image.imgConverter`**: **`source`** **`string`** **`|`** **`Buffer`** — same resolution rules as **`resize`** (**paths **`/`** URLs **`/`** data URLs **`/`** buffers**).
+
+### 📚 Documentation
+
+- Raster **`06-image-resize-convert-effects`** (**docs **`/`** **`03-feature-guides`** **`/`** **`raster-batch-output`** **) **`—`** **`resize`** **`/`** **`imgConverter`** document unified **`Buffer`** **`/`** URL **`/`** data URL **`/`** path inputs.
+
 ## [5.4.03] - 2026-05-13
 
 Higher-level composition on top of **`lib-next`**: **templates** (placeholders + assets + flex layout), a centralized **asset** registry, lightweight **components** that emit **`SceneLayer[]`**, a small **plugin** host, **opt-in `$ref` resolution** on imperative **`ApexPainter`** APIs and **batch/chain**, **`prepareForRender`**, plus **`SceneBuilder.render`** asset resolution aligned with **`renderScene`**.

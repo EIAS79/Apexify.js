@@ -4,6 +4,7 @@ export * from "./geometry";
 export { resolveMediaPath } from "./media-path";
 
 export {
+  sharpFromResolvableInput,
   loadImages,
   resizingImg,
   converter,

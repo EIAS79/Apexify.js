@@ -10,7 +10,11 @@ export interface ExtractFramesOptions {
 }
 
 export interface ResizeOptions {
-  imagePath: string;
+  /**
+   * Raster bytes (`Buffer`), `http(s):` URL (fetched), `data:image/...;base64,...`
+   * (decoded), or filesystem path (absolute or relative to `process.cwd()`).
+   */
+  imagePath: string | Buffer;
   size?: {
     width?: number;
     height?: number;

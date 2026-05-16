@@ -25,7 +25,13 @@ import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
 
 function validateResizeOptions(options: ResizeOptions): void {
-  if (!options || !options.imagePath) {
+  const src = options?.imagePath;
+  if (
+    src === undefined ||
+    src === null ||
+    (typeof src === "string" && !src.trim()) ||
+    (Buffer.isBuffer(src) && src.length === 0)
+  ) {
     throw new Error("resize: imagePath is required.");
   }
   if (options.size) {
@@ -44,8 +50,13 @@ function validateResizeOptions(options: ResizeOptions): void {
   }
 }
 
-function validateConverterInputs(source: string, newExtension: string): void {
-  if (!source) {
+function validateConverterInputs(source: string | Buffer, newExtension: string): void {
+  if (
+    source === undefined ||
+    source === null ||
+    (typeof source === "string" && !source.trim()) ||
+    (Buffer.isBuffer(source) && source.length === 0)
+  ) {
     throw new Error("imgConverter: source is required.");
   }
   if (!newExtension) {
@@ -79,7 +90,7 @@ export interface PainterImageUtils {
     options?: PaletteOptions
   ): Promise<Array<{ color: string; percentage: number }>>;
   resize(resizeOptions: ResizeOptions): Promise<Buffer>;
-  imgConverter(source: string, newExtension: string): Promise<Buffer>;
+  imgConverter(source: string | Buffer, newExtension: string): Promise<Buffer>;
   effects(source: string, filters: ImageFilter[]): Promise<Buffer>;
   colorsFilter(source: string, filterColor: string | GradientConfig, opacity?: number): Promise<Buffer>;
   colorAnalysis(source: string): Promise<{ color: string; frequency: string }[]>;

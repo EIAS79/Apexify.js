@@ -8,27 +8,66 @@ import fs from "fs";
 import axios from "axios";
 import { getErrorMessage, getCanvasContext } from "./errors";
 
-export async function loadImages(imagePath: string) {
+function decodeDataUrlImageBase64(input: string): Buffer | undefined {
+  const trimmed = input.trim();
+  if (!/^data:image\//i.test(trimmed)) return undefined;
+  const marker = ";base64,";
+  const idx = trimmed.toLowerCase().indexOf(marker);
+  if (idx === -1) return undefined;
+  const payload = trimmed.slice(idx + marker.length).replace(/\s/g, "");
   try {
-      if (!imagePath) {
-          throw new Error("Image path is required.");
-      }
-
-      if (imagePath.startsWith("http")) {
-          const response = await fetch(imagePath);
-          if (!response.ok) {
-              throw new Error("Failed to fetch image.");
-          }
-          const buffer = await response.arrayBuffer();
-          return sharp(buffer);
-      } else {
-          const absolutePath = path.join(process.cwd(), imagePath);
-          return sharp(absolutePath);
-      }
-  } catch (error) {
-      console.error("Error loading image:", error);
-      throw new Error("Failed to load image");
+    return Buffer.from(payload, "base64");
+  } catch {
+    return undefined;
   }
+}
+
+/**
+ * Builds a Sharp instance from:
+ * - raw **`Buffer`** bytes,
+ * - **`http(s):`** URL (**fetched**),
+ * - **`data:image/...;base64,...`** (**decoded**),
+ * - otherwise **filesystem**: **`path`** (**absolute** **`/`** **`cwd`**-joined relative).
+ */
+export async function sharpFromResolvableInput(imageInput: string | Buffer): Promise<sharp.Sharp> {
+  try {
+    if (Buffer.isBuffer(imageInput)) {
+      if (imageInput.length === 0) {
+        throw new Error("Image buffer is empty.");
+      }
+      return sharp(imageInput);
+    }
+
+    const s = imageInput.trim();
+    if (!s) {
+      throw new Error("Image path or URL is required.");
+    }
+
+    if (s.startsWith("http://") || s.startsWith("https://")) {
+      const response = await fetch(s);
+      if (!response.ok) {
+        throw new Error("Failed to fetch image.");
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return sharp(buffer);
+    }
+
+    const dataBuf = decodeDataUrlImageBase64(s);
+    if (dataBuf && dataBuf.length > 0) {
+      return sharp(dataBuf);
+    }
+
+    const absolutePath = path.isAbsolute(s) ? s : path.join(process.cwd(), s);
+    return sharp(absolutePath);
+  } catch (error) {
+    console.error("Error resolving image input:", error);
+    throw new Error("Failed to load image");
+  }
+}
+
+/** Same resolution rules as {@link sharpFromResolvableInput}. */
+export async function loadImages(imageInput: string | Buffer): Promise<sharp.Sharp> {
+  return sharpFromResolvableInput(imageInput);
 }
 
 /**
@@ -38,11 +77,15 @@ export async function loadImages(imagePath: string) {
  */
 export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer> {
   try {
-    if (!resizeOptions.imagePath) {
+    const src = resizeOptions.imagePath;
+    if (src === undefined || src === null || (typeof src === "string" && !src.trim())) {
       throw new Error("Image path is required for resizing.");
     }
+    if (Buffer.isBuffer(src) && src.length === 0) {
+      throw new Error("Image buffer is empty.");
+    }
 
-    const image = await loadImages(resizeOptions.imagePath);
+    const image = await sharpFromResolvableInput(src);
 
     const resizeOptionsForSharp: sharp.ResizeOptions = {
       width: resizeOptions.size?.width || 500,
@@ -66,7 +109,7 @@ export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer>
   }
 }
 
-export async function converter(imagePath: string, newExtension: string) {
+export async function converter(imageSource: string | Buffer, newExtension: string) {
   try {
       const validExtensions: (keyof sharp.FormatEnum)[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw', 'pdf', 'svg'];
 
@@ -75,23 +118,7 @@ export async function converter(imagePath: string, newExtension: string) {
           throw new Error(`Invalid image format: ${newExt}`);
       }
 
-      let image: sharp.Sharp;
-
-      if (imagePath.startsWith("http")) {
-          const response = await fetch(imagePath);
-          if (!response.ok) {
-              throw new Error("Failed to fetch image.");
-          }
-          const buffer = await response.arrayBuffer();
-          image = sharp(Buffer.from(buffer));
-      } else {
-          if (!imagePath) {
-              throw new Error("Image path is required.");
-          }
-
-          const absolutePath = path.join(process.cwd(), imagePath);
-          image = sharp(absolutePath);
-      }
+      const image = await sharpFromResolvableInput(imageSource);
 
       const convertedBuffer = await image.toFormat(newExt as keyof sharp.FormatEnum).toBuffer();
       return convertedBuffer;
