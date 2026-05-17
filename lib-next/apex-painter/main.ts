@@ -47,7 +47,7 @@ import { VideoStack } from "../video/video-stack";
 import { painterImageUtils, type PainterImageUtils } from "../image/painter-image-utils";
 import type { SaveCounterSession } from "../output/save-buffer";
 
-import type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput } from "./public-types";
+import type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput, PainterCreateAudio } from "./public-types";
 import {
   createPainterDetectFacet,
   createPainterPath2dFacet,
@@ -61,10 +61,12 @@ import { SceneCreate } from "./creates/scene-create";
 import { ChartCreate } from "./creates/chart-create";
 import { GifCreate } from "./creates/gif-create";
 import { VideoCreate } from "./creates/video-create";
+import { AudioCreate } from "./creates/audio-create";
+import { TemplateCreate } from "./creates/template-create";
 import { OutputSaveCreate } from "./creates/output-save";
 import { runBatch, runChain } from "./creates/batch-create";
 import type { TemplateOptions, TemplateSceneDefinition } from "../types/template";
-import { TemplateHandle } from "../template/template-handle";
+import type { TemplateHandle } from "../template/template-handle";
 import { AssetManager } from "../assets/asset-manager";
 import { PluginHost } from "../plugins/plugin-host";
 import { createPainterComponents, type PainterComponents } from "../components/painter-components";
@@ -93,6 +95,8 @@ export class ApexPainter {
   private readonly chartCreate: ChartCreate;
   private readonly gifCreate: GifCreate;
   private readonly videoCreate: VideoCreate;
+  private readonly audioCreate: AudioCreate;
+  private readonly templateCreate: TemplateCreate;
   private readonly outputSaveCreate: OutputSaveCreate;
 
   /**
@@ -116,6 +120,11 @@ export class ApexPainter {
    * Stitch, collage, compress, palette, resize, convert, filters, blend, crop, mask, gradient, hex check.
    */
   readonly image: PainterImageUtils = painterImageUtils;
+  /**
+   * Procedural sound synthesis (WAV buffers for {@link createVideo} `mixAudio`, games, UI SFX).
+   * `painter.createAudio.preset('laser')`, `.synth({ layers })`, `.sequence({ events })`, `.mix([...])`.
+   */
+  readonly createAudio: PainterCreateAudio;
 
   private _detect: PainterHitDetect | undefined;
   private _path2d: PainterPath2D | undefined;
@@ -153,6 +162,8 @@ export class ApexPainter {
     this.chartCreate = new ChartCreate(this.chartCreator);
     this.gifCreate = new GifCreate(this.gifCreator);
     this.videoCreate = new VideoCreate(this.video);
+    this.audioCreate = new AudioCreate();
+    this.templateCreate = new TemplateCreate(this);
     this.outputSaveCreate = new OutputSaveCreate(
       () => this._outputFormat?.type || "buffer",
       this._saveSession
@@ -160,6 +171,7 @@ export class ApexPainter {
 
     this.plugins = new PluginHost();
     this.components = createPainterComponents();
+    this.createAudio = this.audioCreate;
   }
 
   get outputFormat(): OutputFormat {
@@ -276,7 +288,7 @@ export class ApexPainter {
    * **`visible`** conditionals, and **`id`** + render-time **`overrides`**. Resolves to {@link renderScene}.
    */
   createTemplate(definition: TemplateSceneDefinition, options?: TemplateOptions): TemplateHandle {
-    return new TemplateHandle(this, definition, options);
+    return this.templateCreate.createTemplate(definition, options);
   }
 
   /**
@@ -351,6 +363,16 @@ export class ApexPainter {
   ): Promise<SceneToVideoResult> {
     const o = this.maybeResolveRefs(options, painterOpts?.resolveAssetRefs);
     return this.videoCreate.createVideo(o);
+  }
+
+  /**
+   * Declarative video edit pipeline (trim, splice, text, audio + synth). Layer `id` upserts — no duplicate ops.
+   */
+  videoPipeline(
+    source?: string | Buffer,
+    initialLayers?: import("../types/video-pipeline").VideoPipelineLayer[]
+  ) {
+    return this.videoCreate.videoPipeline(source, initialLayers);
   }
 
   getVideoInfo(source: string | Buffer, skipFfmpegCheck?: boolean) {

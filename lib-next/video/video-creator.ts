@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import type { CanvasResults } from "../canvas/canvas-creator";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
+import type { VideoTextOverlayOperation } from "../types/video-text";
 
 const execAsync = promisify(exec);
 
@@ -158,6 +159,7 @@ export interface VideoCreationOptions {
     targetSize?: number;
     maxBitrate?: number;
   };
+  /** @deprecated Prefer {@link addTextOverlay} for createText parity. */
   addText?: {
     text: string;
     position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'top-center' | 'bottom-center';
@@ -284,6 +286,12 @@ export interface VideoCreationOptions {
     secondVideo?: string | Buffer;
     outputPath: string;
   };
+  /**
+   * Canvas-rendered captions with full {@link TextProperties} (same as `createText`), timed on the video.
+   * @see VideoTextOverlayClip
+   */
+  addTextOverlay?: VideoTextOverlayOperation;
+  /** @deprecated Prefer {@link addTextOverlay} for createText parity. Simple FFmpeg `drawtext`. */
   addAnimatedText?: {
     text: string;
     animation?: 'fadeIn' | 'fadeOut' | 'slideIn' | 'slideOut' | 'typewriter' | 'bounce' | 'zoom' | 'rotate';
@@ -737,6 +745,17 @@ export class VideoCreator {
         return await this.addVideoTransition(options.source, options.addTransition, options.onProgress);
       }
 
+      if (options.addTextOverlay) {
+        if (!this.addTextOverlayToVideo) {
+          throw new Error('addTextOverlayToVideo helper method not set');
+        }
+        return await this.addTextOverlayToVideo(
+          options.source,
+          options.addTextOverlay,
+          options.onProgress
+        );
+      }
+
       if (options.addAnimatedText) {
         if (!this.addAnimatedTextToVideo) {
           throw new Error('addAnimatedTextToVideo helper method not set');
@@ -787,6 +806,11 @@ export class VideoCreator {
   private normalizeVideoAudio?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
   private applyLUTToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
   private addVideoTransition?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
+  private addTextOverlayToVideo?: (
+    videoSource: string | Buffer,
+    options: any,
+    onProgress?: any
+  ) => Promise<any>;
   private addAnimatedTextToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
 
   /**
@@ -826,6 +850,7 @@ export class VideoCreator {
     normalizeVideoAudio?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
     applyLUTToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
     addVideoTransition?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
+    addTextOverlayToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
     addAnimatedTextToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
   }): void {
     this.generateVideoThumbnail = helpers.generateVideoThumbnail;
@@ -861,6 +886,7 @@ export class VideoCreator {
     this.normalizeVideoAudio = helpers.normalizeVideoAudio;
     this.applyLUTToVideo = helpers.applyLUTToVideo;
     this.addVideoTransition = helpers.addVideoTransition;
+    this.addTextOverlayToVideo = helpers.addTextOverlayToVideo;
     this.addAnimatedTextToVideo = helpers.addAnimatedTextToVideo;
   }
 }

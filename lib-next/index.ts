@@ -18,3 +18,12 @@ export type {
 export type { BatchChainAssetOpts } from "./batch/batch-operations";
 
 export type * from "./types";
+export {
+  synthesizeSound,
+  synthesizePreset,
+  synthesizeSequence,
+  mixSynthSounds,
+  composeSynthAudio,
+  SYNTH_PRESET_NAMES,
+  listPresets,
+} from "./audio-synth";

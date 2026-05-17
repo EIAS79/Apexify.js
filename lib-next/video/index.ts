@@ -9,4 +9,6 @@ export { extractVideoFrameBuffer } from "./extract-frame";
 export { extractFramesAtInterval } from "./extract-interval-frames";
 export { extractAllVideoFrames, type ExtractAllFramesOptions } from "./extract-all-frames";
 export { VideoStack, type VideoCreationOptions } from "./video-stack";
+export { VideoPipeline } from "./video-pipeline-builder";
+export type * from "../types/video-pipeline";
 export { resolveVideoInputToPath, type ResolvedVideoInput } from "./video-input-resolve";

@@ -1,4 +1,5 @@
-import { Canvas, createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
+import { Canvas, createCanvas, SKRSContext2D } from "@napi-rs/canvas";
+import { loadImageCached } from "../../image/image-properties";
 import type { CanvasConfig, gradient } from "../../types";
 import type { ChartAppearanceExtended } from "../../types/chart-common";
 import { createGradientFill } from "../../render/gradient-fill";
@@ -68,7 +69,7 @@ export async function paintChartCanvasBackground(
     }
   } else if (a.backgroundImage) {
     try {
-      const bgImage = await loadImage(resolveMediaPath(a.backgroundImage));
+      const bgImage = await loadImageCached(resolveMediaPath(a.backgroundImage));
       ctx.drawImage(bgImage, 0, 0, width, height);
     } catch (error) {
       console.warn(`Failed to load chart background image: ${a.backgroundImage}`, error);

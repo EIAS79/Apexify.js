@@ -1,5 +1,7 @@
 import { VideoCreator } from "./video-creator";
 import { VideoHelpers } from "./video-helpers";
+import { VideoPipeline } from "./video-pipeline-builder";
+import type { VideoPipelineLayer } from "../types/video-pipeline";
 import type { ExtractFramesOptions } from "../types/video";
 import { createFfmpegSession, type FfmpegSession } from "./ffmpeg-session";
 import { probeVideoMetadata } from "./ffprobe-metadata";
@@ -92,12 +94,18 @@ export class VideoStack {
       normalizeVideoAudio: (a, b, c) => h.normalizeVideoAudio(a, b, c),
       applyLUTToVideo: (a, b, c) => h.applyLUTToVideo(a, b, c),
       addVideoTransition: (a, b, c) => h.addVideoTransition(a, b, c),
+      addTextOverlayToVideo: (a, b, c) => h.addTextOverlayToVideo(a, b, c),
       addAnimatedTextToVideo: (a, b, c) => h.addAnimatedTextToVideo(a, b, c),
     });
   }
 
   getVideoInfo(source: string | Buffer, skipFfmpegCheck: boolean = false) {
     return probeVideoMetadata(source, this.session, skipFfmpegCheck);
+  }
+
+  /** Declarative edit pipeline (layer stack). Prefer over chaining multiple `createVideo` calls. */
+  videoPipeline(source?: string | Buffer, initialLayers?: VideoPipelineLayer[]): VideoPipeline {
+    return new VideoPipeline(this.helpers, source, initialLayers);
   }
 
   extractFrames(videoSource: string | Buffer, options: ExtractFramesOptions) {

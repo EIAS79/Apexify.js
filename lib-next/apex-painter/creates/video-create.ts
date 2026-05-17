@@ -2,7 +2,9 @@ import type { ExtractFramesOptions } from "../../types/video";
 import type { ExtractAllFramesOptions } from "../../video/extract-all-frames";
 import type { VideoCreationOptions } from "../../video/video-stack";
 import type { SceneToVideoResult } from "../../scene/render-scene-to-video";
+import type { VideoPipelineLayer } from "../../types/video-pipeline";
 import { VideoStack } from "../../video/video-stack";
+import { VideoPipeline } from "../../video/video-pipeline-builder";
 
 /** Flat video API on {@link ApexPainter} — delegates into {@link VideoStack}. */
 export class VideoCreate {
@@ -10,6 +12,11 @@ export class VideoCreate {
 
   createVideo(options: VideoCreationOptions): Promise<SceneToVideoResult> {
     return this.stack.creator.createVideo(options);
+  }
+
+  /** Layer-based video pipeline — trim, splice, text, audio/synth in minimal passes. */
+  videoPipeline(source?: string | Buffer, initialLayers?: VideoPipelineLayer[]): VideoPipeline {
+    return this.stack.videoPipeline(source, initialLayers);
   }
 
   getVideoInfo(source: string | Buffer, skipFfmpegCheck?: boolean) {

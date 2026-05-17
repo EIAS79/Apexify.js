@@ -1,7 +1,7 @@
-import type { SKRSContext2D } from "@napi-rs/canvas";
-import { loadImage, type Image } from "@napi-rs/canvas";
+import { loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
 import sharp from "sharp";
+import { sharpFromResolvableInput } from "../core/general-functions";
 import type { AlignMode, FitMode, BoxBackground } from "../types/common";
 import { buildPath } from "../render/clip-path";
 import { createGradientFill } from "../render/gradient-fill";
@@ -88,10 +88,15 @@ export function fitInto(
   return { dx, dy, dw, dh, sx, sy, sw, sh };
 }
 
+async function resolveToCanvasImage(src: string | Buffer): Promise<Image> {
+  const png = await (await sharpFromResolvableInput(src)).png().toBuffer();
+  return loadImage(png);
+}
+
 export function loadImageCached(src: string | Buffer): Promise<Image> {
-  if (Buffer.isBuffer(src)) return loadImage(src);
-  const key = src.startsWith("http") ? src : path.resolve(process.cwd(), src);
-  if (!cache.has(key)) cache.set(key, loadImage(key));
+  if (Buffer.isBuffer(src)) return resolveToCanvasImage(src);
+  const key = /^https?:\/\//i.test(src) ? src : path.resolve(process.cwd(), src);
+  if (!cache.has(key)) cache.set(key, resolveToCanvasImage(src));
   return cache.get(key)!;
 }
 

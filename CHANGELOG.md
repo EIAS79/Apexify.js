@@ -5,6 +5,60 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.5] - 2026-05-13
+
+### ✨ Added
+
+##### Procedural audio — `painter.createAudio`
+
+- New **`painter.createAudio`** facet on **`ApexPainter`** for server-side **SFX synthesis** (16-bit PCM **WAV `Buffer`**, no external sound files required).
+- **`painter.createAudio.preset(name, overrides?)`** — **39** built-in presets (`laser`, `explosion`, `coin`, `jump`, `gameOver`, `whoosh`, `engine`, etc.); overrides support **`volume`**, **`transpose`**, and full layer overrides.
+- **`painter.createAudio.synth(options)`** / **`custom()`** — custom multi-layer sounds: waveforms (`sine`, `square`, `sawtooth`, `triangle`, `noise`, `pink`), **ADSR**, frequency sweeps, **vibrato** / **tremolo**, **filters**, harmonic **partials**, **pan**, per-layer delay/gain.
+- **`painter.createAudio.sequence({ events })`** — timeline of presets or custom sounds at **`at`** (seconds) with per-event **`gain`**.
+- **`painter.createAudio.compose({ clips })`** — one WAV from multiple clips on a timeline (**overlaps allowed**). Per clip: **`at`**, **`duration`**, **`sourceStart`**, **`preset`** / **`sound`** / **`wav`**, **`gain`**, **`volume`**, **`transpose`**, **`detune`**, **`pitch`**, **`speed`**, **`pan`**, **`fadeIn`** / **`fadeOut`**, **`noise`**, **`filter`**, **`quality`** (`bright` | `warm` | `muffled` | `lofi` | `crisp`). Optional master **`postHighpassHz`** and **`noiseGateThreshold`** on the final mix.
+- **`painter.createAudio.mix(inputs)`** — simultaneous mix at `t = 0`, or timeline mix when clips include compose fields.
+- **`painter.createAudio.save(wav, path)`** — write WAV to disk.
+- **`painter.createAudio.listPresets()`** / **`presetNames`** — preset metadata.
+- Types under **`lib-next/types/audio-synth.ts`**; re-exported from package **`types`** and root.
+- Root exports: **`synthesizeSound`**, **`synthesizePreset`**, **`synthesizeSequence`**, **`mixSynthSounds`**, **`composeSynthAudio`**, **`SYNTH_PRESET_NAMES`**, **`listPresets`**.
+
+##### Video pipeline — `videoPipeline()` (layer stack)
+
+- **`painter.videoPipeline(source?)`** / **`painter.video.videoPipeline()`** — declarative edit pipeline for pro/editor workflows; avoids chaining many `createVideo` calls and redundant encodes where possible.
+- **Layer stack** (`VideoPipelineLayer`): **`source`**, **`trim`**, **`splice`**, **`text`** (full **`TextProperties`** overlays), **`audio`** (files + **`createAudio`** presets / synth / sequence / WAV).
+- **Upsert by `id`** — same layer `id` **replaces** the previous layer (no duplicate trim/splice). **`text`** / **`audio`** layers with the same `id` **merge** overlays/tracks unless `{ replace: true }`.
+- **`pipeline.render({ outputPath })`** — compiles layers to minimal internal passes; returns **`passes`** count.
+- Types: **`lib-next/types/video-pipeline.ts`**; builder **`lib-next/video/video-pipeline-builder.ts`**; **`lib-next/video/timeline.ts`** re-exports.
+
+##### Video text overlays — `createVideo({ addTextOverlay })`
+
+- **`addTextOverlay`** — timed captions on video using the same **`TextProperties`** model as **`createText`** (fonts, gradients, glow, shadow, stroke, wrap, curved text, decorations, placement, etc.). Each entry in **`overlays[]`** is a **`VideoTextOverlayClip`**: full text style plus **`startTime`**, **`endTime`**, optional **`transitionIn`** / **`transitionOut`**, and **`overlayOpacity`**.
+- **Multiple overlays at once** — entries with overlapping **`startTime`** / **`endTime`** render together at different **`x`** / **`y`**; later array items stack on top of earlier ones.
+- **Transitions** — presets: **`fade`**, **`slideLeft`** / **`Right`** / **`Up`** / **`Down`**, **`zoomIn`** / **`zoomOut`**, **`bounce`**, and aliases (**`fadeIn`**, **`slideIn`**, …). **`VideoTextTransition.custom`** accepts FFmpeg expression overrides for **`x`**, **`y`**, **`alpha`**, **`scale`** (`t` = seconds).
+- Implementation: canvas render via **`EnhancedTextRenderer`** → transparent PNG per overlay → FFmpeg **`overlay`** chain (**`lib-next/video/render-video-text-layer.ts`**, **`video-text-overlay-apply.ts`**, **`video-text-overlay-filters.ts`**).
+- Types: **`VideoTextOverlayClip`**, **`VideoTextOverlayOperation`**, **`VideoTextTransition`** in **`lib-next/types/video-text.ts`**; re-exported from **`apexify.js/types`** and **`lib-next/video/video-types.ts`**.
+
+
+### 🔧 Changed
+
+- **`ApexPainter` `creates/` facades** — **`AudioCreate`** (`creates/audio-create.ts`) and **`TemplateCreate`** (`creates/template-create.ts`) wire **`createAudio`** and **`createTemplate`** the same way as **`VideoCreate`**, **`GifCreate`**, and **`SceneCreate`** (domain logic stays in **`lib-next/audio-synth`** and **`lib-next/template`**).
+- **`createVideo({ addText })`** and **`createVideo({ addAnimatedText })`** — still available (FFmpeg **`drawtext`**) but **deprecated** in favor of **`addTextOverlay`** for **`createText`** parity. **`addAnimatedText`** maps **`fadeIn`** / **`slideIn`** to implemented **`fade`** / **`slide`** filters where applicable.
+- **`lib-next/audio-synth/painter-audio-synth.ts`** — thin compatibility shim re-exporting **`PainterCreateAudio`** / **`createPainterCreateAudioFacet`** (legacy **`PainterAudio`** names). Prefer **`painter-create-audio.ts`**.
+
+- Procedural SFX facet is **`painter.createAudio`** (aligned with **`createVideo`**, **`createCanvas`**, **`createGIF`**). Implementation: **`lib-next/audio-synth/painter-create-audio.ts`**; type **`PainterCreateAudio`**.
+- **`createVideo({ mixAudio })`** when **`keepOriginalAudio: false`**: no longer mixes a silent **`anullsrc`** bed under overlays (fixes quiet/muddy SFX). Overlay-only mixes use **`amix` `normalize=0`** plus a light **`alimiter`**; multi-track mixes with original audio still use normalization when appropriate.
+- **`mixAudio` buffers**: temp files use the correct extension (**.wav** / **.mp4** / **.mp3**) from buffer magic bytes so FFmpeg probes duration and decodes audio correctly.
+- Space shooter demo uses **lib-next only** (no direct **`@napi-rs/canvas`** imports): **`loadImageCached`**, **`registerTextFontFromPath`**, **`painter.assets`**.
+
+### 🐛 Fixed
+
+- **`mixAudio`** with WAV **`Buffer`** overlays previously written as **`.mp4`**, causing missing or silent audio tracks.
+- Space shooter audio: removed continuous **ambience** drone (source of “zzzz” / speaker hum), tuned SFX levels, mux from **`.wav` path**, and post-mux **ffprobe** check for an audio stream on the output MP4.
+
+### 📚 Documentation
+
+- **README.md** — **`videoPipeline`** (layer stack, editor recipe), **`addTextOverlay`**, **`createAudio`**, API table (**`videoPipeline`**, **`video`**), media-pipeline use case; **package.json** keywords/description for audio + video.
+
 ## [5.4.4] - 2026-05-13
 
 ### 🔧 Changed

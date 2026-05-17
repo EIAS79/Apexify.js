@@ -6,7 +6,7 @@
 
 **Programmatic visual generation for Node.js.**
 
-Create images, charts, text effects, shapes, GIFs, MP4/video, **scenes**, **templates**, and composed layouts from JavaScript or TypeScript.
+Create images, charts, text effects, shapes, GIFs, MP4/video, **`videoPipeline`** edits, procedural **SFX** (`createAudio`), **scenes**, **templates**, and composed layouts from JavaScript or TypeScript.
 
 [![npm version](https://badge.fury.io/js/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![npm downloads](https://img.shields.io/npm/dt/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
@@ -37,7 +37,8 @@ Apexify.js combines:
 - shape drawing
 - chart generation
 - GIF creation
-- video processing
+- video processing (encode, trim, splice, **`addTextOverlay`**, **`videoPipeline`**, **`mixAudio`**, frame export)
+- procedural audio / SFX (`createAudio` — presets, layers, sequences, compose)
 - layered **scenes** and **templates** (`renderScene`, placeholders, **`$`** assets)
 - lightweight **components** (**`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`** → **`SceneLayer[]`**)
 - **plugins** (**`PluginHost`** + **`ApexPainter.use`**)
@@ -131,7 +132,7 @@ Register images, fonts, and color palettes on **`painter.assets`**.
 - **Templates**: resolved when you call **`TemplateHandle.render`**.
 - **`SceneBuilder.render`**: opt in with **`{ resolveAssetRefs: true }`**.
 
-**Imperative** APIs (`createCanvas`, `createImage`, `createText`, `measureText`, chart methods, `createGIF`, `animate`, `createVideo`) leave **`$refs`** unchanged unless you pass **`{ resolveAssetRefs: true }`** on the trailing options argument (where supported), or preprocess once with **`painter.prepareForRender(config)`**. **`batch`** and **`chain`** accept **`{ resolveAssetRefs: true }`** (and optional **`resolve`**) to resolve each batch **`config`** or each chained **`args`** value.
+**Imperative** APIs (`createCanvas`, `createImage`, `createText`, `measureText`, chart methods, `createGIF`, `animate`, `createVideo`, `videoPipeline`) leave **`$refs`** unchanged unless you pass **`{ resolveAssetRefs: true }`** on the trailing options argument (where supported), or preprocess once with **`painter.prepareForRender(config)`**. **`batch`** and **`chain`** accept **`{ resolveAssetRefs: true }`** (and optional **`resolve`**) to resolve each batch **`config`** or each chained **`args`** value.
 
 Minimal example:
 
@@ -205,8 +206,9 @@ Examples:
 - reports and chart images
 - dashboard snapshots
 - animated GIFs
+- procedural game/UI sound effects (WAV buffers, no asset files)
 - video thumbnails
-- frame-based videos
+- frame-based videos with muxed SFX
 - batch-generated marketing assets
 
 Instead of designing every asset manually, you define the visual structure in code and generate outputs on demand.
@@ -423,9 +425,135 @@ GIF features include:
 
 ---
 
+### Procedural audio (`createAudio`)
+
+Synthesize 16-bit PCM **WAV `Buffer`s** on the server — presets, custom multi-layer sounds, timelines, and mixes. No external sound files required. Pairs with **`createVideo({ mixAudio })`** for frame-based video + SFX.
+
+```ts
+const painter = new ApexPainter({ type: "buffer" });
+
+const laser = painter.createAudio.preset("laser");
+
+const sfx = painter.createAudio.sequence({
+  events: [
+    { at: 0, preset: "coin" },
+    { at: 0.15, preset: "laser", gain: 0.9 },
+    { at: 0.4, preset: "explosionSmall" },
+  ],
+  tail: 0.2,
+});
+
+await painter.createAudio.save(sfx, "./sfx.wav");
+```
+
+`createAudio` capabilities include:
+
+- **39** built-in presets (`laser`, `explosion`, `coin`, `jump`, `whoosh`, …)
+- **`preset()`**, **`synth()`** / **`custom()`** (waveforms, ADSR, sweeps, vibrato, filters)
+- **`sequence({ events })`** — timed preset/custom events
+- **`compose({ clips })`** — overlapping timeline clips with pitch, pan, fades, quality
+- **`mix()`**, **`save()`**, **`listPresets()`**
+- Root helpers: **`synthesizePreset`**, **`synthesizeSequence`**, **`composeSynthAudio`**, …
+
+```ts
+await painter.createVideo({
+  source: silentMp4Path,
+  mixAudio: {
+    outputPath: "./final.mp4",
+    overlays: [{ source: sfx, startTime: 0 }],
+    keepOriginalAudio: false,
+  },
+});
+```
+
+---
+
+### Video pipeline (`videoPipeline`)
+
+Declarative **layer stack** for editor-style workflows — trim, splice B-roll, **`createText`**-parity captions, and **file + synth** audio in fewer internal passes than chaining many `createVideo` calls.
+
+Layers use optional **`id`**: same **`id`** **replaces** the layer (safe for undo/redo); **`text`** / **`audio`** layers with the same **`id`** **merge** overlays or tracks.
+
+```ts
+const result = await painter
+  .videoPipeline("./uploads/user.mp4")
+  .trim(0, 60, "trim")
+  .splice(
+    {
+      targetStartTime: 10,
+      targetEndTime: 15,
+      replacementVideo: "./uploads/b-roll.mp4",
+      replacementDuration: 5,
+    },
+    "broll"
+  )
+  .text(
+    {
+      text: "Chapter 1",
+      x: 48,
+      y: 80,
+      startTime: 0,
+      endTime: 10,
+      font: { size: 42, family: "Arial" },
+      fill: { color: "#ffffff" },
+      transitionIn: { type: "fade", duration: 0.3 },
+    },
+    "titles"
+  )
+  .audio(
+    [
+      { type: "file", source: "./music.mp3", startTime: 0, volume: 0.35 },
+      { type: "preset", preset: "whoosh", startTime: 9.8, gain: 1.1 },
+    ],
+    { keepOriginalAudio: true, originalVolume: 0.85 },
+    "sound"
+  )
+  .render({ outputPath: "./out/final.mp4" });
+
+console.log("FFmpeg passes:", result.passes);
+```
+
+Also available as **`painter.video.videoPipeline()`**. Types: **`VideoPipelineLayer`**, **`VideoPipelineAudioTrack`** from **`apexify.js/types`**. Snapshot: **`pipeline.toJSON()`** / **`VideoPipeline.fromJSON()`** for saved editor projects.
+
+Single-operation **`createVideo({ trim | replaceSegment | addTextOverlay | mixAudio | … })`** remains for scripts and one-off tasks.
+
+---
+
+### Video text overlays (`addTextOverlay`)
+
+Timed captions with the same **`TextProperties`** as **`createText`** (gradients, glow, shadow, stroke, wrap, curved text). Multiple overlays can share the same time range at different **`x`** / **`y`**.
+
+```ts
+await painter.createVideo({
+  source: "./clip.mp4",
+  addTextOverlay: {
+    outputPath: "./captioned.mp4",
+    overlays: [
+      {
+        text: "Hello",
+        x: 80,
+        y: 120,
+        startTime: 1,
+        endTime: 6,
+        font: { size: 56, family: "Arial" },
+        decorations: { bold: true },
+        fill: { color: "#fff" },
+        effects: { shadow: { offsetY: 4, blur: 12, color: "rgba(0,0,0,0.5)" } },
+        transitionIn: { type: "slideLeft", duration: 0.4 },
+        transitionOut: { type: "fade", duration: 0.25 },
+      },
+    ],
+  },
+});
+```
+
+Legacy **`addText`** / **`addAnimatedText`** on **`createVideo`** (FFmpeg `drawtext`) are deprecated; prefer **`addTextOverlay`** or **`videoPipeline().text()`**.
+
+---
+
 ### Video Processing
 
-Apexify.js includes FFmpeg-backed video utilities for workflows such as metadata extraction, frame extraction, conversion, trimming, thumbnails, audio operations, transitions, and frame-to-video encoding.
+Apexify.js includes FFmpeg-backed video utilities for workflows such as metadata extraction, frame extraction, conversion, trimming, segment replace, thumbnails, **`mixAudio`** (mux WAV/MP3 buffers or paths), transitions, and frame-to-video encoding.
 
 ```ts
 const info = await painter.createVideo({
@@ -562,7 +690,10 @@ Common methods and grouped APIs:
 | `plugins.use()` | Register named buckets on **`PluginHost`** |
 | `use(plugin)` | Install **`ApexifyPlugin`** once per **`name`** |
 | `createGIF()` / `animate()` | GIF / frame sequences (optional **`resolveAssetRefs`** on options) |
-| `createVideo()` | FFmpeg-backed video (**`resolveAssetRefs`** on options when needed) |
+| `createAudio` | Procedural SFX: **`preset`**, **`synth`**, **`sequence`**, **`compose`**, **`mix`**, **`save`** |
+| `videoPipeline()` | Layered edits: **`trim`**, **`splice`**, **`text`**, **`audio`** (files + synth); **`render()`** |
+| `createVideo()` | Single FFmpeg op: trim, merge, **`addTextOverlay`**, **`mixAudio`**, convert, … |
+| `video` | **`VideoStack`**: **`getVideoInfo`**, frame extract, **`videoPipeline()`** |
 | `measureText()` | Text layout metrics (optional **`resolveAssetRefs`** on props) |
 | `path2d.create()` / `path2d.draw()` | Path2D from commands + draw |
 | `path2d.custom()` | Custom lines, arrows, connectors |
@@ -573,6 +704,8 @@ Common methods and grouped APIs:
 | `batch()` / `chain()` | Parallel / sequential pipelines; optional **`{ resolveAssetRefs, resolve }`** |
 | `save()` / `saveMultiple()` | Persist files |
 | `outPut()` | Convert buffer to configured format |
+
+`ApexPainter` routes **`create*`** entry points through **`lib-next/apex-painter/creates/`** (`canvas-create`, `video-create`, `audio-create`, `template-create`, …) into domain modules (`video`, `audio-synth`, `template`, `scene`, …).
 
 ---
 
@@ -612,7 +745,7 @@ Render chart images for reports, dashboards, email attachments, and static expor
 
 ### Media pipelines
 
-Extract frames, generate thumbnails, build GIFs, create video from frames, or process videos through FFmpeg-backed workflows.
+Build editor backends with **`videoPipeline`** (layer **`id`** upsert/merge), burn **`addTextOverlay`** captions, splice clips, synthesize SFX with **`createAudio`**, and mux with **`mixAudio`** — or use **`createVideo`** for individual operations.
 
 ---
 

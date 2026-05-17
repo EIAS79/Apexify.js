@@ -12,6 +12,12 @@ import fs from "fs";
 import path from "path";
 import type { CanvasResults } from "../canvas/canvas-creator";
 import { getCanvasContext } from "../core/errors";
+import type { VideoTextOverlayOperation } from "../types/video-text";
+import {
+  buildTextOverlayFilterComplex,
+  prepareTextOverlayPngs,
+  validateTextOverlayOperation,
+} from "./video-text-overlay-apply";
 
 const execAsync = promisify(exec);
 
@@ -48,14 +54,30 @@ async function probeFormatDurationSeconds(mediaPath: string): Promise<number> {
   }
 }
 
+function inferMediaExtensionFromBuffer(buf: Buffer): string {
+  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WAVE") {
+    return "wav";
+  }
+  if (buf.length >= 8 && buf.toString("ascii", 4, 8) === "ftyp") {
+    return "mp4";
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) {
+    return "mp3";
+  }
+  if (buf.length >= 4 && buf[0] === 0x89 && buf.toString("ascii", 1, 4) === "PNG") {
+    return "png";
+  }
+  return "mp4";
+}
+
 async function resolveVideoSource(
   videoSource: string | Buffer,
   frameDir: string,
   timestamp: number
 ): Promise<{ videoPath: string; shouldCleanup: boolean }> {
   if (Buffer.isBuffer(videoSource)) {
-
-    const videoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
+    const ext = inferMediaExtensionFromBuffer(videoSource);
+    const videoPath = path.join(frameDir, `temp-media-${timestamp}.${ext}`);
     fs.writeFileSync(videoPath, videoSource);
     return { videoPath, shouldCleanup: true };
   } else if (typeof videoSource === 'string' && /^https?:\/\//.test(videoSource)) {
@@ -1956,9 +1978,6 @@ timeout: 600000,
       const origMid = origTail ? `${origTail},` : '';
       fc += `[0:a]aresample=48000,${origMid}aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${origVol}[m0];`;
       mixLabels.push('[m0]');
-    } else {
-      fc += `anullsrc=r=48000:cl=stereo,atrim=end=${videoDuration},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[m0];`;
-      mixLabels.push('[m0]');
     }
 
     for (let i = 0; i < prepared.length; i++) {
@@ -1967,7 +1986,13 @@ timeout: 600000,
     }
 
     const nIn = mixLabels.length;
-    fc += `${mixLabels.join('')}amix=inputs=${nIn}:duration=longest:normalize=1[outa]`;
+    if (nIn === 0) {
+      if (shouldCleanupVideo && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      throw new Error('mixAudio: no audio inputs to mix');
+    }
+    const amixNorm = keepOriginal && mainHasAudio ? 1 : 0;
+    fc += `${mixLabels.join('')}amix=inputs=${nIn}:duration=longest:normalize=${amixNorm}[amixed];`;
+    fc += `[amixed]alimiter=limit=0.95:attack=5:release=50[outa]`;
 
     const cmd = `ffmpeg ${inputs.join(' ')} -filter_complex "${fc}" -map 0:v -map "[outa]" -c:v copy -c:a aac -b:a 192k -t ${videoDuration} -y "${escapedOutputPath}"`;
 
@@ -2418,6 +2443,93 @@ timeout: 600000,
   }
 
   /**
+   * Rich text overlays using the same {@link TextProperties} model as `createText`,
+   * rendered on canvas and composited with FFmpeg (timed windows + transitions).
+   */
+  async addTextOverlayToVideo(
+    videoSource: string | Buffer,
+    options: VideoTextOverlayOperation,
+    onProgress?: (progress: { percent: number; time: number; speed: number }) => void
+  ): Promise<{ outputPath: string; success: boolean }> {
+    validateTextOverlayOperation(options);
+
+    const frameDir = path.join(process.cwd(), ".temp-frames");
+    if (!fs.existsSync(frameDir)) {
+      fs.mkdirSync(frameDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const { videoPath, shouldCleanup: shouldCleanupVideo } = await resolveVideoSource(
+      videoSource,
+      frameDir,
+      timestamp
+    );
+
+    const videoInfo = await this.deps.getVideoInfo(videoPath, true);
+    if (!videoInfo?.width || !videoInfo?.height) {
+      throw new Error("addTextOverlay: could not read video width/height.");
+    }
+
+    const tempFiles: string[] = [];
+    try {
+      const { pngPaths, tempFiles: overlayTemps } = await prepareTextOverlayPngs(
+        frameDir,
+        timestamp,
+        options.overlays,
+        videoInfo.width,
+        videoInfo.height
+      );
+      tempFiles.push(...overlayTemps);
+
+      const { filterComplex, outputLabel } = buildTextOverlayFilterComplex(
+        options.overlays.length,
+        options.overlays,
+        videoInfo.width,
+        videoInfo.height
+      );
+
+      const escapedVideoPath = videoPath.replace(/"/g, '\\"');
+      const escapedOutputPath = options.outputPath.replace(/"/g, '\\"');
+      const overlayInputs = pngPaths
+        .map((p) => `-i "${p.replace(/"/g, '\\"')}"`)
+        .join(" ");
+
+      const hasAudio = await probeHasAudioStream(videoPath);
+      const audioPart = hasAudio ? "-map 0:a? -c:a copy" : "";
+
+      const command =
+        `ffmpeg -i "${escapedVideoPath}" ${overlayInputs} ` +
+        `-filter_complex "${filterComplex}" -map "[${outputLabel}]" ${audioPart} ` +
+        `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -movflags +faststart -y "${escapedOutputPath}"`;
+
+      await this.executeFFmpegWithProgress(
+        command,
+        { timeout: 600000, maxBuffer: 30 * 1024 * 1024 },
+        onProgress
+      );
+
+      return { outputPath: options.outputPath, success: true };
+    } finally {
+      for (const f of tempFiles) {
+        if (fs.existsSync(f)) {
+          try {
+            fs.unlinkSync(f);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      if (shouldCleanupVideo && fs.existsSync(videoPath)) {
+        try {
+          fs.unlinkSync(videoPath);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  /**
    * Add animated text to video
    */
   async addAnimatedTextToVideo(
@@ -2449,7 +2561,9 @@ timeout: 600000,
     const fontSize = options.fontSize || 24;
     const fontColor = options.fontColor || 'white';
     const bgColor = options.backgroundColor || 'black@0.5';
-    const animation = options.animation || 'none';
+    let animation = options.animation || "none";
+    if (animation === "fadeIn" || animation === "fadeOut") animation = "fade";
+    if (animation === "slideIn") animation = "slide";
 
     let positionStr: string;
     if (typeof options.position === 'string') {

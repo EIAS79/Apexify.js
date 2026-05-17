@@ -41,5 +41,26 @@ export type {
   MixAudioOperation,
 } from "../video/video-creator";
 
+export type {
+  VideoTextOverlayClip,
+  VideoTextOverlayOperation,
+  VideoTextOverlayStyle,
+  VideoTextTransition,
+  VideoTextTransitionPreset,
+} from "./video-text";
+
+export type {
+  VideoPipelineLayer,
+  VideoPipelineSnapshot,
+  VideoPipelineRenderOptions,
+  VideoPipelineRenderResult,
+  VideoPipelineAudioLayer,
+  VideoPipelineAudioTrack,
+  VideoPipelineTextLayer,
+  VideoPipelineTrimLayer,
+  VideoPipelineSpliceLayer,
+  VideoPipelineSourceLayer,
+} from "./video-pipeline";
+
 /** Scene → encoded video result shape. */
 export type { SceneToVideoResult } from "../scene/render-scene-to-video";

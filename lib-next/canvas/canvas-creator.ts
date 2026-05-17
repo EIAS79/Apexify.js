@@ -1,4 +1,5 @@
 import { createCanvas, loadImage, SKRSContext2D, Canvas } from "@napi-rs/canvas";
+import { loadImageCached } from "../image/image-properties";
 import path from "path";
 import fs from "fs";
 import type { CanvasConfig } from "../types/canvas";
@@ -21,6 +22,20 @@ import { applyContextImageFilters } from "../render/context-image-filters";
 export interface CanvasResults {
   buffer: Buffer;
   canvas: CanvasConfig;
+}
+
+/**
+ * When `createImage` / `createText` receive {@link CanvasResults}, assign the new PNG
+ * so `canvas.buffer` stays current (callers can `return canvas.buffer` after draws).
+ */
+export function assignCanvasResultsBuffer(
+  target: CanvasResults | Buffer,
+  buffer: Buffer
+): Buffer {
+  if (!Buffer.isBuffer(target)) {
+    target.buffer = buffer;
+  }
+  return buffer;
 }
 
 /**
@@ -133,7 +148,7 @@ export class CanvasCreator {
     if (canvas.customBg?.inherit) {
       const p = resolveMediaPath(canvas.customBg.source);
       try {
-        const img = await loadImage(p);
+        const img = await loadImageCached(p);
         canvas.width = img.width;
         canvas.height = img.height;
       } catch (e: unknown) {

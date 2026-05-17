@@ -1,4 +1,11 @@
 /**
- * Reserved for timeline / sequencing (guide `video/timeline.ts`).
+ * Timeline / pipeline exports (editor-oriented API).
  */
-export {};
+export { VideoPipeline } from "./video-pipeline-builder";
+export { renderVideoPipeline } from "./video-pipeline-render";
+export type {
+  VideoPipelineLayer,
+  VideoPipelineSnapshot,
+  VideoPipelineRenderOptions,
+  VideoPipelineRenderResult,
+} from "../types/video-pipeline";

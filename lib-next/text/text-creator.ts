@@ -1,6 +1,6 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
 import type { TextProperties } from "../types/text";
-import type { CanvasResults } from "../canvas/canvas-creator";
+import { assignCanvasResultsBuffer, type CanvasResults } from "../canvas/canvas-creator";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 
@@ -98,7 +98,7 @@ export class TextCreator {
 
       await this.renderTextsOntoContext(ctx, textList);
 
-      return canvas.toBuffer("image/png");
+      return assignCanvasResultsBuffer(canvasBuffer, canvas.toBuffer("image/png"));
     } catch (error) {
       throw new Error(`createText failed: ${getErrorMessage(error)}`);
     }

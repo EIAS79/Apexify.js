@@ -20,6 +20,7 @@ export * from "./path";
 export * from "./batch";
 export * from "./output";
 export * from "./painter-resolve";
+export * from "./audio-synth";
 
-export type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput } from "../apex-painter/public-types";
+export type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput, PainterCreateAudio } from "../apex-painter/public-types";
 export type { PainterImageUtils } from "../image/painter-image-utils";

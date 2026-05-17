@@ -1,9 +1,10 @@
-import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { Image } from "@napi-rs/canvas";
 import type { CanvasConfig } from "../types/canvas";
 import type { gradient } from "../types/gradient";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import path from "path";
+import { loadImageCached } from "../image/image-properties";
 
 /** Resolve `source` to an absolute filesystem path when it is not an http(s) URL. */
 export function resolveMediaPath(source: string): string {
@@ -80,7 +81,7 @@ export async function customBackground(
   const imagePath = resolveMediaPath(cfg.source);
 
   try {
-    const img = await loadImage(imagePath);
+    const img = await loadImageCached(imagePath);
 
     const W = canvas.width ?? img.width;
     const H = canvas.height ?? img.height;
@@ -97,8 +98,9 @@ export async function customBackground(
     }
 
     ctx.filter = 'none';
-  } catch (e: any) {
-    console.error('customBackground: failed to load', e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`customBackground: failed to load "${cfg.source}": ${msg}`);
   }
 }
 
@@ -210,7 +212,7 @@ export async function drawPattern(
   width: number,
   height: number
 ) {
-  const img = await loadImage(resolveMediaPath(source));
+  const img = await loadImageCached(resolveMediaPath(source));
   const pattern = ctx.createPattern(img, repeat);
   if (!pattern) return;
   ctx.save();
@@ -380,7 +382,7 @@ export async function drawBackgroundLayers(
           break;
         }
         case 'image': {
-          const img = await loadImage(resolveMediaPath(layer.source));
+          const img = await loadImageCached(resolveMediaPath(layer.source));
           ctx.globalAlpha = layer.opacity ?? 1;
           const fit = layer.fit ?? 'fill';
           const align = (layer.align ?? 'center') as AlignMode;

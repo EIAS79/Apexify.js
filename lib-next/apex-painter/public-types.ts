@@ -1,6 +1,15 @@
 /**
- * Facet types attached to {@link ApexPainter} (`detect`, `path2d`, `pixels`, `output`).
+ * Facet types attached to {@link ApexPainter} (`detect`, `path2d`, `pixels`, `output`, `audio`).
  */
+import type {
+  SynthComposeOptions,
+  SynthPresetInfo,
+  SynthPresetName,
+  SynthPresetOverrides,
+  SynthSequenceOptions,
+  SynthSoundOptions,
+} from "../types/audio-synth";
+import type { SynthMixInput, SynthMixOptions } from "../audio-synth/synthesizer";
 import type { Path2D } from "@napi-rs/canvas";
 import type { CanvasResults } from "../canvas/canvas-creator";
 import type { PathCommand } from "../foundation/path-cmd";
@@ -88,4 +97,21 @@ export interface PainterOutput {
    * Requires `IMGUR_CLIENT_ID`, `IMGUR_CLIENT_SECRET`, `IMGUR_ACCESS_TOKEN`, `IMGUR_REFRESH_TOKEN`.
    */
   url(buffer: Buffer): Promise<string>;
+}
+
+/** Procedural SFX: `painter.createAudio.preset('laser')`, `.synth({ layers: [...] })`, `.sequence({ events })`. */
+export interface PainterCreateAudio {
+  readonly presetNames: readonly SynthPresetName[];
+  listPresets(): SynthPresetInfo[];
+  synth(options: SynthSoundOptions): Buffer;
+  custom(options: SynthSoundOptions): Buffer;
+  preset(name: SynthPresetName, overrides?: SynthPresetOverrides): Buffer;
+  sequence(options: SynthSequenceOptions): Buffer;
+  /**
+   * One WAV from multiple clips on a timeline (overlap OK). Per clip: `at`, `duration`, pitch, volume, noise, filter, fades.
+   */
+  compose(options: SynthComposeOptions): Buffer;
+  /** Simultaneous mix at t=0, or timeline mix when clips include `at` / compose fields. */
+  mix(inputs: SynthMixInput[], options?: SynthMixOptions): Buffer;
+  save(wav: Buffer, filePath: string): Promise<void>;
 }

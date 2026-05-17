@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
 import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions } from "../types/image";
 import type { StrokeOptions } from "../types/common";
-import type { CanvasResults } from "../canvas/canvas-creator";
+import { assignCanvasResultsBuffer, type CanvasResults } from "../canvas/canvas-creator";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 import { isShapeSource, drawShape, createShapePath } from "./shapes/shapes";
 import { loadImageCached, fitInto, drawBoxBackground } from "./image-properties";
@@ -987,7 +987,7 @@ export class ImageCreator {
         options
       );
 
-      return cv.toBuffer("image/png");
+      return assignCanvasResultsBuffer(canvasBuffer, cv.toBuffer("image/png"));
     } catch (error) {
       throw new Error(`createImage failed: ${getErrorMessage(error)}`);
     }
