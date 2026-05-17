@@ -1,5 +1,4 @@
-import type { SceneLayer } from "../types/scene";
-import type { CardToLayersOptions } from "./types";
+import type { SceneLayer, CardToLayersOptions } from "../types";
 
 export function cardToLayers(o: CardToLayersOptions): SceneLayer[] {
   const radius = o.radius ?? 16;

@@ -1,6 +1,6 @@
 import { createCanvas, loadImage, type Image } from "@napi-rs/canvas";
-import type { CanvasResults } from "../canvas/canvas-creator";
-import type { CustomOptions } from "../types/path";
+import type { CanvasResults } from "../types";
+import type { CustomOptions } from "../types";
 import { customLines } from "../path/custom-lines";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 

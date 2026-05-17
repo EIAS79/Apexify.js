@@ -1,5 +1,4 @@
-import type { SceneLayer } from "../types/scene";
-import type { AvatarToLayersOptions } from "./types";
+import type { SceneLayer, AvatarToLayersOptions } from "../types";
 
 export function avatarToLayers(o: AvatarToLayersOptions): SceneLayer[] {
   const layers: SceneLayer[] = [];

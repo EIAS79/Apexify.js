@@ -1,5 +1,6 @@
 /** Barrel: image pipeline (`image-creator`, properties, mask, filters, effects, shapes). */
-export { painterImageUtils, type PainterImageUtils } from "./painter-image-utils";
+export { painterImageUtils } from "./painter-image-utils";
+export type { PainterImageUtils } from "../types";
 export { ImageCreator, ImageCreator as ImageRenderer } from "./image-creator";
 
 export {
@@ -18,4 +19,4 @@ export * from "./image-filters";
 export * from "./image-effects";
 
 export * from "./shapes/shapes";
-export type { ShapeType, ShapeProperties } from "../types/image";
+export type { ShapeType, ShapeProperties } from "../types";

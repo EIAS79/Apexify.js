@@ -1,4 +1,4 @@
-import type { GIFOptions, GIFInputFrame, Frame } from "../../types/gif";
+import type { GIFOptions, GIFInputFrame, Frame } from "../../types";
 import type { AnimateOptions } from "../../gif/animate-frames";
 import { animateFrames } from "../../gif/animate-frames";
 import { GIFCreator } from "../../gif/gif-creator";

@@ -1,4 +1,4 @@
-import type { SceneLayer, SceneRenderInput } from "../types/scene";
+import type { SceneLayer, SceneRenderInput } from "../types";
 
 const DEFAULT_MAX_SURFACE_DEPTH = 64;
 

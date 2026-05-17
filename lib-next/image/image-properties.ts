@@ -2,7 +2,7 @@ import { loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
 import sharp from "sharp";
 import { sharpFromResolvableInput } from "../core/general-functions";
-import type { AlignMode, FitMode, BoxBackground } from "../types/common";
+import type { AlignMode, FitMode, BoxBackground } from "../types";
 import { buildPath } from "../render/clip-path";
 import { createGradientFill } from "../render/gradient-fill";
 

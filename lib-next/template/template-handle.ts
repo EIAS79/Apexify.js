@@ -1,19 +1,15 @@
-import type { SceneRenderInput, SceneRenderOptions } from "../types/scene";
 import type {
   TemplateData,
   TemplateRenderOptions,
   TemplateOptions,
   TemplateSceneDefinition,
-} from "../types/template";
-import type { TextMetrics, TextProperties } from "../types/text";
+  SceneRenderInput,
+  SceneRenderOptions,
+  TemplateRenderHost,
+} from "../types";
 import { resolveTemplateToSceneInput, type ResolveContext } from "./resolve-template";
 
-/** Minimal façade required by {@link TemplateHandle} (implemented by {@link ApexPainter}). */
-export interface TemplateRenderHost {
-  renderScene(input: SceneRenderInput, options?: SceneRenderOptions): Promise<Buffer>;
-  measureText(props: TextProperties): Promise<TextMetrics>;
-  assets: { resolve(refPath: string): string | Buffer };
-}
+export type { TemplateRenderHost } from "../types";
 
 export class TemplateHandle {
   constructor(

@@ -1,5 +1,5 @@
 import type { SKRSContext2D } from "@napi-rs/canvas";
-import type { borderPosition } from "../types/common";
+import type { borderPosition } from "../types";
 
 function computeCornerRadii(
   borderPos: borderPosition,

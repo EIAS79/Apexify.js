@@ -1,5 +1,5 @@
 import type { SceneCreator } from "./scene-creator";
-import type { SceneRenderInput, SceneRenderOptions, SceneVideoFrameSlot } from "../types/scene";
+import type { SceneRenderInput, SceneRenderOptions, SceneVideoFrameSlot } from "../types";
 import type { VideoCreationOptions, VideoCreator } from "../video/video-creator";
 import { expandSceneVideoFrames } from "./video-scene";
 

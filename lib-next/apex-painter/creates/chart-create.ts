@@ -1,4 +1,4 @@
-import type { PieSlice, PieChartOptions } from "../../types/chart";
+import type { PieSlice, PieChartOptions } from "../../types";
 import type { BarChartData, BarChartOptions } from "../../chart/impl/barchart";
 import type { HorizontalBarChartData, HorizontalBarChartOptions } from "../../chart/impl/horizontalbarchart";
 import type { LineSeries, LineChartOptions } from "../../chart/impl/linechart";

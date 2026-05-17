@@ -2,7 +2,7 @@ import { createCanvas, loadImage, SKRSContext2D, Canvas } from "@napi-rs/canvas"
 import { loadImageCached } from "../image/image-properties";
 import path from "path";
 import fs from "fs";
-import type { CanvasConfig } from "../types/canvas";
+import type { CanvasConfig, CanvasResults } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 import {
   drawBackgroundGradient,
@@ -19,10 +19,7 @@ import { applyStroke } from "../render/stroke-renderer";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { applyContextImageFilters } from "../render/context-image-filters";
 
-export interface CanvasResults {
-  buffer: Buffer;
-  canvas: CanvasConfig;
-}
+export type { CanvasResults };
 
 /**
  * When `createImage` / `createText` receive {@link CanvasResults}, assign the new PNG

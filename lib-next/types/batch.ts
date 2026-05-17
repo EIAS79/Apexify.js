@@ -1,3 +1,9 @@
+import type { CanvasConfig } from "./canvas";
+import type { ImageProperties } from "./image";
+import type { TextProperties } from "./text";
+import type { PainterAssetRefsOptions } from "./painter-resolve";
+import type { AssetResolveFn } from "./assets";
+
 export interface BatchOperation {
   type: "canvas" | "image" | "text";
   config: unknown;
@@ -36,4 +42,25 @@ export interface PaletteOptions {
   count?: number;
   method?: "kmeans" | "median-cut" | "octree";
   format?: "hex" | "rgb" | "hsl";
+}
+
+export interface BatchChainAssetOpts {
+  resolveAssetRefs?: boolean;
+  resolve?: AssetResolveFn;
+}
+
+/** Minimal painter surface for batch / chain helpers. */
+export interface BatchChainPainter {
+  createCanvas(config: CanvasConfig, painterOpts?: PainterAssetRefsOptions): Promise<{ buffer: Buffer }>;
+  createImage(
+    images: ImageProperties | ImageProperties[],
+    canvasBuffer: unknown,
+    options?: unknown,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<Buffer>;
+  createText(
+    textArray: TextProperties | TextProperties[],
+    canvasBuffer: unknown,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<Buffer>;
 }

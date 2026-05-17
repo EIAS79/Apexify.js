@@ -8,4 +8,4 @@ export type {
   VideoPipelineSnapshot,
   VideoPipelineRenderOptions,
   VideoPipelineRenderResult,
-} from "../types/video-pipeline";
+} from "../types";

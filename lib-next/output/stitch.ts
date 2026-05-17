@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
 import path from 'path';
 import fs from 'fs';
-import type { StitchOptions, CollageLayout } from "../types/batch";
+import type { StitchOptions, CollageLayout } from "../types";
 import { getCanvasContext } from "../core/errors";
 
 /**

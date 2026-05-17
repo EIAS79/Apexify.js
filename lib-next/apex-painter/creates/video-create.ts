@@ -1,8 +1,8 @@
-import type { ExtractFramesOptions } from "../../types/video";
+import type { ExtractFramesOptions } from "../../types";
 import type { ExtractAllFramesOptions } from "../../video/extract-all-frames";
 import type { VideoCreationOptions } from "../../video/video-stack";
 import type { SceneToVideoResult } from "../../scene/render-scene-to-video";
-import type { VideoPipelineLayer } from "../../types/video-pipeline";
+import type { VideoPipelineLayer } from "../../types";
 import { VideoStack } from "../../video/video-stack";
 import { VideoPipeline } from "../../video/video-pipeline-builder";
 

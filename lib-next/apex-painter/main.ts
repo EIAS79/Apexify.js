@@ -6,32 +6,50 @@
  * **`SceneBuilder.render`** and imperative methods (**`createCanvas`**, **`createImage`**, **`createText`**, **`measureText`**, charts, **`createGIF`**, **`animate`**, **`createVideo`**, **`batch`** / **`chain`**) resolve only when **`{ resolveAssetRefs: true }`** is passed, or when you preprocess with **`prepareForRender`**. Templates resolve during **`TemplateHandle.render`**.
  */
 
-import type { OutputFormat } from "../types/common";
-import type { CanvasConfig } from "../types/canvas";
-import type { CreateImageOptions, ImageProperties } from "../types/image";
-import type { SaveOptions, SaveResult } from "../types/output";
-import type { TextMetrics, TextProperties } from "../types/text";
-import type { ExtractFramesOptions } from "../types/video";
-import type { BatchOperation, ChainOperation } from "../types/batch";
-import type { GIFOptions, GIFInputFrame, Frame } from "../types/gif";
 import type {
+  OutputFormat,
+  CanvasConfig,
+  CreateImageOptions,
+  ImageProperties,
+  SaveOptions,
+  SaveResult,
+  TextMetrics,
+  TextProperties,
+  ExtractFramesOptions,
+  BatchOperation,
+  ChainOperation,
+  GIFOptions,
+  GIFInputFrame,
+  Frame,
   SceneLayer,
   SceneRenderInput,
   SceneGifInputFrame,
   SceneVideoFrameSlot,
   SceneRenderOptions,
-} from "../types/scene";
-import type { PieSlice, PieChartOptions } from "../types/chart";
+  PieSlice,
+  PieChartOptions,
+  PainterImageUtils,
+  PainterHitDetect,
+  PainterPath2D,
+  PainterPixels,
+  PainterOutput,
+  PainterCreateAudio,
+  TemplateOptions,
+  TemplateSceneDefinition,
+  PainterAssetRefsOptions,
+  ApexifyPlugin,
+  BatchChainAssetOpts,
+  VideoCreationOptions,
+  SceneToVideoResult,
+  CanvasResults,
+} from "../types";
 import type { BarChartData, BarChartOptions } from "../chart/impl/barchart";
 import type { HorizontalBarChartData, HorizontalBarChartOptions } from "../chart/impl/horizontalbarchart";
 import type { LineSeries, LineChartOptions } from "../chart/impl/linechart";
 import type { ScatterSeries, ScatterChartOptions } from "../chart/impl/scatterchart";
 import type { RadarSeries, RadarChartOptions } from "../chart/impl/radarchart";
 import type { PolarAreaSlice, PolarAreaChartOptions } from "../chart/impl/polarareachart";
-import type { VideoCreationOptions } from "../video/video-stack";
 import type { ExtractAllFramesOptions } from "../video/extract-all-frames";
-import type { SceneToVideoResult } from "../scene/render-scene-to-video";
-import type { CanvasResults } from "../canvas/canvas-creator";
 import type { SceneBuilder } from "../scene/scene-builder";
 import { CanvasCreator } from "../canvas/canvas-creator";
 import { GIFCreator } from "../gif/gif-creator";
@@ -44,10 +62,8 @@ import { PixelDataCreator } from "../pixels/pixel-data-creator";
 import { ChartCreator } from "../chart/chart-creator";
 import { SceneCreator } from "../scene/scene-creator";
 import { VideoStack } from "../video/video-stack";
-import { painterImageUtils, type PainterImageUtils } from "../image/painter-image-utils";
+import { painterImageUtils } from "../image/painter-image-utils";
 import type { SaveCounterSession } from "../output/save-buffer";
-
-import type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput, PainterCreateAudio } from "./public-types";
 import {
   createPainterDetectFacet,
   createPainterPath2dFacet,
@@ -65,17 +81,12 @@ import { AudioCreate } from "./creates/audio-create";
 import { TemplateCreate } from "./creates/template-create";
 import { OutputSaveCreate } from "./creates/output-save";
 import { runBatch, runChain } from "./creates/batch-create";
-import type { TemplateOptions, TemplateSceneDefinition } from "../types/template";
 import type { TemplateHandle } from "../template/template-handle";
 import { AssetManager } from "../assets/asset-manager";
 import { PluginHost } from "../plugins/plugin-host";
 import { createPainterComponents, type PainterComponents } from "../components/painter-components";
 import { resolveAssetRefsDeep } from "../assets/asset-strings";
 import { resolveSceneRenderInputAssets } from "../assets/resolve-scene-assets";
-import type { PainterAssetRefsOptions } from "../types/painter-resolve";
-import type { ApexifyPlugin } from "../plugins/apexify-plugin";
-import type { BatchChainAssetOpts } from "../batch/batch-operations";
-
 export class ApexPainter {
   private readonly _outputFormat: OutputFormat;
   private readonly canvasCreator: CanvasCreator;

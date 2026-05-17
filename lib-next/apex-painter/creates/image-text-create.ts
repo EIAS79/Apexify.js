@@ -1,6 +1,5 @@
-import type { CreateImageOptions, ImageProperties } from "../../types/image";
-import type { TextMetrics, TextProperties } from "../../types/text";
-import type { CanvasResults } from "../../canvas/canvas-creator";
+import type { CreateImageOptions, ImageProperties, TextMetrics, TextProperties } from "../../types";
+import type { CanvasResults } from "../../types";
 import { ImageCreator } from "../../image/image-creator";
 import { TextCreator } from "../../text/text-creator";
 import { TextMetricsCreator } from "../../text/text-metrics";

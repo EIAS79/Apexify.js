@@ -1,8 +1,6 @@
 import path from 'path';
 import sharp from 'sharp';
-import type { cropOptions, GradientConfig } from "../types/common";
-import type { ImageFilter } from "../types/image";
-import type { ResizeOptions } from "../types/video";
+import type { cropOptions, GradientConfig, ImageFilter, ResizeOptions } from "../types";
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from "@napi-rs/canvas";
 import fs from "fs";
 import axios from "axios";

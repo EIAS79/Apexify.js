@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { VideoTextOverlayClip, VideoTextOverlayOperation } from "../types/video-text";
+import type { VideoTextOverlayClip, VideoTextOverlayOperation } from "../types";
 import { renderVideoTextLayerPng } from "./render-video-text-layer";
 import {
   buildEnableBetween,

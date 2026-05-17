@@ -1,6 +1,6 @@
 import { createCanvas } from "@napi-rs/canvas";
 import { getCanvasContext } from "../core/errors";
-import type { TextProperties } from "../types/text";
+import type { TextProperties } from "../types";
 import { EnhancedTextRenderer } from "../text/enhanced-text-renderer";
 
 /**

@@ -4,7 +4,9 @@ export const LONE_ASSET_REF = /^\$([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)$/;
 /** Replaces embedded **`$ref`** segments in a string; each segment resolves to a string (Buffers are not allowed in the middle of text). */
 export const EMBEDDED_ASSET_TOKEN = /\$([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)/g;
 
-export type AssetResolveFn = (refPath: string) => string | Buffer;
+import type { AssetResolveFn } from "../types";
+
+export type { AssetResolveFn };
 
 /**
  * Resolves a single leaf string: lone **`$ref`** → string or Buffer; otherwise replaces embedded **`$ref`** with string values only.

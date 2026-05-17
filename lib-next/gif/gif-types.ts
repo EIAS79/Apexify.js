@@ -6,4 +6,4 @@ export type {
   GIFDisposalMethod,
   GIFWatermarkSpec,
   Frame,
-} from "../types/gif";
+} from "../types";

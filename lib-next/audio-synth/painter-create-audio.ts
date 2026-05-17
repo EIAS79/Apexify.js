@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "fs/promises";
 import { dirname } from "path";
-import type { PainterCreateAudio } from "../apex-painter/public-types";
+import type { PainterCreateAudio } from "../types";
 import { listPresets, SYNTH_PRESET_NAMES } from "./presets";
 import {
   composeSynthAudio,

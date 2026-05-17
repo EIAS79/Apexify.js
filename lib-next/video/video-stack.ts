@@ -1,8 +1,7 @@
 import { VideoCreator } from "./video-creator";
 import { VideoHelpers } from "./video-helpers";
 import { VideoPipeline } from "./video-pipeline-builder";
-import type { VideoPipelineLayer } from "../types/video-pipeline";
-import type { ExtractFramesOptions } from "../types/video";
+import type { ExtractFramesOptions, VideoPipelineLayer } from "../types";
 import { createFfmpegSession, type FfmpegSession } from "./ffmpeg-session";
 import { probeVideoMetadata } from "./ffprobe-metadata";
 import { extractVideoFrameBuffer } from "./extract-frame";

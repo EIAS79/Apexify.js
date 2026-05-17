@@ -1,5 +1,6 @@
-import type { CanvasConfig } from "../../types/canvas";
-import { CanvasCreator, type CanvasResults } from "../../canvas/canvas-creator";
+import type { CanvasConfig } from "../../types";
+import { CanvasCreator } from "../../canvas/canvas-creator";
+import type { CanvasResults } from "../../types";
 
 /** Canvas surface creation (`createCanvas`). */
 export class CanvasCreate {

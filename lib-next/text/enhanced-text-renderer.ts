@@ -5,7 +5,7 @@ import {
   resolveTextLayout,
   type TextCurveConfig,
   type TextProperties,
-} from "../types/text";
+} from "../types";
 import {
   applyTextTransformations,
   computeWrappedTextLines,

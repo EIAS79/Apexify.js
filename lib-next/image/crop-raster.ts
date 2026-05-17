@@ -1,4 +1,4 @@
-import type { cropOptions } from "../types/common";
+import type { cropOptions } from "../types";
 import { cropInner, cropOuter } from "../core/general-functions";
 import { getErrorMessage } from "../core/errors";
 

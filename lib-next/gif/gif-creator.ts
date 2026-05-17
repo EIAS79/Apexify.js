@@ -10,7 +10,7 @@ import type {
   GIFEncodedFrame,
   GIFWatermarkSpec,
   GIFDisposalMethod,
-} from "../types/gif";
+} from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 
 /** Normalized frame — everything {@link createGIF} needs per encoded GIF frame (inside library only). */

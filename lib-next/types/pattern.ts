@@ -37,3 +37,15 @@ export interface PatternOptions {
   blendMode?: GlobalCompositeOperation;
   gradient?: GradientConfig;
 }
+
+/** Width/height target for procedural patterns (no full canvas required). */
+export type PatternViewport = { width: number; height: number };
+
+export type RenderPatternStackOptions = {
+  /**
+   * When true (used from `bgLayers`), unset `pattern.blendMode` keeps the layer's
+   * `globalCompositeOperation`. When false/omitted (`patternBg` on createCanvas),
+   * missing blend defaults to `'overlay'`.
+   */
+  stackedInLayer?: boolean;
+};

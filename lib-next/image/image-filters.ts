@@ -1,5 +1,5 @@
 import { SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageFilter } from "../types/image";
+import type { ImageFilter } from "../types";
 
 /**
  * Applies image filters to a canvas context

@@ -1,6 +1,6 @@
 import type { SKRSContext2D } from "@napi-rs/canvas";
 import { createGradientFill } from "../render/gradient-fill";
-import type { CustomOptions } from "../types/path";
+import type { CustomOptions } from "../types";
 import {
   drawArrow,
   drawMarker,

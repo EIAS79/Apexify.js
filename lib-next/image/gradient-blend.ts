@@ -1,6 +1,6 @@
 import { createCanvas, loadImage, type CanvasGradient } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
-import type { BlendOptions } from "../types/image";
+import type { BlendOptions } from "../types";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
 
 function validateGradientBlendInputs(

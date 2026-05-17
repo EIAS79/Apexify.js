@@ -1,8 +1,8 @@
 const PLACEHOLDER = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}]*?))?\s*\}\}/g;
 
-export interface PlaceholderResolveContext {
-  data: Record<string, unknown>;
-}
+import type { PlaceholderResolveContext } from "../types";
+
+export type { PlaceholderResolveContext };
 
 /**
  * Returns value for `key` from dotted paths (`a.b`).

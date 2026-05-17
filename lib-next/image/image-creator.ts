@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions } from "../types/image";
-import type { StrokeOptions } from "../types/common";
-import { assignCanvasResultsBuffer, type CanvasResults } from "../canvas/canvas-creator";
+import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions, StrokeOptions } from "../types";
+import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
+import type { CanvasResults } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 import { isShapeSource, drawShape, createShapePath } from "./shapes/shapes";
 import { loadImageCached, fitInto, drawBoxBackground } from "./image-properties";

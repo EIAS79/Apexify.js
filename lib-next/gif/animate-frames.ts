@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
 import GIFEncoder from "gifencoder";
 import fs from "fs";
-import type { Frame } from "../types/gif";
+import type { Frame } from "../types";
 import { getErrorMessage } from "../core/errors";
 
 export type AnimateOptions = {

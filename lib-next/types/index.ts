@@ -1,6 +1,8 @@
 /**
  * Canonical type surface for Apexify.js (moved from `lib/Canvas/utils/types/index.ts`).
  */
+export * from "./assets";
+export * from "./plugins";
 export * from "./gradient";
 export * from "./common";
 export * from "./pattern";
@@ -21,6 +23,6 @@ export * from "./batch";
 export * from "./output";
 export * from "./painter-resolve";
 export * from "./audio-synth";
-
-export type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput, PainterCreateAudio } from "../apex-painter/public-types";
-export type { PainterImageUtils } from "../image/painter-image-utils";
+export * from "./components";
+export * from "./painter-facets";
+export * from "./painter-image";

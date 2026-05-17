@@ -1,7 +1,7 @@
 import { createCanvas, loadImage, Image } from "@napi-rs/canvas";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
-import type { CanvasResults } from "../canvas/canvas-creator";
-import type { PixelData, PixelManipulationOptions } from "../types/pixels";
+import type { CanvasResults } from "../types";
+import type { PixelData, PixelManipulationOptions } from "../types";
 
 export class PixelDataCreator {
   async getPixelData(

@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import path from 'path';
-import type { CompressionOptions, PaletteOptions } from "../types/batch";
+import type { CompressionOptions, PaletteOptions } from "../types";
 
 /**
  * Compresses an image with quality control

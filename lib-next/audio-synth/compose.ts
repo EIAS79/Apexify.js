@@ -5,7 +5,7 @@ import type {
   SynthComposeOptions,
   SynthPresetOverrides,
   SynthSoundOptions,
-} from "../types/audio-synth";
+} from "../types";
 import {
   applyLimiter,
   composeTimeline,

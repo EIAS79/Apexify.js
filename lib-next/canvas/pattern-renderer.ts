@@ -1,18 +1,8 @@
 import { SKRSContext2D, loadImage } from '@napi-rs/canvas';
-import type { PatternOptions } from "../types/pattern";
+import type { PatternOptions, PatternViewport, RenderPatternStackOptions } from "../types";
 import path from 'path';
 
-/** Width/height target for procedural patterns (no full {@link Canvas} required). */
-export type PatternViewport = { width: number; height: number };
-
-export type RenderPatternStackOptions = {
-  /**
-   * When true (used from `bgLayers`), unset `pattern.blendMode` keeps the layer's
-   * `globalCompositeOperation`. When false/omitted (`patternBg` on createCanvas),
-   * missing blend defaults to `'overlay'`.
-   */
-  stackedInLayer?: boolean;
-};
+export type { PatternViewport, RenderPatternStackOptions };
 
 /**
  * Enhanced pattern renderer supporting all pattern types

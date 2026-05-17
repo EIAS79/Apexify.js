@@ -10,9 +10,9 @@ import { promisify } from "util";
 import axios from 'axios';
 import fs from "fs";
 import path from "path";
-import type { CanvasResults } from "../canvas/canvas-creator";
+import type { CanvasResults } from "../types";
 import { getCanvasContext } from "../core/errors";
-import type { VideoTextOverlayOperation } from "../types/video-text";
+import type { VideoTextOverlayOperation } from "../types";
 import {
   buildTextOverlayFilterComplex,
   prepareTextOverlayPngs,

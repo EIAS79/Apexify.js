@@ -8,9 +8,8 @@ import { url as uploadPngToUrl } from "../output/upload-imgur";
 import type { HitDetectionCreator } from "../pixels/hit-detection-creator";
 import type { Path2DCreator } from "../path/path2d-creator";
 import type { PixelDataCreator } from "../pixels/pixel-data-creator";
-import type { CanvasResults } from "../canvas/canvas-creator";
-import type { CustomOptions } from "../types/path";
-import type { PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput } from "./public-types";
+import type { CanvasResults } from "../types";
+import type { CustomOptions, PainterHitDetect, PainterPath2D, PainterPixels, PainterOutput } from "../types";
 
 export function createPainterDetectFacet(h: HitDetectionCreator): PainterHitDetect {
   return {

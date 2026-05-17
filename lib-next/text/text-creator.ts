@@ -1,6 +1,7 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import type { TextProperties } from "../types/text";
-import { assignCanvasResultsBuffer, type CanvasResults } from "../canvas/canvas-creator";
+import type { TextProperties } from "../types";
+import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
+import type { CanvasResults } from "../types";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 

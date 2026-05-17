@@ -11,13 +11,13 @@ import {
   wrapLegendLabel,
 } from "../helpers/legendTextLayout";
 
-import type { PieSlice, PieChartOptions } from "../../types/chart-pie";
+import type { PieSlice, PieChartOptions } from "../../types";
 import type {
   LegendEntry,
   EnhancedTextStyle,
   StandardLegendConfig,
   ConnectedLegendConfig,
-} from "../../types/chart-common";
+} from "../../types";
 
 export type {
   PieSlice,

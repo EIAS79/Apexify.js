@@ -1,7 +1,7 @@
 import { Canvas, createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import { loadImageCached } from "../../image/image-properties";
 import type { CanvasConfig, gradient } from "../../types";
-import type { ChartAppearanceExtended } from "../../types/chart-common";
+import type { ChartAppearanceExtended } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
 import { applyContextImageFilters } from "../../render/context-image-filters";
 import {

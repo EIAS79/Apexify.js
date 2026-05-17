@@ -1,4 +1,4 @@
-import type { VideoTextOverlayClip, VideoTextTransition, VideoTextTransitionPreset } from "../types/video-text";
+import type { VideoTextOverlayClip, VideoTextTransition, VideoTextTransitionPreset } from "../types";
 
 const DEFAULT_TRANSITION_SEC = 0.35;
 

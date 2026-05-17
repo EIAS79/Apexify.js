@@ -1,11 +1,13 @@
 import type {
   SynthComposeClip,
   SynthComposeOptions,
+  SynthMixInput,
+  SynthMixOptions,
   SynthPresetName,
   SynthPresetOverrides,
   SynthSequenceOptions,
   SynthSoundOptions,
-} from "../types/audio-synth";
+} from "../types";
 import { composeSynthAudio } from "./compose";
 import { DEFAULT_SAMPLE_RATE, mixFloatBuffers, renderSequence, renderSound, resampleToMatch } from "./engine";
 import { applyPresetOverrides } from "./preset-overrides";
@@ -13,18 +15,6 @@ import { getPresetDefinition } from "./presets";
 import { decodeWavPcm16, encodeWavPcm16 } from "./wav-encode";
 
 export { applyPresetOverrides } from "./preset-overrides";
-
-export type SynthMixInput =
-  | Buffer
-  | SynthSoundOptions
-  | SynthComposeClip
-  | { preset: SynthPresetName; gain?: number; overrides?: SynthPresetOverrides };
-
-export interface SynthMixOptions {
-  sampleRate?: number;
-  channels?: 1 | 2;
-  masterGain?: number;
-}
 
 export function synthesizeSound(options: SynthSoundOptions): Buffer {
   const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;

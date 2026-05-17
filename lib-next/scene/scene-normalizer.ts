@@ -1,4 +1,4 @@
-import type { CustomOptions } from "../types/path";
+import type { CustomOptions } from "../types";
 
 /**
  * Validates {@link SceneLayer} `customLines` the same way as {@link ApexPainter.createCustom}.

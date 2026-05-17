@@ -7,9 +7,9 @@ import type {
   VideoPipelineRenderOptions,
   VideoPipelineRenderResult,
   VideoPipelineSpliceLayer,
+  VideoTextOverlayClip,
   VideoPipelineTrimLayer,
-} from "../types/video-pipeline";
-import type { VideoTextOverlayClip } from "../types/video-text";
+} from "../types";
 import type { VideoHelpers } from "./video-helpers";
 import {
   synthesizePreset,

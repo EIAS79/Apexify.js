@@ -3,7 +3,7 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import type { FfmpegSession } from "./ffmpeg-session";
-import type { VideoProbeMetadata } from "../types/video";
+import type { VideoProbeMetadata } from "../types";
 import { getErrorMessage } from "../core/errors";
 import { resolveVideoInputToPath } from "./video-input-resolve";
 

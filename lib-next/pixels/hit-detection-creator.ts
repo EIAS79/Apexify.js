@@ -2,7 +2,7 @@ import { createCanvas, type Path2D } from "@napi-rs/canvas";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 import type { PathCommand } from "../foundation/path-cmd";
 import { buildPath2DFromCommands } from "../foundation/path-cmd";
-import type { HitDetectionOptions, HitDetectionResult, HitRegion } from "../types/hit-detection";
+import type { HitDetectionOptions, HitDetectionResult, HitRegion } from "../types";
 
 export class HitDetectionCreator {
   isPointInPath(

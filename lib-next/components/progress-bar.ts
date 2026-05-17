@@ -1,5 +1,4 @@
-import type { SceneLayer } from "../types/scene";
-import type { ProgressBarToLayersOptions } from "./types";
+import type { SceneLayer, ProgressBarToLayersOptions } from "../types";
 
 export function progressBarToLayers(o: ProgressBarToLayersOptions): SceneLayer[] {
   const max = o.max ?? 100;

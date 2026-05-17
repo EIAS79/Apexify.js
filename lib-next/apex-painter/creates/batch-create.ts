@@ -1,6 +1,5 @@
-import type { BatchOperation, ChainOperation } from "../../types/batch";
-import { batchOperations, chainOperations, type BatchChainAssetOpts } from "../../batch/batch-operations";
-import type { BatchChainPainter } from "../../batch/batch-operations";
+import type { BatchOperation, ChainOperation, BatchChainAssetOpts, BatchChainPainter } from "../../types";
+import { batchOperations, chainOperations } from "../../batch/batch-operations";
 import { getErrorMessage } from "../../core/errors";
 
 export async function runBatch(
@@ -27,4 +26,4 @@ export async function runChain(
   }
 }
 
-export type { BatchChainAssetOpts } from "../../batch/batch-operations";
+export type { BatchChainAssetOpts } from "../../types";

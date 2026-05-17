@@ -219,3 +219,16 @@ export interface SynthComposeOptions {
    */
   noiseGateThreshold?: number;
 }
+
+/** Argument to {@link PainterCreateAudio.mix} and `mixSynthSounds`. */
+export type SynthMixInput =
+  | Buffer
+  | SynthSoundOptions
+  | SynthComposeClip
+  | { preset: SynthPresetName; gain?: number; overrides?: SynthPresetOverrides };
+
+export interface SynthMixOptions {
+  sampleRate?: number;
+  channels?: 1 | 2;
+  masterGain?: number;
+}

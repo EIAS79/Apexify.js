@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 import type { FfmpegSession } from "./ffmpeg-session";
-import type { ExtractFramesOptions } from "../types/video";
+import type { ExtractFramesOptions } from "../types";
 import { getErrorMessage } from "../core/errors";
 
 const execAsync = promisify(exec);

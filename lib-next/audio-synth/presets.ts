@@ -1,4 +1,4 @@
-import type { SynthPresetInfo, SynthPresetName, SynthSoundOptions } from "../types/audio-synth";
+import type { SynthPresetInfo, SynthPresetName, SynthSoundOptions } from "../types";
 
 type PresetDef = SynthSoundOptions & { _duration?: number; _desc?: string };
 

@@ -1,4 +1,4 @@
-import type { SceneVideoFrameSlot } from "../types/scene";
+import type { SceneVideoFrameSlot } from "../types";
 
 export type { SceneVideoFrameSlot };
 

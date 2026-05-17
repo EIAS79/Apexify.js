@@ -1,11 +1,10 @@
 import { createCanvas, loadImage, Image, SKRSContext2D, type Path2D } from "@napi-rs/canvas";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
-import type { CanvasResults } from "../canvas/canvas-creator";
+import type { CanvasResults } from "../types";
 import type { PathCommand } from "../foundation/path-cmd";
 import { buildPath2DFromCommands } from "../foundation/path-cmd";
 import { createGradientFill } from "../render/gradient-fill";
-import type { Path2DDrawOptions } from "../types/path2d-draw";
-
+import type { Path2DDrawOptions } from "../types";
 export type { PathCommand } from "../foundation/path-cmd";
 export type { Path2DDrawOptions };
 

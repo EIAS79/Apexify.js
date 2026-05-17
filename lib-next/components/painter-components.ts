@@ -16,10 +16,3 @@ export function createPainterComponents() {
 
 export type PainterComponents = ReturnType<typeof createPainterComponents>;
 
-export type {
-  BadgeToLayersOptions,
-  ProgressBarToLayersOptions,
-  AvatarToLayersOptions,
-  CardToLayersOptions,
-  WatermarkToLayersOptions,
-} from "./types";

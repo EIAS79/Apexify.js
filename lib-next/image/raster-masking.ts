@@ -1,6 +1,6 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
-import type { MaskOptions } from "../types/image";
+import type { MaskOptions } from "../types";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
 
 function validateMaskingInputs(

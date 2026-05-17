@@ -1,4 +1,4 @@
-import type { PainterCreateAudio } from "../public-types";
+import type { PainterCreateAudio } from "../../types";
 import { createPainterCreateAudioFacet } from "../../audio-synth/painter-create-audio";
 
 /**

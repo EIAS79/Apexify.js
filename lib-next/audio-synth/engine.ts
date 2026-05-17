@@ -5,7 +5,7 @@ import type {
   SynthSoundOptions,
   SynthSequenceOptions,
   Waveform,
-} from "../types/audio-synth";
+} from "../types";
 import { getPresetDefinition } from "./presets";
 
 const DEFAULT_SAMPLE_RATE = 44100;

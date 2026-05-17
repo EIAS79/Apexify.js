@@ -1,5 +1,5 @@
-import type { GIFInputFrame } from "../types/gif";
-import type { SceneGifInputFrame } from "../types/scene";
+import type { GIFInputFrame } from "../types";
+import type { SceneGifInputFrame } from "../types";
 
 export type { SceneGifInputFrame };
 

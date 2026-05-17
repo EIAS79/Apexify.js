@@ -1,16 +1,16 @@
-import type { CanvasConfig } from "../types/canvas";
-import type { ImageProperties } from "../types/image";
-import type { TextProperties } from "../types/text";
-import type { BatchOperation, ChainOperation } from "../types/batch";
-import type { PainterAssetRefsOptions } from "../types/painter-resolve";
-import type { AssetResolveFn } from "../assets/asset-strings";
+import type {
+  CanvasConfig,
+  ImageProperties,
+  TextProperties,
+  BatchOperation,
+  ChainOperation,
+  BatchChainAssetOpts,
+  BatchChainPainter,
+} from "../types";
 import { resolveAssetRefsDeep } from "../assets/asset-strings";
 import { getErrorMessage } from "../core/errors";
 
-export interface BatchChainAssetOpts {
-  resolveAssetRefs?: boolean;
-  resolve?: AssetResolveFn;
-}
+export type { BatchChainAssetOpts, BatchChainPainter } from "../types";
 
 function resolveChainMethod(painter: object, path: string): unknown {
   const segments = path.split(".");
@@ -22,24 +22,6 @@ function resolveChainMethod(painter: object, path: string): unknown {
     cur = (cur as Record<string, unknown>)[seg];
   }
   return cur;
-}
-
-/**
- * Minimal painter surface for batch helpers. Implemented by legacy and lib-next ApexPainter.
- */
-export interface BatchChainPainter {
-  createCanvas(config: CanvasConfig, painterOpts?: PainterAssetRefsOptions): Promise<{ buffer: Buffer }>;
-  createImage(
-    images: ImageProperties | ImageProperties[],
-    canvasBuffer: unknown,
-    options?: unknown,
-    painterOpts?: PainterAssetRefsOptions
-  ): Promise<Buffer>;
-  createText(
-    textArray: TextProperties | TextProperties[],
-    canvasBuffer: unknown,
-    painterOpts?: PainterAssetRefsOptions
-  ): Promise<Buffer>;
 }
 
 /**

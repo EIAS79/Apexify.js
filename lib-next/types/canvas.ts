@@ -102,3 +102,9 @@ export interface CanvasConfig {
   stroke?: StrokeOptions;
   shadow?: ShadowOptions;
 }
+
+/** Result of {@link ApexPainter.createCanvas} — buffer + config for follow-up draws. */
+export interface CanvasResults {
+  buffer: Buffer;
+  canvas: CanvasConfig;
+}

@@ -1,5 +1,5 @@
 import { Path2D } from "@napi-rs/canvas";
-import type { PathCommand } from "../types/pathCommands";
+import type { PathCommand } from "../types";
 import { getPathConstructor } from "./path-utils";
 
 export type { PathCommand };

@@ -1,4 +1,4 @@
-import type { SynthPresetOverrides, SynthSoundOptions } from "../types/audio-synth";
+import type { SynthPresetOverrides, SynthSoundOptions } from "../types";
 
 export function applyPresetOverrides(
   base: SynthSoundOptions,

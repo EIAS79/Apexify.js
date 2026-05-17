@@ -3,7 +3,7 @@ import type {
   SceneRenderInput,
   SceneRenderResult,
   SceneRenderOptions,
-} from "../types/scene";
+} from "../types";
 import type { SceneCreator } from "./scene-creator";
 import type { AssetResolveFn } from "../assets/asset-strings";
 import { resolveSceneRenderInputAssets } from "../assets/resolve-scene-assets";

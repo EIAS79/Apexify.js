@@ -1,5 +1,5 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import type { ImageBlendLayer } from "../types/image";
+import type { ImageBlendLayer } from "../types";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
 
 function validateBlendInputs(layers: ImageBlendLayer[], baseImageBuffer: Buffer): void {

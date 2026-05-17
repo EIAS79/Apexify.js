@@ -1,5 +1,5 @@
 import type { SKRSContext2D } from "@napi-rs/canvas";
-import type { borderPosition, ShadowOptions } from "../types/common";
+import type { borderPosition, ShadowOptions } from "../types";
 import { buildPath } from "./clip-path";
 import { createGradientFill } from "./gradient-fill";
 

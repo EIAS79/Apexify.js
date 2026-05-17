@@ -1,4 +1,4 @@
-import type { SceneRenderInput } from "../types/scene";
+import type { SceneRenderInput } from "../types";
 import type { AssetResolveFn } from "./asset-strings";
 import { resolveAssetRefsDeep } from "./asset-strings";
 

@@ -1,4 +1,4 @@
-import type { LegendPlacement } from "../../types/chart-common";
+import type { LegendPlacement } from "../../types";
 
 const X_AXIS_TICK_TOP_OFFSET = 10;
 const X_AXIS_TITLE_GAP_BELOW_TICKS = 14;

@@ -1,4 +1,4 @@
-import type { LegendPlacement } from "../../types/chart-common";
+import type { LegendPlacement } from "../../types";
 import { legendConsumesTopEdge } from "./legendPlacement";
 
 /**

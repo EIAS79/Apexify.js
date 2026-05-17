@@ -1,6 +1,6 @@
 import { SKRSContext2D, GlobalFonts } from "@napi-rs/canvas";
 import path from "path";
-import { resolveTextDecorations, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextProperties } from "../types/text";
+import { resolveTextDecorations, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextProperties } from "../types";
 
 /** Vertical offset from `textBaseline: 'middle'` to alphabetic baseline (em-relative, Latin text). */
 export const TEXT_MIDDLE_TO_ALPHABETIC = 0.38;

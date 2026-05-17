@@ -1,6 +1,6 @@
 import { GlobalFonts, SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
-import { resolveTextDecorations, resolveTextEffects, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextObject } from "../types/text";
+import { resolveTextDecorations, resolveTextEffects, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextObject } from "../types";
 
 /**
  * The main function that draws text with optional wrapping.

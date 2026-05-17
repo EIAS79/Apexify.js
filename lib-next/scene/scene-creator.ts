@@ -1,6 +1,5 @@
 import { loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
-import type { CanvasConfig } from "../types/canvas";
 import type {
   SceneLayer,
   SceneRenderInput,
@@ -8,7 +7,8 @@ import type {
   SceneSurfacePlacement,
   SceneCreatorDeps,
   SceneRenderOptions,
-} from "../types/scene";
+  CanvasConfig
+} from "../types";
 import { customLines } from "../path/custom-lines";
 import { validateSceneCustomLinesOptions } from "./scene-normalizer";
 import { validateSceneRenderInput } from "./scene-validation";

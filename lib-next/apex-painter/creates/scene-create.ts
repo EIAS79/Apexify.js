@@ -4,10 +4,10 @@ import type {
   SceneRenderOptions,
   SceneGifInputFrame,
   SceneVideoFrameSlot,
-} from "../../types/scene";
-import type { GIFOptions, GIFInputFrame } from "../../types/gif";
-import type { VideoCreationOptions } from "../../video/video-stack";
-import type { SceneToVideoResult } from "../../scene/render-scene-to-video";
+  GIFOptions,
+  GIFInputFrame,
+} from "../../types";
+import type { VideoCreationOptions, SceneToVideoResult } from "../../types";
 import { SceneCreator } from "../../scene/scene-creator";
 import { SceneBuilder } from "../../scene/scene-builder";
 import { validateSceneRenderInput } from "../../scene/scene-validation";

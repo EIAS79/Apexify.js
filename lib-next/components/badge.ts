@@ -1,5 +1,4 @@
-import type { SceneLayer } from "../types/scene";
-import type { BadgeToLayersOptions } from "./types";
+import type { SceneLayer, BadgeToLayersOptions } from "../types";
 
 export function badgeToLayers(o: BadgeToLayersOptions): SceneLayer[] {
   const paddingX = o.paddingX ?? 14;

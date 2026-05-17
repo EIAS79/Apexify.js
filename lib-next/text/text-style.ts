@@ -5,9 +5,9 @@ import type {
   TextLineDecoration,
   TextProperties,
   TextShadowStyle,
-} from "../types/text";
-import { resolveTextDecorations, resolveTextEffects, resolveTextFill } from "../types/text";
-import type { gradient } from "../types/gradient";
+} from "../types";
+import { resolveTextDecorations, resolveTextEffects, resolveTextFill } from "../types";
+import type { gradient } from "../types";
 import { TEXT_MIDDLE_TO_ALPHABETIC } from "./text-layout";
 
 export function createTextGradient(

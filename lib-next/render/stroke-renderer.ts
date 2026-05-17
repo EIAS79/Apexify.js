@@ -1,6 +1,6 @@
 import type { SKRSContext2D } from "@napi-rs/canvas";
-import type { borderPosition, StrokeOptions } from "../types/common";
-import type { gradient } from "../types/gradient";
+import type { borderPosition, StrokeOptions } from "../types";
+import type { gradient } from "../types";
 import { buildPath, buildPartialRectStrokeEdges, parseStrokeSideSet } from "./clip-path";
 import { createGradientFill } from "./gradient-fill";
 

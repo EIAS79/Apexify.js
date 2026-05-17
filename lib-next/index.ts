@@ -1,29 +1,10 @@
 /**
- * Apexify.js — {@link ApexPainter} plus every type under `./types`.
+ * Apexify.js — {@link ApexPainter} plus all public types from `./types`.
+ *
+ * Runtime helpers (scene validation, templates, assets, plugins, procedural audio)
+ * are accessed on the painter: `validateSceneRenderInput`, `createTemplate`, `assets`,
+ * `plugins`, `createAudio`, etc.
  */
 
 export { ApexPainter } from "./apex-painter";
-export { validateSceneRenderInput } from "./scene/scene-validation";
-export { TemplateHandle, type TemplateRenderHost } from "./template/template-handle";
-export { AssetManager } from "./assets/asset-manager";
-export { PluginHost } from "./plugins/plugin-host";
-export type { ApexifyPlugin } from "./plugins/apexify-plugin";
-export type {
-  BadgeToLayersOptions,
-  ProgressBarToLayersOptions,
-  AvatarToLayersOptions,
-  CardToLayersOptions,
-  WatermarkToLayersOptions,
-} from "./components/types";
-export type { BatchChainAssetOpts } from "./batch/batch-operations";
-
 export type * from "./types";
-export {
-  synthesizeSound,
-  synthesizePreset,
-  synthesizeSequence,
-  mixSynthSounds,
-  composeSynthAudio,
-  SYNTH_PRESET_NAMES,
-  listPresets,
-} from "./audio-synth";

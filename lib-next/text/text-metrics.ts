@@ -1,5 +1,5 @@
 import { createCanvas } from "@napi-rs/canvas";
-import { resolveTextDecorations, resolveTextLayout, resolveTextPlacement, type TextProperties, type TextMetrics } from "../types/text";
+import { resolveTextDecorations, resolveTextLayout, resolveTextPlacement, type TextProperties, type TextMetrics } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 import { curvedArcBoundingChord, resolveArcRadiusAndSweep } from "./text-curved";
 import { computeWrappedTextLines, registerTextFontFromPath } from "./text-layout";

@@ -1,4 +1,4 @@
-import type { TemplateOptions, TemplateSceneDefinition } from "../../types/template";
+import type { TemplateOptions, TemplateSceneDefinition } from "../../types";
 import { TemplateHandle, type TemplateRenderHost } from "../../template/template-handle";
 
 /**

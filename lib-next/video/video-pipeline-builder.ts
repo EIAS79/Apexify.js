@@ -9,8 +9,8 @@ import type {
   VideoPipelineSourceLayer,
   VideoPipelineTextLayer,
   VideoPipelineTrimLayer,
-} from "../types/video-pipeline";
-import type { VideoTextOverlayClip } from "../types/video-text";
+  VideoTextOverlayClip
+} from "../types";
 import type { VideoHelpers } from "./video-helpers";
 import { renderVideoPipeline } from "./video-pipeline-render";
 

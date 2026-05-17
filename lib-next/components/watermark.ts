@@ -1,5 +1,4 @@
-import type { SceneLayer } from "../types/scene";
-import type { WatermarkToLayersOptions } from "./types";
+import type { SceneLayer, WatermarkToLayersOptions } from "../types";
 
 export function watermarkToLayers(o: WatermarkToLayersOptions): SceneLayer[] {
   const fs = o.fontSize ?? 14;

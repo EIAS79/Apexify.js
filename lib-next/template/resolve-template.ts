@@ -1,6 +1,13 @@
-import type { TextMetrics, TextProperties } from "../types/text";
-import type { SceneLayer, SceneRenderInput } from "../types/scene";
-import type { TemplateData, TemplateLayerInput, TemplateLayerOverrides } from "../types/template";
+import type {
+  TextMetrics,
+  TextProperties,
+  SceneLayer,
+  SceneRenderInput,
+  TemplateData,
+  TemplateLayerInput,
+  TemplateLayerOverrides,
+  ResolveContext,
+} from "../types";
 import {
   coerceVisibleString,
   lookupData,
@@ -45,10 +52,7 @@ export class TemplateResolveError extends Error {
   }
 }
 
-export interface ResolveContext {
-  data: TemplateData;
-  resolveAssetRef?: (refPath: string) => string | Buffer;
-}
+export type { ResolveContext };
 
 function throwMissing(key: string): never {
   throw new TemplateResolveError(`Template render failed: missing value for "{{${key}}}"`, key);

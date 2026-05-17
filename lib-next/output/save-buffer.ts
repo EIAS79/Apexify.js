@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { SaveOptions, SaveResult } from "../types/output";
+import type { SaveOptions, SaveResult } from "../types";
 import { getErrorMessage } from "../core/errors";
 
 /** Mutable counter for `naming: "counter"` (matches legacy `ApexPainter.saveCounter`). */

@@ -1,5 +1,5 @@
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageFilter } from "../types/image";
+import type { ImageFilter } from "../types";
 import sharp from "sharp";
 import { Jimp } from 'jimp';
 

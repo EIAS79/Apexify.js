@@ -3,7 +3,7 @@ import type {
   CurvedTextLayoutMode,
   CircularArcLayoutOptions,
   GlyphArcPlacement,
-} from "../types/text";
+} from "../types";
 
 export type { CurvedTextLayoutMode, CircularArcLayoutOptions, GlyphArcPlacement };
 

@@ -1,4 +1,4 @@
-import type { SaveOptions, SaveResult } from "../../types/output";
+import type { SaveOptions, SaveResult } from "../../types";
 import type { SaveCounterSession } from "../../output/save-buffer";
 import { bufferToPainterOutput } from "../../output/buffer-output";
 import { saveImageBuffer, saveImageBuffers } from "../../output/save-buffer";

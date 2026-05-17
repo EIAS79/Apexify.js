@@ -1,7 +1,6 @@
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { Image } from "@napi-rs/canvas";
-import type { CanvasConfig } from "../types/canvas";
-import type { gradient } from "../types/gradient";
+import type { CanvasConfig, gradient } from "../types";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import path from "path";
 import { loadImageCached } from "../image/image-properties";

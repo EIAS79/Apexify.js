@@ -1,5 +1,5 @@
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
-import type { gradient as GradientType } from "../types/gradient";
+import type { gradient as GradientType } from "../types";
 
 function rotatePoint(x: number, y: number, px: number, py: number, deg = 0): [number, number] {
   if (!deg) return [x, y];
