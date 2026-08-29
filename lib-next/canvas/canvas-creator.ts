@@ -270,25 +270,22 @@ export class CanvasCreator {
         throw new Error(`createCanvas: videoBg extraction failed: ${errorMsg}`);
       }
     } else if (customBg) {
-      await customBackground(ctx, { ...canvas, blur });
+      const customBgOpacity = customBg.opacity ?? 1;
 
       if (customBg.filters && customBg.filters.length > 0) {
         const tempCanvas = createCanvas(width, height);
         const tempCtx = tempCanvas.getContext("2d") as SKRSContext2D;
         if (tempCtx) {
-          tempCtx.drawImage(cv, 0, 0);
+          await customBackground(tempCtx, { ...canvas, x: 0, y: 0, opacity: 1, blur });
           await applyContextImageFilters(tempCtx, customBg.filters, width, height);
-          ctx.clearRect(0, 0, width, height);
-          ctx.globalAlpha = customBg.opacity ?? 1;
+          ctx.globalAlpha = opacity * customBgOpacity;
           ctx.drawImage(tempCanvas, 0, 0);
           ctx.globalAlpha = opacity;
         }
-      } else if (customBg.opacity !== undefined && customBg.opacity !== 1) {
-        ctx.globalAlpha = customBg.opacity;
+      } else {
+        ctx.globalAlpha = opacity * customBgOpacity;
         await customBackground(ctx, { ...canvas, blur });
         ctx.globalAlpha = opacity;
-      } else {
-        await customBackground(ctx, { ...canvas, blur });
       }
     } else if (gradientBg) {
       await drawBackgroundGradient(ctx, { ...canvas, blur });
