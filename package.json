@@ -35,6 +35,7 @@
     "build:esm": "tsc --build tsconfig.esm.json --force",
     "build:cjs": "tsc --build tsconfig.cjs.json --force",
     "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "test:remote-image": "ts-node tests/remote-image-hotfix-smoke.ts",
     "release": "npm run build && npm publish"
   },
   "files": [
@@ -42,6 +43,7 @@
     "types",
     "README.md",
     "CHANGELOG.md",
+    "HOTFIX-5.4.5.md",
     "LICENSE",
     "Apex-Banner.png"
   ],

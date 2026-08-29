@@ -1,12 +1,11 @@
 /**
  * Raster / stitch / color helpers for {@link ApexPainter#image} — one surface, no canvas instance state.
  */
+import sharp from "sharp";
 import type { PainterImageUtils, ResizeOptions } from "../types";
 import { stitchImages, createCollage } from "../output/stitch";
 import { compressImage, extractPalette } from "../output/compression";
 import {
-  resizingImg,
-  converter,
   applyColorFilters,
   imgEffects,
   detectColors,
@@ -17,6 +16,7 @@ import { blendImageLayers } from "./layer-blend";
 import { cropRasterImage } from "./crop-raster";
 import { applyRasterMask } from "./raster-masking";
 import { blendGradientOverImage } from "./gradient-blend";
+import { resolveRasterInput } from "./resolvable-image-source";
 import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
 
@@ -62,6 +62,29 @@ function validateConverterInputs(source: string | Buffer, newExtension: string):
   if (!validExtensions.includes(newExtension.toLowerCase())) {
     throw new Error(`imgConverter: Invalid extension. Supported: ${validExtensions.join(", ")}`);
   }
+}
+
+async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
+  const source = await resolveRasterInput(options.imagePath);
+  const resizeOptions: sharp.ResizeOptions = {
+    width: options.size?.width || 500,
+    height: options.size?.height || 500,
+    fit: options.maintainAspectRatio ? sharp.fit.inside : sharp.fit.fill,
+    kernel: sharp.kernel.lanczos3,
+    withoutEnlargement: true,
+  };
+
+  return sharp(source)
+    .resize(resizeOptions)
+    .png({ quality: options.quality ?? 90 })
+    .toBuffer();
+}
+
+async function convertResolved(source: string | Buffer, newExtension: string): Promise<Buffer> {
+  const resolved = await resolveRasterInput(source);
+  return sharp(resolved)
+    .toFormat(newExtension.toLowerCase() as keyof sharp.FormatEnum)
+    .toBuffer();
 }
 
 function validateEffectsInputs(source: string, filters: unknown[]): void {
@@ -120,7 +143,7 @@ export const painterImageUtils: PainterImageUtils = {
   async resize(resizeOptions) {
     try {
       validateResizeOptions(resizeOptions);
-      return await resizingImg(resizeOptions);
+      return await resizeResolved(resizeOptions);
     } catch (error) {
       throw new Error(`resize failed: ${getErrorMessage(error)}`);
     }
@@ -129,7 +152,7 @@ export const painterImageUtils: PainterImageUtils = {
   async imgConverter(source, newExtension) {
     try {
       validateConverterInputs(source, newExtension);
-      return await converter(source, newExtension);
+      return await convertResolved(source, newExtension);
     } catch (error) {
       throw new Error(`imgConverter failed: ${getErrorMessage(error)}`);
     }

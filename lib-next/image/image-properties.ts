@@ -1,10 +1,10 @@
 import { loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
 import sharp from "sharp";
-import { sharpFromResolvableInput } from "../core/general-functions";
 import type { AlignMode, FitMode, BoxBackground } from "../types";
 import { buildPath } from "../render/clip-path";
 import { createGradientFill } from "../render/gradient-fill";
+import { resolveRasterInput } from "./resolvable-image-source";
 
 const cache = new Map<string, Promise<Image>>();
 
@@ -89,15 +89,27 @@ export function fitInto(
 }
 
 async function resolveToCanvasImage(src: string | Buffer): Promise<Image> {
-  const png = await (await sharpFromResolvableInput(src)).png().toBuffer();
+  const resolved = await resolveRasterInput(src);
+  const png = await sharp(resolved).png().toBuffer();
   return loadImage(png);
 }
 
 export function loadImageCached(src: string | Buffer): Promise<Image> {
   if (Buffer.isBuffer(src)) return resolveToCanvasImage(src);
+
   const key = /^https?:\/\//i.test(src) ? src : path.resolve(process.cwd(), src);
-  if (!cache.has(key)) cache.set(key, resolveToCanvasImage(src));
-  return cache.get(key)!;
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const pending = resolveToCanvasImage(src);
+  cache.set(key, pending);
+
+  pending.catch(() => {
+    // A temporary network/CDN failure must not poison this source forever.
+    if (cache.get(key) === pending) cache.delete(key);
+  });
+
+  return pending;
 }
 
 /** Optional “box background” under the bitmap, inside the image clip */
@@ -127,25 +139,14 @@ export function drawBoxBackground(
   ctx.restore();
 }
 
-/** Load a raster via Sharp from a URL or filesystem path (cwd-relative when not http). */
+/** Load a raster via Sharp from a Buffer, URL, data URL, or cwd-relative/absolute path. */
 export async function loadImages(imagePath: string) {
   try {
-    if (!imagePath) {
-      throw new Error("Image path is required.");
-    }
-
-    if (imagePath.startsWith("http")) {
-      const response = await fetch(imagePath);
-      if (!response.ok) {
-        throw new Error("Failed to fetch image.");
-      }
-      const buffer = await response.arrayBuffer();
-      return sharp(Buffer.from(buffer));
-    }
-    const absolutePath = path.join(process.cwd(), imagePath);
-    return sharp(absolutePath);
+    const resolved = await resolveRasterInput(imagePath);
+    return sharp(resolved);
   } catch (error) {
     console.error("Error loading image:", error);
-    throw new Error("Failed to load image");
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to load image: ${message}`, { cause: error });
   }
 }
