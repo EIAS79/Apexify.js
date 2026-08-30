@@ -28,7 +28,7 @@ const pack = run(npmCmd, ['pack', '--ignore-scripts', '--json'], { capture: true
 const packInfo = JSON.parse(pack.stdout)[0];
 if (!packInfo?.filename || !Array.isArray(packInfo.files)) throw new Error('npm pack did not return expected JSON metadata.');
 
-const allowed = /^(package\.json|README\.md|CHANGELOG\.md|LICENSE|Apex-Banner\.png|dist\/)/;
+const allowed = /^(package\.json|README\.md|CHANGELOG\.md|LICENSE|Apex-Banner\.png|scripts\/prepare-source-package\.cjs|dist\/)/;
 const packedPaths = packInfo.files.map((entry) => entry.path);
 const forbidden = packedPaths.filter((file) => !allowed.test(file));
 if (forbidden.length) throw new Error(`Packed artifact contains unexpected files: ${forbidden.join(', ')}`);
@@ -38,6 +38,7 @@ for (const expected of [
   'README.md',
   'CHANGELOG.md',
   'LICENSE',
+  'scripts/prepare-source-package.cjs',
   'dist/esm/index.js',
   'dist/cjs/index.cjs',
   'dist/declarations/index.d.ts',
