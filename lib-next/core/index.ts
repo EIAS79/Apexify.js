@@ -4,14 +4,8 @@ export * from "./geometry";
 export { resolveMediaPath } from "./media-path";
 
 export {
-  sharpFromResolvableInput,
-  loadImages,
-  resizingImg,
-  converter,
   applyColorFilters,
   imgEffects,
-  cropOuter,
-  cropInner,
   detectColors,
   removeColor,
   bgRemoval,
