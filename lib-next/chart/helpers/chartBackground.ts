@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../../runtime/diagnostics";
 import { Canvas, createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import { loadImageCached } from "../../image/image-properties";
 import type { CanvasConfig, gradient } from "../../types";
@@ -72,7 +73,7 @@ export async function paintChartCanvasBackground(
       const bgImage = await loadImageCached(resolveMediaPath(a.backgroundImage));
       ctx.drawImage(bgImage, 0, 0, width, height);
     } catch (error) {
-      console.warn(`Failed to load chart background image: ${a.backgroundImage}`, error);
+      emitDiagnostic({ level: "warn", code: "APEXIFY_CHARTBACKGROUND_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/chart/helpers/chartBackground.ts." });
       fillWithGradientOrColor(ctx, a.backgroundGradient, a.backgroundColor ?? "#FFFFFF", "#FFFFFF", rect);
       ctx.fillRect(0, 0, width, height);
     }
