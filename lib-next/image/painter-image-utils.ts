@@ -17,7 +17,7 @@ import { blendImageLayers } from "./layer-blend";
 import { cropRasterImage } from "./crop-raster";
 import { applyRasterMask } from "./raster-masking";
 import { blendGradientOverImage } from "./gradient-blend";
-import { resolveRasterInput } from "./resolvable-image-source";
+import { resolveMediaInput } from "../media/source";
 import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
 
@@ -66,10 +66,10 @@ function validateConverterInputs(source: string | Buffer, newExtension: string):
 }
 
 async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
-  const source = await resolveRasterInput(options.imagePath);
+  const source = await resolveMediaInput(options.imagePath, { kind: "image" });
   const resizeOptions: SharpResizeOptions = {
-    width: options.size?.width || 500,
-    height: options.size?.height || 500,
+    width: options.size?.width ?? 500,
+    height: options.size?.height ?? 500,
     fit: options.maintainAspectRatio ? sharp.fit.inside : sharp.fit.fill,
     kernel: sharp.kernel.lanczos3,
     withoutEnlargement: true,
@@ -82,7 +82,7 @@ async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
 }
 
 async function convertResolved(source: string | Buffer, newExtension: string): Promise<Buffer> {
-  const resolved = await resolveRasterInput(source);
+  const resolved = await resolveMediaInput(source, { kind: "image" });
   return sharp(resolved)
     .toFormat(newExtension.toLowerCase() as keyof FormatEnum)
     .toBuffer();
