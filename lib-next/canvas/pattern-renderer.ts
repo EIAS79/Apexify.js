@@ -1,6 +1,7 @@
-import { SKRSContext2D, loadImage } from '@napi-rs/canvas';
+import { SKRSContext2D } from '@napi-rs/canvas';
 import type { PatternOptions, PatternViewport, RenderPatternStackOptions } from "../types";
-import { resolveMediaInput } from "../media/source";
+import { loadImageCached } from "../image/image-properties";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 export type { PatternViewport, RenderPatternStackOptions };
 
@@ -90,7 +91,12 @@ export class EnhancedPatternRenderer {
           await this.renderCustomPattern(ctx, cw, ch, patternOptions);
           break;
         default:
-          console.warn(`Unknown pattern type: ${patternOptions.type}`);
+          emitDiagnostic({
+            level: "warn",
+            code: "PATTERN_TYPE_UNKNOWN",
+            message: "Unknown pattern type ignored.",
+            details: { type: String(patternOptions.type) },
+          });
       }
     } finally {
       ctx.restore();
@@ -328,8 +334,7 @@ export class EnhancedPatternRenderer {
     if (!options.customPatternImage) return;
 
     try {
-      const resolvedPatternInput = await resolveMediaInput(options.customPatternImage, { kind: "image" });
-      const image = await loadImage(resolvedPatternInput);
+      const image = await loadImageCached(options.customPatternImage);
       const scale = options.scale || 1;
       const repeat = options.repeat || 'repeat';
 
@@ -359,7 +364,12 @@ export class EnhancedPatternRenderer {
           break;
       }
     } catch (error) {
-      console.warn(`Failed to load custom pattern image: ${options.customPatternImage}`, error);
+      emitDiagnostic({
+        level: "warn",
+        code: "PATTERN_IMAGE_LOAD_FAILED",
+        message: "Custom pattern image could not be loaded.",
+        details: { reason: error instanceof Error ? error.message : "Unknown pattern image error" },
+      });
     }
   }
 
