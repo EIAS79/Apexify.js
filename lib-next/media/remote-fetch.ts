@@ -33,9 +33,6 @@ function makeReleaseRemoteSlot(): ReleaseRemoteSlot {
       if (waiter.settled) continue;
       waiter.settled = true;
       if (waiter.signal && waiter.onAbort) waiter.signal.removeEventListener("abort", waiter.onAbort);
-      // Transfer the occupied slot directly to the oldest waiter. Keeping the
-      // active count unchanged prevents a newly arriving request from stealing
-      // the slot between release and waiter wake-up.
       waiter.resolve(makeReleaseRemoteSlot());
       return;
     }
@@ -88,6 +85,8 @@ export interface RemoteFetchOptions {
   maxRedirects?: number;
   signal?: AbortSignal;
   headers?: Readonly<Record<string, string>>;
+  method?: "GET" | "POST";
+  body?: string | Buffer;
 }
 
 export interface RemoteFetchResult {
@@ -198,6 +197,26 @@ async function validateTargetBeforeDeadline(source: string, deadline: number, ti
   }
 }
 
+function hasHeader(headers: Readonly<Record<string, string>>, name: string): boolean {
+  const wanted = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === wanted);
+}
+
+function withoutBodyHeaders(headers: Readonly<Record<string, string>> | undefined): Readonly<Record<string, string>> | undefined {
+  if (!headers) return undefined;
+  return Object.fromEntries(
+    Object.entries(headers).filter(([key]) => !["content-length", "transfer-encoding"].includes(key.toLowerCase()))
+  );
+}
+
+function redirectRequestOptions(status: number, options: RemoteFetchOptions): RemoteFetchOptions {
+  const method = options.method ?? "GET";
+  if (status === 303 || ((status === 301 || status === 302) && method === "POST")) {
+    return { ...options, method: "GET", body: undefined, headers: withoutBodyHeaders(options.headers) };
+  }
+  return options;
+}
+
 async function requestOnce(
   source: string,
   options: Required<Pick<RemoteFetchOptions, "maxBytes" | "timeoutMs" | "maxRedirects">> & RemoteFetchOptions,
@@ -229,13 +248,21 @@ async function requestOnce(
       reject(error);
     };
 
+    const body = options.body === undefined
+      ? undefined
+      : Buffer.isBuffer(options.body)
+        ? options.body
+        : Buffer.from(options.body, "utf8");
+    const headers: Record<string, string> = {
+      Accept: "*/*",
+      "User-Agent": config.network.userAgent,
+      ...options.headers,
+    };
+    if (body && !hasHeader(headers, "content-length")) headers["Content-Length"] = String(body.byteLength);
+
     const request = client.request(target.url, {
-      method: "GET",
-      headers: {
-        Accept: "*/*",
-        "User-Agent": config.network.userAgent,
-        ...options.headers,
-      },
+      method: options.method ?? "GET",
+      headers,
       lookup: createPinnedLookup(target.addresses),
       signal: options.signal,
     }, (response) => {
@@ -258,7 +285,7 @@ async function requestOnce(
           finishReject(new ApexifyRemoteFetchError("Remote media redirect URL is invalid.", { status, requestUrl: redactUrl(target.url), cause }));
           return;
         }
-        requestOnce(next, options, redirectCount + 1, deadline).then(finishResolve, finishReject);
+        requestOnce(next, { ...options, ...redirectRequestOptions(status, options) }, redirectCount + 1, deadline).then(finishResolve, finishReject);
         return;
       }
 
@@ -314,14 +341,10 @@ async function requestOnce(
       response.once("error", finishReject);
     });
 
-    // Hard wall-clock deadline for the entire attempt (including redirects).
-    // Unlike socket-idle timeouts, a peer cannot evade this by trickling bytes.
     const wallTimer = setTimeout(() => {
       request.destroy(timeoutError(target.url, options.timeoutMs));
     }, remaining);
 
-    // Keep an idle timeout as a second bound for stalled sockets. The hard
-    // wall timer above is still authoritative for total attempt duration.
     request.setTimeout(Math.min(options.timeoutMs, remaining), () => {
       request.destroy(timeoutError(target.url, options.timeoutMs));
     });
@@ -336,6 +359,7 @@ async function requestOnce(
         finishReject(new ApexifyRemoteFetchError("Remote media request failed.", { requestUrl: redactUrl(target.url), cause }));
       }
     });
+    if (body) request.write(body);
     request.end();
   });
 }
@@ -358,7 +382,8 @@ export async function fetchRemoteMedia(source: string, options: RemoteFetchOptio
   const config = getDefaultApexifyRuntimeConfig();
   const maxBytes = options.maxBytes ?? defaultMaxBytes(options.kind);
   const timeoutMs = options.timeoutMs ?? config.network.timeoutMs;
-  const attempts = Math.max(1, Math.floor(options.attempts ?? config.network.retryAttempts));
+  const defaultAttempts = (options.method ?? "GET") === "GET" ? config.network.retryAttempts : 1;
+  const attempts = Math.max(1, Math.floor(options.attempts ?? defaultAttempts));
   const maxRedirects = Math.max(0, Math.floor(options.maxRedirects ?? config.network.maxRedirects));
   const release = await acquireRemoteSlot(config.limits.maxConcurrentRemoteFetches, options.signal, source);
   try {
@@ -369,8 +394,8 @@ export async function fetchRemoteMedia(source: string, options: RemoteFetchOptio
         emitDiagnostic({
           level: "debug",
           code: "REMOTE_FETCH_SUCCESS",
-          message: "Remote media fetched.",
-          details: { url: redactUrl(result.finalUrl), bytes: result.buffer.length, attempt },
+          message: "Remote request completed.",
+          details: { url: redactUrl(result.finalUrl), bytes: result.buffer.length, attempt, method: options.method ?? "GET" },
         });
         return result;
       } catch (error) {
@@ -380,8 +405,8 @@ export async function fetchRemoteMedia(source: string, options: RemoteFetchOptio
         emitDiagnostic({
           level: "debug",
           code: "REMOTE_FETCH_RETRY",
-          message: "Retrying remote media request.",
-          details: { url: redactUrl(source), attempt, delayMs },
+          message: "Retrying remote request.",
+          details: { url: redactUrl(source), attempt, delayMs, method: options.method ?? "GET" },
         });
         await sleep(delayMs, options.signal);
       }
