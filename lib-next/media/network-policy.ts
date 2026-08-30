@@ -33,6 +33,7 @@ const BLOCKED_IPV4 = [
   ipv4Range("172.16.0.0/12", "private"),
   ipv4Range("192.0.0.0/24", "protocol-assignment"),
   ipv4Range("192.0.2.0/24", "documentation"),
+  ipv4Range("192.88.99.0/24", "deprecated-6to4-relay"),
   ipv4Range("192.168.0.0/16", "private"),
   ipv4Range("198.18.0.0/15", "benchmark"),
   ipv4Range("198.51.100.0/24", "documentation"),
@@ -77,10 +78,17 @@ const BLOCKED_IPV6: Array<{ base: bigint; prefix: number; label: string }> = [
   { base: normalizeIpv6("::"), prefix: 128, label: "unspecified" },
   { base: normalizeIpv6("::1"), prefix: 128, label: "loopback" },
   { base: normalizeIpv6("::ffff:0:0"), prefix: 96, label: "ipv4-mapped" },
+  { base: normalizeIpv6("64:ff9b::"), prefix: 96, label: "well-known-nat64" },
   { base: normalizeIpv6("64:ff9b:1::"), prefix: 48, label: "local-use-translation" },
   { base: normalizeIpv6("100::"), prefix: 64, label: "discard-only" },
+  // IETF protocol-assignment space includes Teredo, benchmarking and ORCHID
+  // ranges. Treat it as non-public by default rather than maintaining a brittle
+  // allow-by-exception list of protocol-specific subranges.
+  { base: normalizeIpv6("2001::"), prefix: 23, label: "protocol-assignment" },
   { base: normalizeIpv6("2001:db8::"), prefix: 32, label: "documentation" },
-  { base: normalizeIpv6("2001:10::"), prefix: 28, label: "orchid" },
+  { base: normalizeIpv6("2002::"), prefix: 16, label: "6to4" },
+  { base: normalizeIpv6("3fff::"), prefix: 20, label: "documentation" },
+  { base: normalizeIpv6("5f00::"), prefix: 16, label: "reserved-segment-routing" },
   { base: normalizeIpv6("fc00::"), prefix: 7, label: "unique-local" },
   { base: normalizeIpv6("fe80::"), prefix: 10, label: "link-local" },
   { base: normalizeIpv6("ff00::"), prefix: 8, label: "multicast" },
