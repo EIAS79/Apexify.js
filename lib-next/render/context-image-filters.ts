@@ -1,6 +1,7 @@
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import type { ImageFilter } from "../types";
 import sharp from "sharp";
+import type { Sharp } from "sharp";
 import { Jimp } from 'jimp';
 
 /**
@@ -163,14 +164,14 @@ export async function applyContextImageFilters(
   }
 }
 
-async function applyGaussianBlurSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
+async function applyGaussianBlurSharp(image: Sharp, intensity: number): Promise<Sharp> {
   // Intensity: blur radius in pixels (0-100+)
   // Sharp's blur accepts sigma value, we use intensity directly
   const sigma = Math.max(0.3, Math.min(1000, intensity));
   return image.blur(sigma);
 }
 
-async function applyMotionBlurSharp(image: sharp.Sharp, intensity: number, angle: number): Promise<sharp.Sharp> {
+async function applyMotionBlurSharp(image: Sharp, intensity: number, angle: number): Promise<Sharp> {
   // Intensity: blur strength (0-100+)
   // Angle: direction in degrees (0-360)
   const normalizedAngle = ((angle % 360) + 360) % 360; // Normalize to 0-360
@@ -178,21 +179,21 @@ async function applyMotionBlurSharp(image: sharp.Sharp, intensity: number, angle
   return image.convolve(kernel);
 }
 
-async function applyRadialBlurSharp(image: sharp.Sharp, intensity: number, centerX: number, centerY: number): Promise<sharp.Sharp> {
+async function applyRadialBlurSharp(image: Sharp, intensity: number, centerX: number, centerY: number): Promise<Sharp> {
   // Intensity: blur strength (0-100+)
   // CenterX, CenterY: center point coordinates
   const kernel = createRadialBlurKernel(intensity, centerX, centerY);
   return image.convolve(kernel);
 }
 
-async function applySharpenSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
+async function applySharpenSharp(image: Sharp, intensity: number): Promise<Sharp> {
   // Intensity: sharpening strength (0-100+)
   // Sharp's sharpen: (sigma, flat, jagged)
   const sigma = Math.max(0.3, Math.min(1000, intensity));
   return image.sharpen(sigma, 1, 2);
 }
 
-async function applyBrightnessSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
+async function applyBrightnessSharp(image: Sharp, value: number): Promise<Sharp> {
   if (value !== undefined && value !== 0) {
     // Value is expected to be a percentage (-100 to 100)
     const brightness = Math.max(0, Math.min(2, 1 + value / 100));
@@ -201,7 +202,7 @@ async function applyBrightnessSharp(image: sharp.Sharp, value: number): Promise<
   return image;
 }
 
-async function applyContrastSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
+async function applyContrastSharp(image: Sharp, value: number): Promise<Sharp> {
   if (value !== undefined && value !== 0) {
     // Value is expected to be a percentage (-100 to 100)
     const contrast = Math.max(0, Math.min(2, 1 + value / 100));
@@ -210,7 +211,7 @@ async function applyContrastSharp(image: sharp.Sharp, value: number): Promise<sh
   return image;
 }
 
-async function applySaturationSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
+async function applySaturationSharp(image: Sharp, value: number): Promise<Sharp> {
   if (value !== undefined && value !== 0) {
     // Value is expected to be a percentage (-100 to 100)
     const saturation = Math.max(0, Math.min(2, 1 + value / 100));
@@ -219,7 +220,7 @@ async function applySaturationSharp(image: sharp.Sharp, value: number): Promise<
   return image;
 }
 
-async function applyHueShiftSharp(image: sharp.Sharp, value: number): Promise<sharp.Sharp> {
+async function applyHueShiftSharp(image: Sharp, value: number): Promise<Sharp> {
   if (value !== undefined && value !== 0) {
     // Value is expected to be degrees (0-360, can be negative for reverse rotation)
     return image.modulate({ hue: value });
@@ -227,7 +228,7 @@ async function applyHueShiftSharp(image: sharp.Sharp, value: number): Promise<sh
   return image;
 }
 
-async function applySepiaSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
+async function applySepiaSharp(image: Sharp): Promise<Sharp> {
   return image.recomb([
     [0.393, 0.769, 0.189],
     [0.349, 0.686, 0.168],
@@ -235,19 +236,19 @@ async function applySepiaSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
   ]);
 }
 
-async function applyInvertSharp(image: sharp.Sharp): Promise<sharp.Sharp> {
+async function applyInvertSharp(image: Sharp): Promise<Sharp> {
   // Invert colors using Sharp's negate
   // Ensure we preserve dimensions and alpha channel
   return image.negate({ alpha: false }).ensureAlpha();
 }
 
-async function applyPosterizeSharp(image: sharp.Sharp, _levels: number): Promise<sharp.Sharp> {
+async function applyPosterizeSharp(image: Sharp, _levels: number): Promise<Sharp> {
   // Sharp doesn't have direct posterize, use threshold approximation
   // Better implementation would use quantization
   return image.threshold(128).modulate({ saturation: 0 });
 }
 
-async function applyPixelateSharp(image: sharp.Sharp, size: number): Promise<sharp.Sharp> {
+async function applyPixelateSharp(image: Sharp, size: number): Promise<Sharp> {
   if (size > 1) {
     const { width, height } = await image.metadata();
     const scale = Math.max(1, Math.floor(Math.min(width || 1, height || 1) / size));
@@ -257,7 +258,7 @@ async function applyPixelateSharp(image: sharp.Sharp, size: number): Promise<sha
   return image;
 }
 
-async function applyNoiseSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
+async function applyNoiseSharp(image: Sharp, intensity: number): Promise<Sharp> {
   // Intensity: 0-1 (noise amount)
   // Clamp intensity to valid range
   const clampedIntensity = Math.max(0, Math.min(1, intensity));
@@ -276,7 +277,7 @@ async function applyNoiseSharp(image: sharp.Sharp, intensity: number): Promise<s
   return sharp(jimpBuffer);
 }
 
-async function applyGrainSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
+async function applyGrainSharp(image: Sharp, intensity: number): Promise<Sharp> {
   // Intensity: 0-1 (grain amount)
   // Clamp intensity to valid range
   const clampedIntensity = Math.max(0, Math.min(1, intensity));
@@ -295,13 +296,13 @@ async function applyGrainSharp(image: sharp.Sharp, intensity: number): Promise<s
   return sharp(jimpBuffer);
 }
 
-async function applyEdgeDetectionSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
+async function applyEdgeDetectionSharp(image: Sharp, intensity: number): Promise<Sharp> {
   // Intensity: edge detection strength (0-10+)
   const kernel = createSobelKernel(intensity);
   return image.convolve(kernel).grayscale();
 }
 
-async function applyEmbossSharp(image: sharp.Sharp, intensity: number): Promise<sharp.Sharp> {
+async function applyEmbossSharp(image: Sharp, intensity: number): Promise<Sharp> {
   // Intensity: emboss strength (0-10+)
   const kernel = createEmbossKernel(intensity);
   return image.convolve(kernel);

@@ -1,5 +1,6 @@
 import path from 'path';
 import sharp from 'sharp';
+import type { Sharp, ResizeOptions as SharpResizeOptions, FormatEnum } from "sharp";
 import type { cropOptions, GradientConfig, ImageFilter, ResizeOptions } from "../types";
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from "@napi-rs/canvas";
 import fs from "fs";
@@ -27,7 +28,7 @@ function decodeDataUrlImageBase64(input: string): Buffer | undefined {
  * - **`data:image/...;base64,...`** (**decoded**),
  * - otherwise **filesystem**: **`path`** (**absolute** **`/`** **`cwd`**-joined relative).
  */
-export async function sharpFromResolvableInput(imageInput: string | Buffer): Promise<sharp.Sharp> {
+export async function sharpFromResolvableInput(imageInput: string | Buffer): Promise<Sharp> {
   try {
     if (Buffer.isBuffer(imageInput)) {
       if (imageInput.length === 0) {
@@ -64,7 +65,7 @@ export async function sharpFromResolvableInput(imageInput: string | Buffer): Pro
 }
 
 /** Same resolution rules as {@link sharpFromResolvableInput}. */
-export async function loadImages(imageInput: string | Buffer): Promise<sharp.Sharp> {
+export async function loadImages(imageInput: string | Buffer): Promise<Sharp> {
   return sharpFromResolvableInput(imageInput);
 }
 
@@ -85,7 +86,7 @@ export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer>
 
     const image = await sharpFromResolvableInput(src);
 
-    const resizeOptionsForSharp: sharp.ResizeOptions = {
+    const resizeOptionsForSharp: SharpResizeOptions = {
       width: resizeOptions.size?.width || 500,
       height: resizeOptions.size?.height || 500,
       fit: resizeOptions.maintainAspectRatio ? sharp.fit.inside : sharp.fit.fill,
@@ -109,16 +110,16 @@ export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer>
 
 export async function converter(imageSource: string | Buffer, newExtension: string) {
   try {
-      const validExtensions: (keyof sharp.FormatEnum)[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw', 'pdf', 'svg'];
+      const validExtensions: (keyof FormatEnum)[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw', 'pdf', 'svg'];
 
       const newExt = newExtension.toLowerCase();
-      if (!validExtensions.includes(newExt as keyof sharp.FormatEnum)) {
+      if (!validExtensions.includes(newExt as keyof FormatEnum)) {
           throw new Error(`Invalid image format: ${newExt}`);
       }
 
       const image = await sharpFromResolvableInput(imageSource);
 
-      const convertedBuffer = await image.toFormat(newExt as keyof sharp.FormatEnum).toBuffer();
+      const convertedBuffer = await image.toFormat(newExt as keyof FormatEnum).toBuffer();
       return convertedBuffer;
   } catch (error) {
       console.error("Error changing image extension:", error);
@@ -128,7 +129,7 @@ export async function converter(imageSource: string | Buffer, newExtension: stri
 
 export async function applyColorFilters(imagePath: string, gradientOptions?: string | GradientConfig, opacity: number = 1): Promise<Buffer> {
   try {
-    let image: sharp.Sharp;
+    let image: Sharp;
 
     if (imagePath.startsWith("http")) {
       const pngBuffer = await converter(imagePath, "png");
