@@ -63,7 +63,12 @@ jobs:
           node - <<'NODE'
           const fs = require('node:fs');
           const info = JSON.parse(fs.readFileSync('phase2-prepack-node-${{ matrix.node }}.json', 'utf8'))[0];
-          const required = ['dist/esm/index.js', 'dist/cjs/index.cjs', 'dist/declarations/index.d.ts'];
+          const required = [
+            'dist/esm/index.js',
+            'dist/cjs/index.cjs',
+            'dist/declarations/index.d.ts',
+            'dist/declarations-cjs/index.d.cts',
+          ];
           const paths = new Set(info.files.map((entry) => entry.path));
           for (const file of required) {
             if (!paths.has(file)) throw new Error(`prepack output missing ${file}`);
