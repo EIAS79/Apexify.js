@@ -328,8 +328,8 @@ export class EnhancedPatternRenderer {
     if (!options.customPatternImage) return;
 
     try {
-      const imageSource = await resolveMediaInput(options.customPatternImage, { kind: "image" });
-      const image = await loadImage(imageSource);
+      const resolvedPatternInput = await resolveMediaInput(options.customPatternImage, { kind: "image" });
+      const image = await loadImage(resolvedPatternInput);
       const scale = options.scale || 1;
       const repeat = options.repeat || 'repeat';
 
