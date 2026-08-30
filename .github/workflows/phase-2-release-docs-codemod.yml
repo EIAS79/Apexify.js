@@ -1,0 +1,29 @@
+name: Temporary Phase 2 Release Docs Migration
+
+on:
+  push:
+    branches:
+      - reengineering/phase-2-runtime-package-release
+    paths:
+      - .github/workflows/phase-2-release-docs-codemod.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-2-runtime-package-release
+      - name: Apply asserted release documentation migration
+        run: node scripts/phase2-release-docs-codemod.cjs
+      - name: Commit release documentation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md CHANGELOG.md
+          git diff --cached --check
+          git commit -m "docs(release): synchronize Phase 2 runtime contract"
+          git push origin HEAD:reengineering/phase-2-runtime-package-release
