@@ -55,11 +55,7 @@ export async function extractVideoFrameBuffer(
         else args.push("-q:v", String(quality));
         args.push("-y", frameOutputPath);
 
-        await session.runFfmpeg(args, {
-          timeoutMs: 30_000,
-          maxStdoutBytes: 2 * 1024 * 1024,
-          maxStderrBytes: 10 * 1024 * 1024,
-        });
+        await session.runFfmpeg(args);
 
         const buffer = await fs.readFile(frameOutputPath);
         if (buffer.length === 0) throw new Error("Frame extraction produced an empty file.");

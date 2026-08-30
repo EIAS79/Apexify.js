@@ -76,11 +76,7 @@ export async function extractFramesAtInterval(
         else args.push("-pix_fmt", "yuvj420p", "-q:v", "2");
         args.push("-y", outputTemplate);
 
-        await session.runFfmpeg(args, {
-          timeoutMs: 60_000,
-          maxStdoutBytes: 2 * 1024 * 1024,
-          maxStderrBytes: 10 * 1024 * 1024,
-        });
+        await session.runFfmpeg(args);
 
         const frames: Array<{ source: string; isRemote: boolean }> = [];
         const actualFrameCount = endFrame - startFrame + 1;

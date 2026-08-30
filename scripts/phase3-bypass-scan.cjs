@@ -27,6 +27,12 @@ for (const file of walk(SOURCE)) {
 
   if (/\bfetch\s*\(/.test(text)) failures.push(`${rel}: unmanaged fetch()`);
 
+  if (rel.startsWith('lib-next/video/') && !['lib-next/video/ffmpeg-session.ts', 'lib-next/video/process-runner.ts'].includes(rel)) {
+    if (/\bmaxStdoutBytes\s*:|\bmaxStderrBytes\s*:|DEFAULT_PROCESS_TIMEOUT/.test(text)) {
+      failures.push(`${rel}: hard-coded FFmpeg/process bounds outside central runtime policy`);
+    }
+  }
+
   if (/resolvable-image-source/i.test(rel) || /from\s+["'][^"']*resolvable-image-source/.test(text)) {
     failures.push(`${rel}: obsolete remote image resolver`);
   }

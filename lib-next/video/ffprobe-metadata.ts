@@ -1,14 +1,16 @@
 import type { FfmpegSession } from "./ffmpeg-session";
 import type { VideoProbeMetadata } from "../types";
 import { getErrorMessage } from "../core/errors";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { resolveVideoInputToPath } from "./video-input-resolve";
 import { withTempWorkspace } from "./temp-workspace";
 
-function probeOptions(timeoutMs = 30_000) {
+function probeOptions() {
+  const ffmpeg = getDefaultApexifyRuntimeConfig().ffmpeg;
   return {
-    timeoutMs,
-    maxStdoutBytes: 10 * 1024 * 1024,
-    maxStderrBytes: 2 * 1024 * 1024,
+    timeoutMs: ffmpeg.probeTimeoutMs,
+    maxStdoutBytes: ffmpeg.maxStdoutBytes,
+    maxStderrBytes: ffmpeg.maxStderrBytes,
   } as const;
 }
 
@@ -64,7 +66,7 @@ export async function probeHasAudioStream(mediaPath: string, session: FfmpegSess
   try {
     const { stdout } = await session.runFfprobe(
       ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "csv=p=0", mediaPath],
-      probeOptions(20_000)
+      probeOptions()
     );
     return stdout.trim().length > 0;
   } catch {
@@ -76,7 +78,7 @@ export async function probeFormatDurationSeconds(mediaPath: string, session: Ffm
   try {
     const { stdout } = await session.runFfprobe(
       ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", mediaPath],
-      probeOptions(20_000)
+      probeOptions()
     );
     const value = Number.parseFloat(stdout.trim());
     return Number.isFinite(value) && value > 0 ? value : 0;
@@ -89,7 +91,7 @@ export async function probeVideoCodec(mediaPath: string, session: FfmpegSession)
   try {
     const { stdout } = await session.runFfprobe(
       ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", mediaPath],
-      probeOptions(15_000)
+      probeOptions()
     );
     return stdout.trim() || "unknown";
   } catch {
@@ -117,7 +119,7 @@ export async function probeImageDimensions(
   try {
     const { stdout } = await session.runFfprobe(
       ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", mediaPath],
-      probeOptions(15_000)
+      probeOptions()
     );
     const [width, height] = stdout.trim().split("x").map(Number);
     return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0

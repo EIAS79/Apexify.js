@@ -20,7 +20,6 @@ import {
 } from "./video-text-overlay-apply";
 
 const DEFAULT_AUDIO_RATE = 48_000;
-const DEFAULT_PROCESS_TIMEOUT = 300_000;
 
 function finite(value: number, name: string): number {
   if (!Number.isFinite(value)) throw new Error(`${name} must be a finite number.`);
@@ -124,14 +123,10 @@ export class VideoHelpers {
 
   private runFfmpeg(
     args: readonly string[],
-    timeoutMs = DEFAULT_PROCESS_TIMEOUT,
     onProgress?: (progress: { percent: number; time: number; speed: number }) => void,
     cwd?: string
   ) {
     return this.session.runFfmpeg(args, {
-      timeoutMs,
-      maxStdoutBytes: 10 * 1024 * 1024,
-      maxStderrBytes: 30 * 1024 * 1024,
       cwd,
       onStderr: createFfmpegProgressParser(onProgress),
     });
@@ -363,16 +358,16 @@ export class VideoHelpers {
       const mode = options.mode ?? "sequential";
       if (mode === "sequential") {
         const concatFile = await writeSafeConcatList(workspace, paths);
-        await this.runFfmpeg(["-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-y", options.outputPath], 600_000);
+        await this.runFfmpeg(["-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-y", options.outputPath]);
       } else if (mode === "side-by-side") {
         const a = paths[0];
         const b = paths[1] ?? paths[0];
-        await this.runFfmpeg(["-i", a, "-i", b, "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]", "-map", "[v]", "-y", options.outputPath], 600_000);
+        await this.runFfmpeg(["-i", a, "-i", b, "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]", "-map", "[v]", "-y", options.outputPath]);
       } else if (mode === "grid") {
         // Phase 8 owns generalized grid semantics; Phase 1 preserves the existing two-input behavior securely.
         const a = paths[0];
         const b = paths[1] ?? paths[0];
-        await this.runFfmpeg(["-i", a, "-i", b, "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]", "-map", "[v]", "-y", options.outputPath], 600_000);
+        await this.runFfmpeg(["-i", a, "-i", b, "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]", "-map", "[v]", "-y", options.outputPath]);
       } else {
         throw new Error(`Unknown merge mode: ${String(mode)}`);
       }
@@ -434,7 +429,7 @@ export class VideoHelpers {
       }
 
       const concatFile = await writeSafeConcatList(workspace, parts, "replace-concat.txt");
-      await this.runFfmpeg(["-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-y", options.outputPath], 600_000);
+      await this.runFfmpeg(["-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-y", options.outputPath]);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -490,7 +485,7 @@ export class VideoHelpers {
         args.push(...(presets[options.quality ?? "medium"] || presets.medium));
       }
       args.push("-y", options.outputPath);
-      await this.runFfmpeg(args, 600_000);
+      await this.runFfmpeg(args);
       let compressedSize = 0;
       try { compressedSize = (await fs.stat(options.outputPath)).size; } catch { /* output validation handled by FFmpeg exit */ }
       return { outputPath: options.outputPath, success: true, originalSize, compressedSize };
@@ -581,7 +576,7 @@ export class VideoHelpers {
       await this.runFfmpeg([
         "-framerate", String(fps), "-i", pattern, "-vf", filter,
         ...qualityArgs(options.quality, options.bitrate), "-pix_fmt", "yuv420p", "-y", options.outputPath,
-      ], 600_000);
+      ]);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -614,7 +609,7 @@ export class VideoHelpers {
       const args = ["-i", videoPath, "-vf", "reverse"];
       if (hasAudio) args.push("-af", "areverse");
       args.push("-y", options.outputPath);
-      await this.runFfmpeg(args, 600_000);
+      await this.runFfmpeg(args);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -674,8 +669,8 @@ export class VideoHelpers {
     return this.withWorkspace("apexify-stabilize-", async (workspace) => {
       const videoPath = (await resolveVideoInputToPath(videoSource, workspace, "input")).videoPath;
       try {
-        await this.runFfmpeg(["-i", videoPath, "-vf", "vidstabdetect=shakiness=5:accuracy=15:result=transforms.trf", "-f", "null", "-"], 600_000, undefined, workspace.directory);
-        await this.runFfmpeg(["-i", videoPath, "-vf", `vidstabtransform=smoothing=${smoothing}:input=transforms.trf`, "-y", options.outputPath], 600_000, undefined, workspace.directory);
+        await this.runFfmpeg(["-i", videoPath, "-vf", "vidstabdetect=shakiness=5:accuracy=15:result=transforms.trf", "-f", "null", "-"], undefined, workspace.directory);
+        await this.runFfmpeg(["-i", videoPath, "-vf", `vidstabtransform=smoothing=${smoothing}:input=transforms.trf`, "-y", options.outputPath], undefined, workspace.directory);
       } catch {
         await this.runFfmpeg(["-i", videoPath, "-vf", "hqdn3d=4:3:6:4.5", "-y", options.outputPath]);
       }
@@ -752,7 +747,7 @@ export class VideoHelpers {
       else if (layout === "grid" && paths.length >= 4) filter = "[0:v][1:v]hstack=inputs=2[top];[2:v][3:v]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2[v]";
       else throw new Error(`Invalid layout or insufficient videos for ${layout}`);
       args.push("-filter_complex", filter, "-map", "[v]", "-y", options.outputPath);
-      await this.runFfmpeg(args, 600_000);
+      await this.runFfmpeg(args);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -849,7 +844,7 @@ export class VideoHelpers {
         "-filter_complex", filter, "-map", "0:v", "-map", "[outa]",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", String(videoDuration), "-y", options.outputPath
       );
-      await this.runFfmpeg(args, 600_000);
+      await this.runFfmpeg(args);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -901,7 +896,7 @@ export class VideoHelpers {
       const info = await this.deps.getVideoInfo(videoPath, true);
       if (!info || freezeTime > info.duration) throw new Error("Freeze time is outside video duration.");
       const frame = workspace.path("freeze.png");
-      await this.runFfmpeg(["-i", videoPath, "-ss", String(freezeTime), "-frames:v", "1", "-y", frame], 30_000);
+      await this.runFfmpeg(["-i", videoPath, "-ss", String(freezeTime), "-frames:v", "1", "-y", frame]);
       const parts: string[] = [];
       if (freezeTime > 0) {
         const p = workspace.path("before.mp4");
@@ -917,7 +912,7 @@ export class VideoHelpers {
         parts.push(p);
       }
       const concat = await writeSafeConcatList(workspace, parts, "freeze-concat.txt");
-      await this.runFfmpeg(["-f", "concat", "-safe", "0", "-i", concat, "-c", "copy", "-y", options.outputPath], 600_000, onProgress);
+      await this.runFfmpeg(["-f", "concat", "-safe", "0", "-i", concat, "-c", "copy", "-y", options.outputPath], onProgress);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -961,7 +956,7 @@ export class VideoHelpers {
     const filter = method === "lufs" ? `loudnorm=I=${target}:TP=-1.5:LRA=11` : `volume=${target}dB`;
     return this.withWorkspace("apexify-normalize-", async (workspace) => {
       const videoPath = (await resolveVideoInputToPath(videoSource, workspace, "input")).videoPath;
-      await this.runFfmpeg(["-i", videoPath, "-af", filter, "-c:v", "copy", "-y", options.outputPath], DEFAULT_PROCESS_TIMEOUT, onProgress);
+      await this.runFfmpeg(["-i", videoPath, "-af", filter, "-c:v", "copy", "-y", options.outputPath], onProgress);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -979,7 +974,6 @@ export class VideoHelpers {
       // Use a generated relative filename and cwd so no user-controlled path enters filter syntax.
       await this.runFfmpeg(
         ["-i", videoPath, "-vf", "lut3d=filename=lut.cube,format=yuv420p", "-c:v", "libx264", "-crf", "18", "-y", options.outputPath],
-        600_000,
         onProgress,
         workspace.directory
       );
@@ -999,7 +993,7 @@ export class VideoHelpers {
       if (!firstInfo) throw new Error("Failed to get first video information.");
       if (options.type === "fade" && !options.secondVideo) {
         const fade = options.direction === "out" ? "fade=t=out" : "fade=t=in";
-        await this.runFfmpeg(["-i", first, "-vf", `${fade}:st=0:d=${duration}`, "-c:a", "copy", "-y", options.outputPath], DEFAULT_PROCESS_TIMEOUT, onProgress);
+        await this.runFfmpeg(["-i", first, "-vf", `${fade}:st=0:d=${duration}`, "-c:a", "copy", "-y", options.outputPath], onProgress);
         return { outputPath: options.outputPath, success: true };
       }
       if (!options.secondVideo) throw new Error("Second video is required for this transition type.");
@@ -1025,7 +1019,7 @@ export class VideoHelpers {
       await this.runFfmpeg([
         "-i", first, "-i", second, "-filter_complex", filter, "-map", "[v]",
         "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-y", options.outputPath,
-      ], 600_000, onProgress);
+      ], onProgress);
       return { outputPath: options.outputPath, success: true };
     });
   }
@@ -1047,7 +1041,7 @@ export class VideoHelpers {
       args.push("-filter_complex", filterComplex, "-map", `[${outputLabel}]`);
       if (await probeHasAudioStream(videoPath, this.session)) args.push("-map", "0:a?", "-c:a", "copy");
       args.push("-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-y", options.outputPath);
-      await this.runFfmpeg(args, 600_000, onProgress);
+      await this.runFfmpeg(args, onProgress);
       return { outputPath: options.outputPath, success: true };
     });
   }
