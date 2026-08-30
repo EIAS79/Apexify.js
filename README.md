@@ -11,7 +11,7 @@ Create images, charts, text effects, shapes, GIFs, MP4/video, **`videoPipeline`*
 [![npm version](https://badge.fury.io/js/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![npm downloads](https://img.shields.io/npm/dt/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ready-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-16%2B-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22%2F24%2F26-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 [Documentation](https://apexifyjs.vercel.app/docs#00-start-here) ·
@@ -65,9 +65,24 @@ pnpm add apexify.js
 
 ### Requirements
 
-- Node.js 16+
+- Node.js 22.x, 24.x, or 26.x
+- npm 10+ (repository and release tooling is pinned to npm 11.19.1)
 - TypeScript recommended
 - FFmpeg required only for video features
+
+### Module formats and exports
+
+Apexify.js 6 is a genuine dual package. The installed package has separate ESM and CommonJS runtime entrypoints and matching declaration modes.
+
+```js
+// ESM
+import { ApexPainter } from "apexify.js";
+
+// CommonJS
+const { ApexPainter } = require("apexify.js");
+```
+
+The supported package-root **runtime** export is `ApexPainter`. TypeScript types are re-exported from the package root, and advanced type-only imports may use `apexify.js/types`. The `apexify.js/types` subpath is type-only and has no runtime JavaScript target.
 
 ---
 
@@ -453,7 +468,7 @@ await painter.createAudio.save(sfx, "./sfx.wav");
 - **`sequence({ events })`** — timed preset/custom events
 - **`compose({ clips })`** — overlapping timeline clips with pitch, pan, fades, quality
 - **`mix()`**, **`save()`**, **`listPresets()`**
-- Root helpers: **`synthesizePreset`**, **`synthesizeSequence`**, **`composeSynthAudio`**, …
+- Low-level synthesis helpers are internal implementation details; the supported public audio surface is **`painter.createAudio`**.
 
 ```ts
 await painter.createVideo({

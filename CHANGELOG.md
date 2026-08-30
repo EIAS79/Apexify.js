@@ -5,6 +5,25 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - Unreleased
+
+### ⚠️ Breaking
+
+- **Node.js support is now 22.x, 24.x, and 26.x.** Node 16, 18, and 20 are no longer supported. Raising the runtime floor is a breaking compatibility change, so this work is correctly staged as **6.0.0**, not a 5.4.x patch.
+- The supported package-root runtime surface is explicitly **`ApexPainter`**. Low-level synthesis helpers remain internal; audio functionality is exposed through **`painter.createAudio`**.
+
+### 📦 Runtime, package, and release correctness
+
+- Replaced nominal dual builds with explicit **native ESM** (`dist/esm/index.js`) and **CommonJS** (`dist/cjs/index.cjs`) builds and behavioral verification of both formats.
+- Added condition-aware **ESM and CommonJS declaration trees**, including a type-only **`apexify.js/types`** subpath, and clean installed-package typechecking in both module modes.
+- Added clean tarball installation fixtures that install the result of **`npm pack`** into separate ESM and CommonJS consumer projects.
+- Added a tracked **`package-lock.json`**, pinned repository npm tooling to **11.19.1**, and moved CI to reproducible **`npm ci`** installs on Node 22/24/26.
+- Hardened **`prepack`** and **`prepublishOnly`** so publish-time lifecycle checks rebuild from source, run security regressions, verify exports, and validate the packed artifact.
+- Added the repository **MIT LICENSE** to the package and restricted package contents to the intended distribution surface.
+- Removed obsolete release/build configuration, stale dependency overrides, and obsolete Node-version CI workflows.
+- Replaced legacy **`gifencoder` / `canvas`** dependency plumbing with **`@skyra/gifenc`** for compatibility with the supported modern Node matrix.
+- Migrated Sharp integration and types to **Sharp 0.35.4** semantics.
+
 ## [5.4.5] - 2026-05-13
 
 ### ✨ Added
@@ -20,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`painter.createAudio.save(wav, path)`** — write WAV to disk.
 - **`painter.createAudio.listPresets()`** / **`presetNames`** — preset metadata.
 - Types under **`lib-next/types/audio-synth.ts`**; re-exported from package **`types`** and root.
-- Root exports: **`synthesizeSound`**, **`synthesizePreset`**, **`synthesizeSequence`**, **`mixSynthSounds`**, **`composeSynthAudio`**, **`SYNTH_PRESET_NAMES`**, **`listPresets`**.
+- Internal synthesis helpers include **`synthesizeSound`**, **`synthesizePreset`**, **`synthesizeSequence`**, **`mixSynthSounds`**, **`composeSynthAudio`**, **`SYNTH_PRESET_NAMES`**, and **`listPresets`**; these are not supported package-root runtime exports.
 
 ##### Video pipeline — `videoPipeline()` (layer stack)
 
