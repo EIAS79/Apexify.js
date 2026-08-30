@@ -1,0 +1,147 @@
+name: Phase 0 Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - reengineering/phase-0-baseline
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: Baseline / Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [16, 18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Runtime snapshot
+        run: |
+          node --version
+          npm --version
+          ffmpeg -version | head -n 1 || true
+          ffprobe -version | head -n 1 || true
+
+      - name: Install current dependency graph
+        id: install
+        continue-on-error: true
+        run: npm install
+
+      - name: Direct dependency snapshot
+        if: always()
+        continue-on-error: true
+        run: npm ls --depth=0 --json > dependency-tree-node-${{ matrix.node }}.json
+
+      - name: Build current package
+        id: build
+        if: always()
+        continue-on-error: true
+        run: npm run build
+
+      - name: Remote image smoke test
+        id: remote_image
+        if: always()
+        continue-on-error: true
+        run: npm run test:remote-image
+
+      - name: Audio synth smoke test
+        id: audio
+        if: always()
+        continue-on-error: true
+        run: npx ts-node tests/audio-synth-smoke.ts
+
+      - name: CommonJS import smoke
+        id: cjs
+        if: always()
+        continue-on-error: true
+        run: node -e "const p=require('./dist/cjs/index.js'); if(typeof p.ApexPainter!=='function') process.exit(1)"
+
+      - name: Nominal ESM import smoke
+        id: esm
+        if: always()
+        continue-on-error: true
+        run: node --input-type=module -e "const p=await import('./dist/esm/index.js'); if(typeof p.ApexPainter!=='function') process.exit(1)"
+
+      - name: Inspect emitted ESM syntax
+        if: always()
+        continue-on-error: true
+        run: |
+          echo '--- dist/esm/index.js ---'
+          sed -n '1,40p' dist/esm/index.js || true
+
+      - name: npm pack dry run
+        id: pack
+        if: always()
+        continue-on-error: true
+        run: npm pack --dry-run --json > npm-pack-node-${{ matrix.node }}.json
+
+      - name: npm registry snapshot
+        if: always() && matrix.node == 22
+        continue-on-error: true
+        run: npm view apexify.js version dist.integrity dist.tarball engines --json > npm-registry-current.json
+
+      - name: Baseline status summary
+        if: always()
+        run: |
+          cat > baseline-status-node-${{ matrix.node }}.json <<EOF
+          {
+            "node": "${{ matrix.node }}",
+            "install": "${{ steps.install.outcome }}",
+            "build": "${{ steps.build.outcome }}",
+            "remoteImageSmoke": "${{ steps.remote_image.outcome }}",
+            "audioSmoke": "${{ steps.audio.outcome }}",
+            "cjsImport": "${{ steps.cjs.outcome }}",
+            "nominalEsmImport": "${{ steps.esm.outcome }}",
+            "packDryRun": "${{ steps.pack.outcome }}"
+          }
+          EOF
+          cat baseline-status-node-${{ matrix.node }}.json
+
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-node-${{ matrix.node }}
+          path: |
+            baseline-status-node-${{ matrix.node }}.json
+            dependency-tree-node-${{ matrix.node }}.json
+            npm-pack-node-${{ matrix.node }}.json
+            npm-registry-current.json
+          if-no-files-found: ignore
+
+  benchmark:
+    name: Baseline benchmarks / Node 22
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install current dependency graph
+        run: npm install
+      - name: Build current package
+        run: npm run build
+      - name: Run representative baseline benchmarks
+        id: benchmark
+        continue-on-error: true
+        run: node --expose-gc benchmarks/phase0-baseline.cjs
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-benchmarks
+          path: artifacts/phase0-baseline.json
+          if-no-files-found: warn
+      - name: Preserve benchmark outcome
+        if: always()
+        run: echo "benchmark outcome=${{ steps.benchmark.outcome }}"
