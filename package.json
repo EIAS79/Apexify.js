@@ -50,7 +50,7 @@
     "build:types": "tsc -p tsconfig.types.json && node scripts/process-declarations.cjs",
     "build": "npm run clean && npm run typecheck && npm run build:js && npm run build:types && node scripts/verify-dist.cjs",
     "test:security": "node scripts/phase1-security-scan.cjs && node scripts/build-security-fixture.mjs && node tests/security-phase1.cjs",
-    "test:phase3": "node scripts/phase3-bypass-scan.cjs && node tests/phase3-runtime.cjs",
+    "test:phase3": "node scripts/phase3-bypass-scan.cjs && node scripts/build-phase3-fixture.mjs && node tests/phase3-runtime.cjs",
     "test": "npm run test:security && npm run test:phase3",
     "verify:package": "npm run build && node scripts/verify-packed-package.cjs",
     "verify:release": "npm run build && npm test && node scripts/verify-packed-package.cjs",
