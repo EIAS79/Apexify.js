@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import type { Sharp } from "sharp";
 import path from 'path';
 import type { CompressionOptions, PaletteOptions } from "../types";
 
@@ -20,7 +21,7 @@ export async function compressImage(
     progressive = false
   } = options;
 
-  let sharpImage: sharp.Sharp;
+  let sharpImage: Sharp;
 
   if (Buffer.isBuffer(image)) {
     sharpImage = sharp(image);
@@ -79,7 +80,7 @@ export async function extractPalette(
     format = 'hex'
   } = options;
 
-  let sharpImage: sharp.Sharp;
+  let sharpImage: Sharp;
 
   if (Buffer.isBuffer(image)) {
     sharpImage = sharp(image);
@@ -300,4 +301,3 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
     l: Math.round(l * 100)
   };
 }
-
