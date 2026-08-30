@@ -38,6 +38,25 @@ for (const file of walk(SOURCE)) {
   if (/\b(?:imageCache|remoteByteCache|sourceCache)\s*=\s*new Map\b/.test(text)) {
     failures.push(`${rel}: unmanaged cache Map`);
   }
+
+  // Canvas loadImage accepts paths/URLs directly, so passing a caller-shaped
+  // source identifier to it is a media-policy bypass even when no fetch/axios
+  // token is present. Buffer-decoding uses (frameBuffer, png, frames[i], etc.)
+  // remain allowed.
+  if (/\bloadImage\s*\(\s*(?:frame\.(?:source|background)|frame\.pattern\.source|maskSource|textureSource|imageSource|imagePath|src|source|url)\b/.test(text)) {
+    failures.push(`${rel}: direct caller media source passed to canvas loadImage()`);
+  }
+  if (/\bloadImage\s*\(\s*["']https?:\/\//i.test(text)) {
+    failures.push(`${rel}: direct remote URL passed to canvas loadImage()`);
+  }
+  if (/\bloadImage\b/.test(text) && /\.startsWith\(\s*["']https?/i.test(text) && !/resolveMedia(?:Buffer|Input)/.test(text)) {
+    failures.push(`${rel}: ad-hoc remote canvas source resolver`);
+  }
+}
+
+const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+if (manifest.dependencies?.axios || manifest.devDependencies?.axios || manifest.optionalDependencies?.axios) {
+  failures.push('package.json: obsolete direct axios dependency');
 }
 
 if (failures.length) {
