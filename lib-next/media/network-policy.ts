@@ -123,9 +123,9 @@ export function classifyIpAddress(address: string): IpClassification {
 export function redactUrl(value: string | URL): string {
   try {
     const url = value instanceof URL ? new URL(value.toString()) : new URL(value);
-    if (url.username) url.username = "[redacted]";
-    if (url.password) url.password = "[redacted]";
-    if (url.search) url.search = "?[redacted]";
+    url.username = "";
+    url.password = "";
+    url.search = "";
     url.hash = "";
     return url.toString();
   } catch {
