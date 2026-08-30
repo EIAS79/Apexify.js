@@ -1,10 +1,26 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas, loadImage, type Canvas, type SKRSContext2D } from "@napi-rs/canvas";
 import sharp from "sharp";
 import type { GradientConfig, ImageFilter } from "../types";
 import { getCanvasContext } from "./errors";
 import { resolveMediaBuffer, resolveMediaInput } from "../media/source";
 import { fetchRemoteMedia } from "../media/remote-fetch";
+import { applyContextImageFilters } from "../render/context-image-filters";
 import { ApexifyDecodeError, ApexifyExternalServiceError, ApexifyInputError } from "../runtime/errors";
+
+type LegacyImageFilter = {
+  type: "flip" | "rotate" | "brightness" | "contrast" | "invert" | "greyscale" | "sepia" | "blur" | "posterize" | "pixelate";
+  horizontal?: boolean;
+  vertical?: boolean;
+  deg?: number;
+  value?: number;
+  radius?: number;
+  levels?: number;
+  size?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+};
 
 /** Apply a solid color or gradient overlay to a resolved image source. */
 export async function applyColorFilters(
@@ -75,69 +91,271 @@ function createGradientOverlay(width: number, height: number, options: GradientC
   return canvas.toBuffer("image/png");
 }
 
-/** Apply supported raster effects through Sharp after central source resolution. */
-export async function imgEffects(imagePath: string, filters: ImageFilter[]): Promise<Buffer> {
+/**
+ * Apply image effects after resolving the source through the central media boundary.
+ *
+ * The legacy imperative effect names retain their historical pixel semantics while
+ * the typed ImageFilter surface is delegated to the shared context-filter pipeline.
+ */
+export async function imgEffects(
+  imagePath: string,
+  filters: Array<ImageFilter | LegacyImageFilter>
+): Promise<Buffer> {
   if (!Array.isArray(filters) || filters.length === 0) {
     throw new ApexifyInputError("imgEffects: at least one filter is required.");
   }
   try {
-    let image = sharp(await resolveMediaInput(imagePath, { kind: "image" })).ensureAlpha();
-    for (const filter of filters) {
+    const image = await loadImage(await resolveMediaBuffer(imagePath, { kind: "image" }));
+    const canvas = createCanvas(image.width, image.height);
+    const ctx = getCanvasContext(canvas);
+    ctx.drawImage(image, 0, 0);
+
+    for (const rawFilter of filters) {
+      const filter = rawFilter as ImageFilter | LegacyImageFilter;
       switch (filter.type) {
+        case "flip":
+          flipCanvas(ctx, image.width, image.height, filter.horizontal, filter.vertical);
+          break;
+        case "rotate":
+          rotateCanvas(ctx, canvas, filter.deg ?? 0);
+          break;
         case "brightness":
-          image = image.modulate({ brightness: Math.max(0, Math.min(2, 1 + (filter.value ?? 0) / 100)) });
+          adjustBrightness(ctx, filter.value ?? 0);
           break;
-        case "contrast": {
-          const contrast = Math.max(0, Math.min(2, 1 + (filter.value ?? 0) / 100));
-          image = image.linear(contrast, -(128 * contrast) + 128);
-          break;
-        }
-        case "saturation":
-          image = image.modulate({ saturation: Math.max(0, Math.min(2, 1 + (filter.value ?? 0) / 100)) });
-          break;
-        case "hueShift":
-          image = image.modulate({ hue: filter.value ?? 0 });
-          break;
-        case "grayscale":
-          image = image.grayscale();
-          break;
-        case "sepia":
-          image = image.recomb([
-            [0.393, 0.769, 0.189],
-            [0.349, 0.686, 0.168],
-            [0.272, 0.534, 0.131],
-          ]);
+        case "contrast":
+          adjustContrast(ctx, filter.value ?? 0);
           break;
         case "invert":
-          image = image.negate({ alpha: false });
+          invertColors(ctx);
           break;
-        case "gaussianBlur":
-          if ((filter.intensity ?? 0) > 0) image = image.blur(Math.max(0.3, Math.min(1000, filter.intensity ?? 0.3)));
+        case "greyscale":
+          grayscale(ctx);
           break;
-        case "sharpen":
-          if ((filter.intensity ?? 0) > 0) image = image.sharpen({ sigma: Math.max(0.000001, Math.min(10, filter.intensity ?? 1)) });
+        case "sepia":
+          applySepia(ctx);
+          break;
+        case "blur":
+          applyBlur(ctx, filter.radius ?? 0);
           break;
         case "posterize":
-          image = image.threshold(128).modulate({ saturation: 0 });
+          posterize(ctx, filter.levels ?? 4);
           break;
         case "pixelate": {
-          const metadata = await image.metadata();
-          const width = metadata.width ?? 1;
-          const height = metadata.height ?? 1;
-          const size = Math.max(2, filter.size ?? 10);
-          const scale = Math.max(1, Math.floor(Math.min(width, height) / size));
-          image = image.resize(scale, scale, { kernel: sharp.kernel.nearest }).resize(width, height, { kernel: sharp.kernel.nearest });
+          const legacy = filter as LegacyImageFilter;
+          pixelate(
+            ctx,
+            filter.size ?? 10,
+            legacy.x ?? 0,
+            legacy.y ?? 0,
+            legacy.w ?? image.width,
+            legacy.h ?? image.height
+          );
           break;
         }
+        case "grayscale":
+        case "gaussianBlur":
+        case "motionBlur":
+        case "radialBlur":
+        case "sharpen":
+        case "noise":
+        case "grain":
+        case "edgeDetection":
+        case "emboss":
+        case "saturation":
+        case "hueShift":
+          await applyContextImageFilters(ctx, [filter as ImageFilter], image.width, image.height);
+          break;
         default:
           throw new ApexifyInputError(`imgEffects: unsupported filter type ${String((filter as { type: string }).type)}.`);
       }
     }
-    return image.png().toBuffer();
+    return canvas.toBuffer("image/png");
   } catch (cause) {
     if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
     throw new ApexifyDecodeError("imgEffects failed.", { cause });
   }
+}
+
+function flipCanvas(ctx: SKRSContext2D, width: number, height: number, horizontal = false, vertical = false): void {
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const pixels = imageData.data;
+  const newData = new Uint8ClampedArray(pixels.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const srcIndex = (y * width + x) * 4;
+      const destX = horizontal ? width - x - 1 : x;
+      const destY = vertical ? height - y - 1 : y;
+      const destIndex = (destY * width + destX) * 4;
+      newData[destIndex] = pixels[srcIndex];
+      newData[destIndex + 1] = pixels[srcIndex + 1];
+      newData[destIndex + 2] = pixels[srcIndex + 2];
+      newData[destIndex + 3] = pixels[srcIndex + 3];
+    }
+  }
+  const next = ctx.createImageData(width, height);
+  next.data.set(newData);
+  ctx.putImageData(next, 0, 0);
+}
+
+function rotateCanvas(ctx: SKRSContext2D, canvas: Canvas, degrees: number): void {
+  const radians = (degrees * Math.PI) / 180;
+  const rotated = createCanvas(canvas.width, canvas.height);
+  const rotatedCtx = getCanvasContext(rotated);
+  rotatedCtx.translate(canvas.width / 2, canvas.height / 2);
+  rotatedCtx.rotate(radians);
+  rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(rotated, 0, 0);
+}
+
+function adjustBrightness(ctx: SKRSContext2D, value: number): void {
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] += 255 * value;
+    pixels[i + 1] += 255 * value;
+    pixels[i + 2] += 255 * value;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function adjustContrast(ctx: SKRSContext2D, value: number): void {
+  const factor = (259 * (value + 255)) / (255 * (259 - value));
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] = factor * (pixels[i] - 128) + 128;
+    pixels[i + 1] = factor * (pixels[i + 1] - 128) + 128;
+    pixels[i + 2] = factor * (pixels[i + 2] - 128) + 128;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function invertColors(ctx: SKRSContext2D): void {
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] = 255 - pixels[i];
+    pixels[i + 1] = 255 - pixels[i + 1];
+    pixels[i + 2] = 255 - pixels[i + 2];
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function grayscale(ctx: SKRSContext2D): void {
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+    pixels[i] = avg;
+    pixels[i + 1] = avg;
+    pixels[i + 2] = avg;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function applySepia(ctx: SKRSContext2D): void {
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+    pixels[i] = r * 0.393 + g * 0.769 + b * 0.189;
+    pixels[i + 1] = r * 0.349 + g * 0.686 + b * 0.168;
+    pixels[i + 2] = r * 0.272 + g * 0.534 + b * 0.131;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function applyBlur(ctx: SKRSContext2D, radius: number): void {
+  if (radius <= 0) return;
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  const blurSize = Math.floor(radius);
+  for (let y = blurSize; y < height - blurSize; y++) {
+    for (let x = blurSize; x < width - blurSize; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let count = 0;
+      for (let dy = -blurSize; dy <= blurSize; dy++) {
+        for (let dx = -blurSize; dx <= blurSize; dx++) {
+          const index = ((y + dy) * width + (x + dx)) * 4;
+          r += pixels[index];
+          g += pixels[index + 1];
+          b += pixels[index + 2];
+          count += 1;
+        }
+      }
+      const index = (y * width + x) * 4;
+      pixels[index] = r / count;
+      pixels[index + 1] = g / count;
+      pixels[index + 2] = b / count;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function posterize(ctx: SKRSContext2D, levels: number): void {
+  if (levels < 2 || levels > 255) return;
+  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const pixels = imageData.data;
+  const factor = 255 / (levels - 1);
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] = Math.round(pixels[i] / factor) * factor;
+    pixels[i + 1] = Math.round(pixels[i + 1] / factor) * factor;
+    pixels[i + 2] = Math.round(pixels[i + 2] / factor) * factor;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function pixelate(
+  ctx: SKRSContext2D,
+  size: number,
+  startX = 0,
+  startY = 0,
+  width = ctx.canvas.width,
+  height = ctx.canvas.height
+): void {
+  if (size < 1) return;
+  const imageData = ctx.getImageData(startX, startY, width, height);
+  const pixels = imageData.data;
+  for (let y = 0; y < height; y += size) {
+    for (let x = 0; x < width; x += size) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let count = 0;
+      for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+          if (x + dx < width && y + dy < height) {
+            const index = ((y + dy) * width + (x + dx)) * 4;
+            r += pixels[index];
+            g += pixels[index + 1];
+            b += pixels[index + 2];
+            count += 1;
+          }
+        }
+      }
+      r = Math.floor(r / count);
+      g = Math.floor(g / count);
+      b = Math.floor(b / count);
+      for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+          if (x + dx < width && y + dy < height) {
+            const index = ((y + dy) * width + (x + dx)) * 4;
+            pixels[index] = r;
+            pixels[index + 1] = g;
+            pixels[index + 2] = b;
+          }
+        }
+      }
+    }
+  }
+  ctx.putImageData(imageData, startX, startY);
 }
 
 /** Return exact visible colors and their frequency, retaining historical response shape. */
