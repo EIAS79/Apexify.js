@@ -1,66 +1,18 @@
-import path from 'path';
 import sharp from 'sharp';
 import type { Sharp, ResizeOptions as SharpResizeOptions } from "sharp";
 import type { cropOptions, GradientConfig, ImageFilter, ResizeOptions } from "../types";
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from "@napi-rs/canvas";
-import fs from "fs";
-import axios from "axios";
 import { getErrorMessage, getCanvasContext } from "./errors";
+import { resolveMediaBuffer, resolveMediaInput } from "../media/source";
+import { ApexifyDecodeError, ApexifyExternalServiceError, ApexifyInputError } from "../runtime/errors";
 
-function decodeDataUrlImageBase64(input: string): Buffer | undefined {
-  const trimmed = input.trim();
-  if (!/^data:image\//i.test(trimmed)) return undefined;
-  const marker = ";base64,";
-  const idx = trimmed.toLowerCase().indexOf(marker);
-  if (idx === -1) return undefined;
-  const payload = trimmed.slice(idx + marker.length).replace(/\s/g, "");
-  try {
-    return Buffer.from(payload, "base64");
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Builds a Sharp instance from:
- * - raw **`Buffer`** bytes,
- * - **`http(s):`** URL (**fetched**),
- * - **`data:image/...;base64,...`** (**decoded**),
- * - otherwise **filesystem**: **`path`** (**absolute** **`/`** **`cwd`**-joined relative).
- */
+/** Builds a Sharp instance from Buffer, HTTP(S), data:image, or local filesystem input. */
 export async function sharpFromResolvableInput(imageInput: string | Buffer): Promise<Sharp> {
   try {
-    if (Buffer.isBuffer(imageInput)) {
-      if (imageInput.length === 0) {
-        throw new Error("Image buffer is empty.");
-      }
-      return sharp(imageInput);
-    }
-
-    const s = imageInput.trim();
-    if (!s) {
-      throw new Error("Image path or URL is required.");
-    }
-
-    if (s.startsWith("http://") || s.startsWith("https://")) {
-      const response = await fetch(s);
-      if (!response.ok) {
-        throw new Error("Failed to fetch image.");
-      }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return sharp(buffer);
-    }
-
-    const dataBuf = decodeDataUrlImageBase64(s);
-    if (dataBuf && dataBuf.length > 0) {
-      return sharp(dataBuf);
-    }
-
-    const absolutePath = path.isAbsolute(s) ? s : path.join(process.cwd(), s);
-    return sharp(absolutePath);
-  } catch (error) {
-    console.error("Error resolving image input:", error);
-    throw new Error("Failed to load image");
+    return sharp(await resolveMediaInput(imageInput, { kind: "image" }));
+  } catch (cause) {
+    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    throw new ApexifyDecodeError("Failed to load image.", { cause });
   }
 }
 
@@ -69,188 +21,114 @@ export async function loadImages(imageInput: string | Buffer): Promise<Sharp> {
   return sharpFromResolvableInput(imageInput);
 }
 
-/**
- * Resizes an image using Sharp with additional options for quality, kernel, and withoutEnlargement.
- * @param resizeOptions - The options for resizing.
- * @returns A Promise that resolves with the resized image as a Buffer.
- */
 export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer> {
+  const src = resizeOptions.imagePath;
+  if (src === undefined || src === null || (typeof src === "string" && !src.trim())) {
+    throw new ApexifyInputError("Image path is required for resizing.");
+  }
+  if (Buffer.isBuffer(src) && src.length === 0) throw new ApexifyInputError("Image buffer is empty.");
   try {
-    const src = resizeOptions.imagePath;
-    if (src === undefined || src === null || (typeof src === "string" && !src.trim())) {
-      throw new Error("Image path is required for resizing.");
-    }
-    if (Buffer.isBuffer(src) && src.length === 0) {
-      throw new Error("Image buffer is empty.");
-    }
-
     const image = await sharpFromResolvableInput(src);
-
     const resizeOptionsForSharp: SharpResizeOptions = {
-      width: resizeOptions.size?.width || 500,
-      height: resizeOptions.size?.height || 500,
+      width: resizeOptions.size?.width ?? 500,
+      height: resizeOptions.size?.height ?? 500,
       fit: resizeOptions.maintainAspectRatio ? sharp.fit.inside : sharp.fit.fill,
       kernel: sharp.kernel.lanczos3,
       withoutEnlargement: true,
     };
-
-    const quality = resizeOptions.quality ?? 90;
-
-    const resizedBuffer: Buffer = await image
-      .resize(resizeOptionsForSharp)
-      .png({ quality })
-      .toBuffer();
-
-    return resizedBuffer;
-  } catch (error) {
-    console.error("Error resizing image:", error);
-    throw new Error("Failed to resize image");
+    return image.resize(resizeOptionsForSharp).png({ quality: resizeOptions.quality ?? 90 }).toBuffer();
+  } catch (cause) {
+    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    throw new ApexifyDecodeError("Failed to resize image.", { cause });
   }
 }
 
 export async function converter(imageSource: string | Buffer, newExtension: string) {
+  type SharpOutputFormat = 'jpeg' | 'png' | 'webp' | 'tiff' | 'gif' | 'avif' | 'heif' | 'raw';
+  const validExtensions: readonly SharpOutputFormat[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw'];
+  const newExt = newExtension.toLowerCase();
+  if (!validExtensions.includes(newExt as SharpOutputFormat)) {
+    throw new ApexifyInputError(`Invalid image output format: ${newExt}`);
+  }
   try {
-      type SharpOutputFormat = 'jpeg' | 'png' | 'webp' | 'tiff' | 'gif' | 'avif' | 'heif' | 'raw';
-      const validExtensions: readonly SharpOutputFormat[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw'];
-
-      const newExt = newExtension.toLowerCase();
-      if (!validExtensions.includes(newExt as SharpOutputFormat)) {
-          throw new Error(`Invalid image output format: ${newExt}`);
-      }
-
-      const image = await sharpFromResolvableInput(imageSource);
-
-      const convertedBuffer = await image.toFormat(newExt as SharpOutputFormat).toBuffer();
-      return convertedBuffer;
-  } catch (error) {
-      console.error("Error changing image extension:", error);
-      throw new Error("Failed to change image extension");
+    return await (await sharpFromResolvableInput(imageSource)).toFormat(newExt as SharpOutputFormat).toBuffer();
+  } catch (cause) {
+    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    throw new ApexifyDecodeError("Failed to change image extension.", { cause });
   }
 }
 
 export async function applyColorFilters(imagePath: string, gradientOptions?: string | GradientConfig, opacity: number = 1): Promise<Buffer> {
+  if (typeof gradientOptions !== 'string' && !gradientOptions) {
+    throw new ApexifyInputError("applyColorFilters: gradientOptions must be a string or GradientConfig object.");
+  }
   try {
-    let image: Sharp;
-
-    if (imagePath.startsWith("http")) {
-      const pngBuffer = await converter(imagePath, "png");
-      image = sharp(pngBuffer);
-    } else {
-      const imagePathResolved = path.join(process.cwd(), imagePath);
-      image = await sharp(imagePathResolved);
-    }
-
+    const image = await sharpFromResolvableInput(imagePath);
     const metadata = await image.metadata();
-    let gradientImage: Buffer;
-
-    if (typeof gradientOptions === 'string') {
-      gradientImage = createSolidColorImage(metadata.width, metadata.height, gradientOptions, opacity);
-    } else if (gradientOptions) {
-      gradientImage = createGradientImage(metadata.width, metadata.height, gradientOptions, opacity);
-    } else {
-      throw new Error("applyColorFilters: gradientOptions must be a string or GradientConfig object.");
-    }
-
-    const outputBuffer = await image
-      .composite([{ input: gradientImage, blend: 'over' }])
-      .toBuffer();
-
-    return outputBuffer;
-  } catch (error) {
-    console.error("Error applying color filter:", error);
-    throw new Error("Failed to apply color filter");
+    const gradientImage = typeof gradientOptions === 'string'
+      ? createSolidColorImage(metadata.width, metadata.height, gradientOptions, opacity)
+      : createGradientImage(metadata.width, metadata.height, gradientOptions, opacity);
+    return image.composite([{ input: gradientImage, blend: 'over' }]).toBuffer();
+  } catch (cause) {
+    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    throw new ApexifyDecodeError("Failed to apply color filter.", { cause });
   }
 }
 
 function createSolidColorImage(width: number | undefined, height: number | undefined, color: string, opacity: number): Buffer {
-  if (!width || !height) {
-    throw new Error("createSolidColorImage: width and height are required.");
-  }
+  if (!width || !height) throw new ApexifyDecodeError("createSolidColorImage: width and height are required.");
   const solidColorCanvas = createCanvas(width, height);
   const ctx = getCanvasContext(solidColorCanvas);
-
   ctx.globalAlpha = opacity;
-
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, width, height);
-
   return solidColorCanvas.toBuffer('image/png');
 }
 
 function createGradientImage(width: number | undefined, height: number | undefined, options: GradientConfig, opacity: number): Buffer {
-  if (!width || !height) {
-    throw new Error("createGradientImage: width and height are required.");
-  }
+  if (!width || !height) throw new ApexifyDecodeError("createGradientImage: width and height are required.");
   const { type, colors, repeat = 'no-repeat' } = options;
-
   const gradientCanvas = createCanvas(width, height);
   const ctx = getCanvasContext(gradientCanvas);
-
   let gradient: CanvasGradient | CanvasPattern;
 
   if (type === 'linear') {
     const grad = ctx.createLinearGradient(
-      options.startX || 0,
-      options.startY || 0,
-      options.endX || width,
-      options.endY || height
+      options.startX ?? 0,
+      options.startY ?? 0,
+      options.endX ?? width,
+      options.endY ?? height
     );
-
-    colors.forEach(({ stop, color }: { stop: number; color: string }) => {
-      grad.addColorStop(stop, color);
-    });
-
-    if (repeat !== 'no-repeat') {
-      gradient = createRepeatingGradientPattern(ctx, grad, repeat, width, height);
-    } else {
-      gradient = grad;
-    }
+    colors.forEach(({ stop, color }: { stop: number; color: string }) => grad.addColorStop(stop, color));
+    gradient = repeat !== 'no-repeat' ? createRepeatingGradientPattern(ctx, grad, repeat, width, height) : grad;
   } else if (type === 'radial') {
     const grad = ctx.createRadialGradient(
-      options.startX || width / 2,
-      options.startY || height / 2,
-      options.startRadius || 0,
-      options.endX || width / 2,
-      options.endY || height / 2,
-      options.endRadius || Math.max(width, height)
+      options.startX ?? width / 2,
+      options.startY ?? height / 2,
+      options.startRadius ?? 0,
+      options.endX ?? width / 2,
+      options.endY ?? height / 2,
+      options.endRadius ?? Math.max(width, height)
     );
-
-    colors.forEach(({ stop, color }: { stop: number; color: string }) => {
-      grad.addColorStop(stop, color);
-    });
-
-    if (repeat !== 'no-repeat') {
-      gradient = createRepeatingGradientPattern(ctx, grad, repeat, width, height);
-    } else {
-      gradient = grad;
-    }
+    colors.forEach(({ stop, color }: { stop: number; color: string }) => grad.addColorStop(stop, color));
+    gradient = repeat !== 'no-repeat' ? createRepeatingGradientPattern(ctx, grad, repeat, width, height) : grad;
   } else if (type === 'conic') {
     const centerX = options.centerX ?? width / 2;
     const centerY = options.centerY ?? height / 2;
     const startAngle = options.startAngle ?? 0;
-    const angleRad = (startAngle * Math.PI) / 180;
-
-    const grad = ctx.createConicGradient(angleRad, centerX, centerY);
-    colors.forEach(({ stop, color }: { stop: number; color: string }) => {
-      grad.addColorStop(stop, color);
-    });
-
+    const grad = ctx.createConicGradient((startAngle * Math.PI) / 180, centerX, centerY);
+    colors.forEach(({ stop, color }: { stop: number; color: string }) => grad.addColorStop(stop, color));
     gradient = grad;
   } else {
-    throw new Error(`Unsupported gradient type: ${type}`);
+    throw new ApexifyInputError(`Unsupported gradient type: ${type}`);
   }
 
   ctx.globalAlpha = opacity;
   ctx.fillStyle = gradient as any;
   ctx.fillRect(0, 0, width, height);
-
   return gradientCanvas.toBuffer('image/png');
 }
 
-/**
- * Creates a repeating gradient pattern for linear and radial gradients
- * @private
- */
 function createRepeatingGradientPattern(
   ctx: SKRSContext2D,
   gradient: CanvasGradient,
@@ -260,15 +138,10 @@ function createRepeatingGradientPattern(
 ): CanvasPattern {
   const patternCanvas = createCanvas(width, height);
   const patternCtx = getCanvasContext(patternCanvas);
-
   patternCtx.fillStyle = gradient;
   patternCtx.fillRect(0, 0, width, height);
-
-  const pattern = ctx.createPattern(patternCanvas, repeat === 'reflect' ? 'repeat' : 'repeat');
-  if (!pattern) {
-    throw new Error('Failed to create repeating gradient pattern');
-  }
-
+  const pattern = ctx.createPattern(patternCanvas, 'repeat');
+  if (!pattern) throw new ApexifyDecodeError('Failed to create repeating gradient pattern');
   return pattern;
 }
 
@@ -296,322 +169,178 @@ type LegacyImageFilter = {
 
 export async function imgEffects(imagePath: string, filters: LegacyImageFilter[] | ImageFilter[]): Promise<Buffer> {
   try {
-    let image: Image;
-
-    if (imagePath.startsWith("http")) {
-      const response = await axios.get(imagePath, { responseType: "arraybuffer" });
-      image = await loadImage(response.data);
-    } else {
-      const imagePathResolved = path.resolve(process.cwd(), imagePath);
-      image = await loadImage(fs.readFileSync(imagePathResolved));
-    }
-
+    const image = await loadImage(await resolveMediaBuffer(imagePath, { kind: "image" }));
     const canvas = createCanvas(image.width, image.height);
     const ctx = getCanvasContext(canvas);
-
     ctx.drawImage(image, 0, 0);
-
     for (const filter of filters) {
       switch (filter.type) {
-        case "flip":
-          flipCanvas(ctx, image.width, image.height, filter.horizontal, filter.vertical);
-          break;
-        case "rotate":
-          rotateCanvas(ctx, canvas, filter.deg ?? 0);
-          break;
-        case "brightness":
-          adjustBrightness(ctx, filter.value ?? 0);
-          break;
-        case "contrast":
-          adjustContrast(ctx, filter.value ?? 0);
-          break;
-        case "invert":
-          invertColors(ctx);
-          break;
-        case "greyscale":
-          grayscale(ctx);
-          break;
-        case "sepia":
-          applySepia(ctx);
-          break;
-        case "blur":
-          applyBlur(ctx, filter.radius ?? 0);
-          break;
-        case "posterize":
-          posterize(ctx, filter.levels ?? 4);
-          break;
+        case "flip": flipCanvas(ctx, image.width, image.height, filter.horizontal, filter.vertical); break;
+        case "rotate": rotateCanvas(ctx, canvas, filter.deg ?? 0); break;
+        case "brightness": adjustBrightness(ctx, filter.value ?? 0); break;
+        case "contrast": adjustContrast(ctx, filter.value ?? 0); break;
+        case "invert": invertColors(ctx); break;
+        case "greyscale": grayscale(ctx); break;
+        case "sepia": applySepia(ctx); break;
+        case "blur": applyBlur(ctx, filter.radius ?? 0); break;
+        case "posterize": posterize(ctx, filter.levels ?? 4); break;
         case "pixelate":
           if ('x' in filter && 'y' in filter && 'w' in filter && 'h' in filter) {
-
             pixelate(ctx, filter.size ?? 10, filter.x ?? 0, filter.y ?? 0, filter.w ?? image.width, filter.h ?? image.height);
           } else {
-
             pixelate(ctx, filter.size ?? 10, 0, 0, image.width, image.height);
           }
           break;
-        default:
-          console.error(`Unsupported filter type: ${filter.type}`);
+        default: throw new ApexifyInputError(`Unsupported filter type: ${(filter as { type: string }).type}`);
       }
     }
-
     return canvas.toBuffer("image/png");
-  } catch (error) {
-    throw new Error(`imgEffects failed: ${getErrorMessage(error)}`);
+  } catch (cause) {
+    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    throw new ApexifyDecodeError(`imgEffects failed: ${getErrorMessage(cause)}`, { cause });
   }
 }
 
-/**
- * Crops the inner portion of the image based on the bounding box of the provided coordinates.
- * Optionally applies a clipping mask with a specified radius.
- */
 export async function cropInner(options: cropOptions): Promise<Buffer> {
-  try {
-
-    let image: Image;
-    if (options.imageSource.startsWith("http")) {
-      image = await loadImage(options.imageSource);
-    } else {
-      image = await loadImage(path.join(process.cwd(), options.imageSource));
-    }
-
-    const xs: number[] = [];
-    const ys: number[] = [];
-    for (const coord of options.coordinates) {
-      xs.push(coord.from.x, coord.to.x);
-      ys.push(coord.from.y, coord.to.y);
-    }
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const cropWidth = maxX - minX;
-    const cropHeight = maxY - minY;
-
-    const canvas = createCanvas(cropWidth, cropHeight);
-    const ctx = getCanvasContext(canvas);
-
-    if (options.radius !== undefined && options.radius !== null) {
-      if (options.radius === "circular") {
-        const radius = Math.min(cropWidth, cropHeight) / 2;
-        ctx.beginPath();
-        ctx.arc(cropWidth / 2, cropHeight / 2, radius, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-      } else if (typeof options.radius === 'number' && options.radius >= 0) {
-        ctx.beginPath();
-        ctx.moveTo(options.radius, 0);
-        ctx.lineTo(cropWidth - options.radius, 0);
-        ctx.quadraticCurveTo(cropWidth, 0, cropWidth, options.radius);
-        ctx.lineTo(cropWidth, cropHeight - options.radius);
-        ctx.quadraticCurveTo(cropWidth, cropHeight, cropWidth - options.radius, cropHeight);
-        ctx.lineTo(options.radius, cropHeight);
-        ctx.quadraticCurveTo(0, cropHeight, 0, cropHeight - options.radius);
-        ctx.lineTo(0, options.radius);
-        ctx.quadraticCurveTo(0, 0, options.radius, 0);
-        ctx.closePath();
-        ctx.clip();
-      } else {
-        throw new Error('The "radius" option can only be "circular" or a non-negative number.');
-      }
-    }
-
-    ctx.drawImage(image, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-
-    return canvas.toBuffer('image/png');
-  } catch (error) {
-    console.error('An error occurred in cropInner:', error);
-    throw error;
+  const image = await loadImage(await resolveMediaBuffer(options.imageSource, { kind: "image" }));
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const coord of options.coordinates) {
+    xs.push(coord.from.x, coord.to.x);
+    ys.push(coord.from.y, coord.to.y);
   }
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const cropWidth = maxX - minX;
+  const cropHeight = maxY - minY;
+  const canvas = createCanvas(cropWidth, cropHeight);
+  const ctx = getCanvasContext(canvas);
+
+  if (options.radius !== undefined && options.radius !== null) {
+    if (options.radius === "circular") {
+      const radius = Math.min(cropWidth, cropHeight) / 2;
+      ctx.beginPath();
+      ctx.arc(cropWidth / 2, cropHeight / 2, radius, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+    } else if (typeof options.radius === 'number' && options.radius >= 0) {
+      ctx.beginPath();
+      ctx.moveTo(options.radius, 0);
+      ctx.lineTo(cropWidth - options.radius, 0);
+      ctx.quadraticCurveTo(cropWidth, 0, cropWidth, options.radius);
+      ctx.lineTo(cropWidth, cropHeight - options.radius);
+      ctx.quadraticCurveTo(cropWidth, cropHeight, cropWidth - options.radius, cropHeight);
+      ctx.lineTo(options.radius, cropHeight);
+      ctx.quadraticCurveTo(0, cropHeight, 0, cropHeight - options.radius);
+      ctx.lineTo(0, options.radius);
+      ctx.quadraticCurveTo(0, 0, options.radius, 0);
+      ctx.closePath();
+      ctx.clip();
+    } else {
+      throw new ApexifyInputError('The "radius" option can only be "circular" or a non-negative number.');
+    }
+  }
+  ctx.drawImage(image, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  return canvas.toBuffer('image/png');
 }
 
-/**
- * Crops the outer portion of the image by removing the area defined by the provided polygon.
- * The polygon is defined by the coordinates (with optional bezier smoothing using tension).
- */
 export async function cropOuter(options: cropOptions): Promise<Buffer> {
-  try {
-    let image: Image;
-    if (options.imageSource.startsWith("http")) {
-      image = await loadImage(options.imageSource);
-    } else {
-      image = await loadImage(path.join(process.cwd(), options.imageSource));
-    }
-
-    const canvas = createCanvas(image.width, image.height);
-    const ctx = getCanvasContext(canvas);
-
-    ctx.drawImage(image, 0, 0);
-
-    ctx.beginPath();
-
-    ctx.moveTo(options.coordinates[0].from.x, options.coordinates[0].from.y);
-    for (let i = 0; i < options.coordinates.length; i++) {
-      const coord = options.coordinates[i];
-      const nextCoord = options.coordinates[(i + 1) % options.coordinates.length];
-      const tension = coord.tension || 0;
-      const cp1x = coord.from.x + (nextCoord.from.x - coord.from.x) * tension;
-      const cp1y = coord.from.y + (nextCoord.from.y - coord.from.y) * tension;
-      const cp2x = coord.to.x - (nextCoord.to.x - coord.to.x) * tension;
-      const cp2y = coord.to.y - (nextCoord.to.y - coord.to.y) * tension;
-      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, coord.to.x, coord.to.y);
-    }
-    ctx.closePath();
-
-    ctx.clip();
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    return canvas.toBuffer('image/png');
-  } catch (error) {
-    console.error('An error occurred in cropOuter:', error);
-    throw error;
+  const image = await loadImage(await resolveMediaBuffer(options.imageSource, { kind: "image" }));
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = getCanvasContext(canvas);
+  ctx.drawImage(image, 0, 0);
+  ctx.beginPath();
+  ctx.moveTo(options.coordinates[0].from.x, options.coordinates[0].from.y);
+  for (let i = 0; i < options.coordinates.length; i++) {
+    const coord = options.coordinates[i];
+    const nextCoord = options.coordinates[(i + 1) % options.coordinates.length];
+    const tension = coord.tension ?? 0;
+    const cp1x = coord.from.x + (nextCoord.from.x - coord.from.x) * tension;
+    const cp1y = coord.from.y + (nextCoord.from.y - coord.from.y) * tension;
+    const cp2x = coord.to.x - (nextCoord.to.x - coord.to.x) * tension;
+    const cp2y = coord.to.y - (nextCoord.to.y - coord.to.y) * tension;
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, coord.to.x, coord.to.y);
   }
+  ctx.closePath();
+  ctx.clip();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  return canvas.toBuffer('image/png');
 }
 
-/**
- * Detects dominant colors from an image.
- *
- * @param imagePath - Local path or URL of the image.
- * @returns A sorted array of dominant colors with their frequency.
- */
 export async function detectColors(imagePath: string): Promise<{ color: string; frequency: string }[]> {
-  try {
-      let image: Image;
-
-      if (imagePath.startsWith('http')) {
-          const response = await fetch(imagePath);
-          if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
-          const buffer = await response.arrayBuffer();
-          image = await loadImage(Buffer.from(buffer));
-      } else {
-          const localImagePath = path.resolve(imagePath);
-          image = await loadImage(localImagePath);
-      }
-
-      const canvas = createCanvas(image.width, image.height);
-      const ctx = getCanvasContext(canvas);
-      ctx.drawImage(image, 0, 0, image.width, image.height);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-
-      const colorFrequency: { [color: string]: number } = {};
-      for (let i = 0; i < data.length; i += 4) {
-          const [r, g, b, a] = [data[i], data[i + 1], data[i + 2], data[i + 3]];
-          if (a < 50) continue;
-
-          const color = `${r},${g},${b}`;
-          colorFrequency[color] = (colorFrequency[color] || 0) + 1;
-      }
-
-      const totalPixels = canvas.width * canvas.height;
-
-      const dominantColors = Object.entries(colorFrequency)
-          .map(([color, frequency]) => ({
-              color,
-              frequency: ((frequency / totalPixels) * 100).toFixed(2),
-          }))
-          .filter(colorObj => parseFloat(colorObj.frequency) >= 0.1)
-          .sort((a, b) => parseFloat(b.frequency) - parseFloat(a.frequency));
-
-      return dominantColors;
-  } catch (error) {
-      console.error("❌ Error detecting colors:", error);
-      return [];
+  const image = await loadImage(await resolveMediaBuffer(imagePath, { kind: "image" }));
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = getCanvasContext(canvas);
+  ctx.drawImage(image, 0, 0, image.width, image.height);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const colorFrequency: Record<string, number> = {};
+  for (let i = 0; i < data.length; i += 4) {
+    const [r, g, b, a] = [data[i], data[i + 1], data[i + 2], data[i + 3]];
+    if (a < 50) continue;
+    const color = `${r},${g},${b}`;
+    colorFrequency[color] = (colorFrequency[color] ?? 0) + 1;
   }
+  const totalPixels = canvas.width * canvas.height;
+  return Object.entries(colorFrequency)
+    .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
+    .filter(colorObj => parseFloat(colorObj.frequency) >= 0.1)
+    .sort((a, b) => parseFloat(b.frequency) - parseFloat(a.frequency));
 }
 
 export async function removeColor(inputImagePath: string, colorToRemove: { red: number; green: number; blue: number }): Promise<Buffer | undefined> {
-  try {
-      let image: Image;
-      if (inputImagePath.startsWith('http')) {
-          const response = await fetch(inputImagePath);
-          if (!response.ok) {
-              throw new Error("Failed to fetch image.");
-          }
-          const buffer = await response.arrayBuffer();
-          image = await loadImage(Buffer.from(buffer));
-      } else {
-          const localImagePath = path.join(process.cwd(), inputImagePath);
-          image = await loadImage(localImagePath);
-      }
-
-      const canvas = createCanvas(image.width, image.height);
-      const ctx = getCanvasContext(canvas);
-
-      ctx.drawImage(image, 0, 0, image.width, image.height);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-      for (let i = 0; i < imageData.data.length; i += 4) {
-          const red = imageData.data[i];
-          const green = imageData.data[i + 1];
-          const blue = imageData.data[i + 2];
-
-          if (red === colorToRemove.red && green === colorToRemove.green && blue === colorToRemove.blue) {
-              imageData.data[i + 3] = 0;
-          }
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-
-      return canvas.toBuffer('image/png');
-  } catch (error) {
-      console.error('Error:', error);
-      return undefined;
+  const image = await loadImage(await resolveMediaBuffer(inputImagePath, { kind: "image" }));
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = getCanvasContext(canvas);
+  ctx.drawImage(image, 0, 0, image.width, image.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    if (imageData.data[i] === colorToRemove.red && imageData.data[i + 1] === colorToRemove.green && imageData.data[i + 2] === colorToRemove.blue) {
+      imageData.data[i + 3] = 0;
+    }
   }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toBuffer('image/png');
 }
 
 export async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer | undefined> {
+  if (!API_KEY) {
+    throw new ApexifyInputError("API_KEY is required for remove.bg.");
+  }
   try {
-      if (!API_KEY) {
-          throw new Error("API_KEY is required. Please visit remove.bg, create an account, and obtain your API key at: https://accounts.kaleido.ai/users/sign_in#api-key");
-      }
-
-      const response = await fetch('https://api.remove.bg/v1.0/removebg', {
-          method: 'POST',
-          headers: {
-              'X-Api-Key': API_KEY,
-              'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-              image_url: imgURL,
-              size: 'auto'
-          }),
-      });
-
-      if (!response.ok) {
-          throw new Error("Failed to remove background.");
-      }
-
-      const buffer = await response.arrayBuffer();
-      return Buffer.from(buffer);
-  } catch (error) {
-      console.error('Error:', error);
-      return undefined;
+    // PHASE3-JUSTIFIED-FETCH: fixed remove.bg external-service endpoint; the user-controlled image URL is sent as JSON and is not fetched by Apexify.
+    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_url: imgURL, size: 'auto' }),
+    });
+    if (!response.ok) {
+      throw new ApexifyExternalServiceError(`remove.bg request failed with HTTP ${response.status}.`, { details: { status: response.status } });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } catch (cause) {
+    if (cause instanceof ApexifyExternalServiceError) throw cause;
+    throw new ApexifyExternalServiceError("remove.bg request failed.", { cause });
   }
 }
 
 function flipCanvas(ctx: SKRSContext2D, width: number, height: number, horizontal = false, vertical = false): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-
   const newData = new Uint8ClampedArray(pixels.length);
-
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const srcIndex = (y * width + x) * 4;
-      let destX = horizontal ? width - x - 1 : x;
-      let destY = vertical ? height - y - 1 : y;
+      const destX = horizontal ? width - x - 1 : x;
+      const destY = vertical ? height - y - 1 : y;
       const destIndex = (destY * width + destX) * 4;
-
       newData[destIndex] = pixels[srcIndex];
       newData[destIndex + 1] = pixels[srcIndex + 1];
       newData[destIndex + 2] = pixels[srcIndex + 2];
       newData[destIndex + 3] = pixels[srcIndex + 3];
     }
   }
-
   const newImageData = ctx.createImageData(width, height);
   newImageData.data.set(newData);
   ctx.putImageData(newImageData, 0, 0);
@@ -621,7 +350,6 @@ function rotateCanvas(ctx: SKRSContext2D, canvas: Canvas, degrees: number): void
   const radians = (degrees * Math.PI) / 180;
   const newCanvas = createCanvas(canvas.width, canvas.height);
   const newCtx = getCanvasContext(newCanvas);
-
   newCtx.translate(canvas.width / 2, canvas.height / 2);
   newCtx.rotate(radians);
   newCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
@@ -680,7 +408,6 @@ function applySepia(ctx: SKRSContext2D): void {
     const r = pixels[i];
     const g = pixels[i + 1];
     const b = pixels[i + 2];
-
     pixels[i] = r * 0.393 + g * 0.769 + b * 0.189;
     pixels[i + 1] = r * 0.349 + g * 0.686 + b * 0.168;
     pixels[i + 2] = r * 0.272 + g * 0.534 + b * 0.131;
@@ -694,12 +421,10 @@ function applyBlur(ctx: SKRSContext2D, radius: number): void {
   const pixels = imageData.data;
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
-
   const blurSize = Math.floor(radius);
   for (let y = blurSize; y < height - blurSize; y++) {
     for (let x = blurSize; x < width - blurSize; x++) {
       let r = 0, g = 0, b = 0, count = 0;
-
       for (let dy = -blurSize; dy <= blurSize; dy++) {
         for (let dx = -blurSize; dx <= blurSize; dx++) {
           const index = ((y + dy) * width + (x + dx)) * 4;
@@ -709,14 +434,12 @@ function applyBlur(ctx: SKRSContext2D, radius: number): void {
           count++;
         }
       }
-
       const index = (y * width + x) * 4;
       pixels[index] = r / count;
       pixels[index + 1] = g / count;
       pixels[index + 2] = b / count;
     }
   }
-
   ctx.putImageData(imageData, 0, 0);
 }
 
@@ -725,13 +448,11 @@ function posterize(ctx: SKRSContext2D, levels: number): void {
   const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
   const pixels = imageData.data;
   const factor = 255 / (levels - 1);
-
   for (let i = 0; i < pixels.length; i += 4) {
     pixels[i] = Math.round(pixels[i] / factor) * factor;
     pixels[i + 1] = Math.round(pixels[i + 1] / factor) * factor;
     pixels[i + 2] = Math.round(pixels[i + 2] / factor) * factor;
   }
-
   ctx.putImageData(imageData, 0, 0);
 }
 
@@ -739,39 +460,27 @@ function pixelate(ctx: SKRSContext2D, size: number, startX = 0, startY = 0, widt
   if (size < 1) return;
   const imageData = ctx.getImageData(startX, startY, width, height);
   const pixels = imageData.data;
-
   for (let y = 0; y < height; y += size) {
     for (let x = 0; x < width; x += size) {
       let r = 0, g = 0, b = 0, count = 0;
-
       for (let dy = 0; dy < size; dy++) {
         for (let dx = 0; dx < size; dx++) {
           if (x + dx < width && y + dy < height) {
             const index = ((y + dy) * width + (x + dx)) * 4;
-            r += pixels[index];
-            g += pixels[index + 1];
-            b += pixels[index + 2];
-            count++;
+            r += pixels[index]; g += pixels[index + 1]; b += pixels[index + 2]; count++;
           }
         }
       }
-
-      r = Math.floor(r / count);
-      g = Math.floor(g / count);
-      b = Math.floor(b / count);
-
+      r = Math.floor(r / count); g = Math.floor(g / count); b = Math.floor(b / count);
       for (let dy = 0; dy < size; dy++) {
         for (let dx = 0; dx < size; dx++) {
           if (x + dx < width && y + dy < height) {
             const index = ((y + dy) * width + (x + dx)) * 4;
-            pixels[index] = r;
-            pixels[index + 1] = g;
-            pixels[index + 2] = b;
+            pixels[index] = r; pixels[index + 1] = g; pixels[index + 2] = b;
           }
         }
       }
     }
   }
-
   ctx.putImageData(imageData, startX, startY);
 }
