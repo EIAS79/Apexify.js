@@ -13,19 +13,19 @@ export interface ResolveMediaOptions extends Omit<RemoteFetchOptions, "kind"> {
   cache?: boolean;
 }
 
-let remoteByteCache: BoundedCache<string, Promise<Buffer>> | undefined;
+let remoteByteCache: BoundedCache<string, Buffer> | undefined;
 let remoteCacheSignature = "";
 
-function cacheForRuntime(): BoundedCache<string, Promise<Buffer>> {
+function cacheForRuntime(): BoundedCache<string, Buffer> {
   const config = getDefaultApexifyRuntimeConfig().cache;
   const signature = `${config.enabled}:${config.ttlMs}:${config.maxEntries}:${config.maxBytes}`;
   if (!remoteByteCache || signature !== remoteCacheSignature) {
-    remoteByteCache = new BoundedCache<string, Promise<Buffer>>({
+    remoteByteCache = new BoundedCache<string, Buffer>({
       enabled: config.enabled,
       ttlMs: config.ttlMs,
       maxEntries: config.maxEntries,
       maxBytes: config.maxBytes,
-      sizeOf: () => 1,
+      sizeOf: (value) => value.byteLength,
     });
     remoteCacheSignature = signature;
   }
@@ -60,15 +60,14 @@ export function resolveLocalMediaPath(source: string): string {
 
 async function fetchRemoteBuffer(source: string, options: ResolveMediaOptions): Promise<Buffer> {
   const useCache = options.cache !== false && getDefaultApexifyRuntimeConfig().cache.enabled;
-  const factory = async () => (await fetchRemoteMedia(source, { ...options, kind: options.kind ?? "generic" })).buffer;
-  if (!useCache) return factory();
+  if (!useCache) return (await fetchRemoteMedia(source, { ...options, kind: options.kind ?? "generic" })).buffer;
   const cache = cacheForRuntime();
   const existing = cache.get(source);
   if (existing) return existing;
-  const pending = factory();
-  cache.set(source, pending);
   try {
-    return await pending;
+    const buffer = (await fetchRemoteMedia(source, { ...options, kind: options.kind ?? "generic" })).buffer;
+    cache.set(source, buffer);
+    return buffer;
   } catch (error) {
     cache.delete(source);
     throw error;
