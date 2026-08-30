@@ -42,6 +42,11 @@ jobs:
         continue-on-error: true
         run: npm ls --depth=0 --json > dependency-tree-node-${{ matrix.node }}.json
 
+      - name: Dependency vulnerability snapshot
+        if: always()
+        continue-on-error: true
+        run: npm audit --json > npm-audit-node-${{ matrix.node }}.json
+
       - name: Build current package
         id: build
         if: always()
@@ -115,6 +120,7 @@ jobs:
           path: |
             baseline-status-node-${{ matrix.node }}.json
             dependency-tree-node-${{ matrix.node }}.json
+            npm-audit-node-${{ matrix.node }}.json
             npm-pack-node-${{ matrix.node }}.json
             npm-registry-current.json
           if-no-files-found: ignore
