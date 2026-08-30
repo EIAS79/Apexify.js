@@ -8,15 +8,13 @@ const {
   MediaProcessRunner,
   MediaProcessError,
   redactUrlSecrets,
-} = require('../dist/cjs/video/process-runner.js');
-const {
   createTempWorkspace,
   withTempWorkspace,
-} = require('../dist/cjs/video/temp-workspace.js');
-const { writeSafeConcatList } = require('../dist/cjs/video/safe-concat.js');
-const { assertSafeFilterExpression } = require('../dist/cjs/video/video-text-overlay-filters.js');
-const { url: uploadImgur } = require('../dist/cjs/output/upload-imgur.js');
-const { VideoStack } = require('../dist/cjs/video/video-stack.js');
+  writeSafeConcatList,
+  assertSafeFilterExpression,
+  uploadImgur,
+  VideoStack,
+} = require('../node_modules/.cache/apexify-security/security-phase1-entry.cjs');
 
 async function expectReject(promise, predicate, label) {
   let error;
