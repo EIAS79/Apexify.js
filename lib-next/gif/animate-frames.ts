@@ -1,5 +1,5 @@
 import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
-import GIFEncoder from "gifencoder";
+import { GifEncoder } from "@skyra/gifenc";
 import fs from "fs";
 import type { Frame } from "../types";
 import { getErrorMessage } from "../core/errors";
@@ -57,14 +57,14 @@ export async function animateFrames(
 
     if (options?.onStart) options.onStart();
 
-    let encoder: GIFEncoder | null = null;
+    let encoder: GifEncoder | null = null;
     let gifStream: fs.WriteStream | null = null;
 
     if (options?.gif) {
       if (!options.gifPath) {
         throw new Error("animate: gifPath is required when gif is enabled.");
       }
-      encoder = new GIFEncoder(defaultWidth, defaultHeight);
+      encoder = new GifEncoder(defaultWidth, defaultHeight);
       gifStream = fs.createWriteStream(options.gifPath);
       encoder.createReadStream().pipe(gifStream);
       encoder.start();
@@ -173,7 +173,7 @@ export async function animateFrames(
       if (encoder) {
         const frameDuration = frame.duration || defaultDuration;
         encoder.setDelay(frameDuration);
-        encoder.addFrame(ctx as unknown as CanvasRenderingContext2D);
+        encoder.addFrame(ctx as unknown as Pick<CanvasRenderingContext2D, "getImageData">);
       }
 
       if (options?.onFrame) options.onFrame(i);
