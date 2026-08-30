@@ -41,6 +41,20 @@ export interface CacheRuntimeConfig {
   maxBytes: number;
 }
 
+export interface FfmpegRuntimeConfig {
+  ffmpegPath?: string;
+  ffprobePath?: string;
+  processTimeoutMs: number;
+  probeTimeoutMs: number;
+  maxStdoutBytes: number;
+  maxStderrBytes: number;
+}
+
+export interface TempRuntimeConfig {
+  rootDirectory?: string;
+  retainFiles: boolean;
+}
+
 export interface DiagnosticsEvent {
   level: "debug" | "info" | "warn" | "error";
   code: string;
@@ -58,6 +72,8 @@ export interface ApexifyRuntimeConfig {
   network: NetworkRuntimeConfig;
   limits: RenderLimits;
   cache: CacheRuntimeConfig;
+  ffmpeg: FfmpegRuntimeConfig;
+  temp: TempRuntimeConfig;
   diagnostics: DiagnosticsRuntimeConfig;
 }
 
@@ -65,6 +81,8 @@ export type ApexifyRuntimeConfigInput = {
   network?: Partial<NetworkRuntimeConfig>;
   limits?: Partial<RenderLimits>;
   cache?: Partial<CacheRuntimeConfig>;
+  ffmpeg?: Partial<FfmpegRuntimeConfig>;
+  temp?: Partial<TempRuntimeConfig>;
   diagnostics?: DiagnosticsRuntimeConfig;
 };
 
@@ -107,6 +125,15 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
     maxEntries: 128,
     maxBytes: 128 * 1024 * 1024,
   }),
+  ffmpeg: Object.freeze({
+    processTimeoutMs: 5 * 60_000,
+    probeTimeoutMs: 5_000,
+    maxStdoutBytes: 10 * 1024 * 1024,
+    maxStderrBytes: 30 * 1024 * 1024,
+  }),
+  temp: Object.freeze({
+    retainFiles: false,
+  }),
   diagnostics: Object.freeze({}),
 });
 
@@ -124,6 +151,14 @@ function finiteNonNegative(name: string, value: number): number {
   return value;
 }
 
+function optionalNonEmptyString(name: string, value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
+    throw new ApexifyConfigError(`${name} must be a non-empty string without NUL bytes when provided.`);
+  }
+  return value;
+}
+
 export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {}): Readonly<ApexifyRuntimeConfig> {
   const network: NetworkRuntimeConfig = {
     ...DEFAULT_APEXIFY_RUNTIME_CONFIG.network,
@@ -133,6 +168,8 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
   };
   const limits: RenderLimits = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.limits, ...input.limits };
   const cache: CacheRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.cache, ...input.cache };
+  const ffmpeg: FfmpegRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.ffmpeg, ...input.ffmpeg };
+  const temp: TempRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.temp, ...input.temp };
   const diagnostics: DiagnosticsRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.diagnostics, ...input.diagnostics };
 
   network.timeoutMs = finitePositive("network.timeoutMs", network.timeoutMs);
@@ -155,10 +192,24 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
   cache.maxEntries = Math.floor(finitePositive("cache.maxEntries", cache.maxEntries));
   cache.maxBytes = finitePositive("cache.maxBytes", cache.maxBytes);
 
+  ffmpeg.ffmpegPath = optionalNonEmptyString("ffmpeg.ffmpegPath", ffmpeg.ffmpegPath);
+  ffmpeg.ffprobePath = optionalNonEmptyString("ffmpeg.ffprobePath", ffmpeg.ffprobePath);
+  ffmpeg.processTimeoutMs = finitePositive("ffmpeg.processTimeoutMs", ffmpeg.processTimeoutMs);
+  ffmpeg.probeTimeoutMs = finitePositive("ffmpeg.probeTimeoutMs", ffmpeg.probeTimeoutMs);
+  ffmpeg.maxStdoutBytes = finitePositive("ffmpeg.maxStdoutBytes", ffmpeg.maxStdoutBytes);
+  ffmpeg.maxStderrBytes = finitePositive("ffmpeg.maxStderrBytes", ffmpeg.maxStderrBytes);
+  temp.rootDirectory = optionalNonEmptyString("temp.rootDirectory", temp.rootDirectory);
+  if (typeof temp.retainFiles !== "boolean") throw new ApexifyConfigError("temp.retainFiles must be a boolean.");
+  if (diagnostics.handler !== undefined && typeof diagnostics.handler !== "function") {
+    throw new ApexifyConfigError("diagnostics.handler must be a function when provided.");
+  }
+
   return Object.freeze({
     network: Object.freeze(network),
     limits: Object.freeze(limits),
     cache: Object.freeze(cache),
+    ffmpeg: Object.freeze(ffmpeg),
+    temp: Object.freeze(temp),
     diagnostics: Object.freeze(diagnostics),
   });
 }
@@ -174,6 +225,8 @@ export function configureApexifyRuntime(input: ApexifyRuntimeConfigInput): Reado
     network: { ...defaultRuntimeConfig.network, ...input.network },
     limits: { ...defaultRuntimeConfig.limits, ...input.limits },
     cache: { ...defaultRuntimeConfig.cache, ...input.cache },
+    ffmpeg: { ...defaultRuntimeConfig.ffmpeg, ...input.ffmpeg },
+    temp: { ...defaultRuntimeConfig.temp, ...input.temp },
     diagnostics: { ...defaultRuntimeConfig.diagnostics, ...input.diagnostics },
   });
   return defaultRuntimeConfig;
