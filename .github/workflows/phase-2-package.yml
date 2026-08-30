@@ -70,4 +70,10 @@ jobs:
             package-lock.json
             phase2-pack-node-${{ matrix.node }}.json
             phase2-audit-node-${{ matrix.node }}.json
+            lib-next/core/general-functions.ts
+            lib-next/gif/animate-frames.ts
+            lib-next/image/painter-image-utils.ts
+            lib-next/output/compression.ts
+            lib-next/output/save-buffer.ts
+            lib-next/render/context-image-filters.ts
           if-no-files-found: warn
