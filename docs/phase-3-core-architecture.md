@@ -5,7 +5,7 @@ Phase 3 establishes authoritative shared infrastructure for runtime policy, medi
 ## Dependency direction
 
 ```text
-image / canvas / gif / video / output / general utilities
+image / canvas / gif / video / output / general utilities / version services
                       |
                       v
                  media/source
@@ -34,26 +34,27 @@ The runtime contains:
 
 Trusted local/private network access is disabled by default. Enabling it requires both `trustedNetworkAccess: true` and an explicit `allowedHosts` entry.
 
-## Remote media policy
+## Remote network policy
 
-All arbitrary HTTP(S) media acquisition must use `media/remote-fetch.ts` through `media/source.ts`.
+All library-owned HTTP(S) transfers use `media/remote-fetch.ts`; arbitrary media sources reach it through `media/source.ts`. The same transport also supports bounded fixed-service POST requests, so no direct `fetch()` or Axios transport remains in `lib-next`.
 
 The policy:
 
 - accepts only configured HTTP(S) protocols;
 - rejects URL-embedded credentials;
 - resolves DNS before connecting;
-- rejects loopback, private, link-local, multicast, documentation, benchmark, and other reserved IPv4/IPv6 ranges by default;
+- rejects loopback, private, link-local, multicast, documentation, benchmarking, translation/tunneling, and other reserved IPv4/IPv6 ranges by default;
 - pins the HTTP connection lookup to the validated DNS result;
 - revalidates every redirect target and caps redirects;
-- enforces response byte limits before and during streaming;
-- supports timeout and `AbortSignal` cancellation;
-- retries transient failures with bounded exponential delay and jitter;
+- enforces response byte limits from both `Content-Length` and streamed bytes;
+- uses a hard wall-clock deadline plus socket-idle timeout, so trickle responses cannot evade timeout enforcement;
+- supports `AbortSignal` cancellation both in-flight and while queued behind the concurrency gate;
+- retries transient GET failures with bounded exponential delay and jitter;
 - honors `Retry-After` where configured;
+- defaults non-idempotent POST requests to one attempt unless the caller explicitly overrides it;
 - redacts credentials, query strings, and fragments from URL-bearing diagnostics/errors;
-- bounds concurrent remote requests globally.
-
-The only intentional direct `fetch()` remaining in library source is the fixed `https://api.remove.bg/v1.0/removebg` external-service POST. The endpoint is not selected by the caller and Apexify does not fetch the caller-provided image URL in that path. `scripts/phase3-bypass-scan.cjs` enforces this exception explicitly.
+- bounds concurrent remote requests globally;
+- requires explicit trusted-network opt-in and host allowlisting before private/local targets are accepted.
 
 ## Media sources
 
@@ -64,7 +65,9 @@ The only intentional direct `fetch()` remaining in library source is the fixed `
 - base64 `data:image/...` URLs;
 - HTTP(S) media.
 
-Image, GIF, compression/output, general image utilities, background rendering (through the decoded image loader), and video input resolution consume this shared path.
+Image utilities, masks, line textures, GIF creation and animation frames, compression/output, background rendering, update checks, and video input materialization consume shared media/network infrastructure rather than implementing their own source download logic.
+
+Remote cache hits are revalidated against the current network policy, so data fetched under a temporary trusted allowlist cannot bypass a later stricter SSRF configuration. Cache keys include media kind and effective byte ceiling, preventing a permissive fetch from satisfying a later stricter byte policy. Header-dependent remote requests bypass the shared representation cache.
 
 ## Cache
 
@@ -83,10 +86,26 @@ Cross-cutting failures use the Apexify error hierarchy:
 - `ApexifyProcessError`;
 - `ApexifyExternalServiceError`.
 
-Errors preserve `cause` while exposing safe structured fields. Optional diagnostic events are delivered through the configured diagnostics handler; library internals must not emit arbitrary `console.error`.
+Errors preserve `cause` while exposing safe structured fields. Optional diagnostic events are delivered through the configured diagnostics handler; library internals do not emit arbitrary `console.error`.
 
 ## Verification
 
-`tests/phase3-runtime.cjs` uses a deterministic local HTTP server to cover IP classification, default SSRF blocking, explicit trusted allowlisting, redirect revalidation, redirect caps, byte limits, timeout, abort, retries, `Retry-After`, URL redaction, bounded concurrency, cache LRU/TTL/failure behavior, cache controls/statistics, config inheritance, and resource-limit helpers.
+`tests/phase3-runtime.cjs` uses a deterministic local HTTP server under explicit trusted-host configuration to cover:
 
-`scripts/phase3-bypass-scan.cjs` fails CI if unmanaged `axios`, arbitrary `fetch`, raw HTTP clients outside the central remote fetcher, library `console.error`, legacy resolver references, or known unmanaged cache maps return to `lib-next`.
+- IPv4 and IPv6 classification;
+- default SSRF blocking and trusted allowlisting;
+- redirect target revalidation and redirect caps;
+- response byte limits;
+- idle and hard wall-clock timeouts;
+- in-flight and queued abort behavior;
+- retries, jitter configuration, and `Retry-After` handling;
+- URL redaction;
+- bounded concurrency;
+- LRU/TTL/failure eviction/clear/disable/cache statistics;
+- cache policy revalidation and byte-policy isolation;
+- runtime configuration inheritance;
+- canvas/GIF resource-limit helpers.
+
+`scripts/phase3-bypass-scan.cjs` fails CI if unmanaged Axios, direct `fetch`, raw HTTP clients outside the central transport, arbitrary library `console.error`, obsolete resolver references, known unmanaged cache maps, obvious direct caller sources passed to canvas `loadImage`, or a direct Axios manifest dependency return.
+
+The Phase 3 test fixture is bundled privately into `node_modules/.cache`; internal runtime/media modules are not added as package export subpaths merely to make tests possible.
