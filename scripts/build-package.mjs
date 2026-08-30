@@ -1,12 +1,7 @@
 import { build } from 'esbuild';
 
-const entryPoints = {
-  index: 'lib-next/index.ts',
-  'types/index': 'lib-next/types/index.ts',
-};
-
 const shared = {
-  entryPoints,
+  entryPoints: { index: 'lib-next/index.ts' },
   bundle: true,
   packages: 'external',
   platform: 'node',
