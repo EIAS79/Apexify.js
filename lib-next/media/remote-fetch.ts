@@ -1,6 +1,6 @@
 import http from "node:http";
 import https from "node:https";
-import type { LookupAddress, LookupFunction } from "node:net";
+import type { LookupFunction } from "node:net";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyRemoteFetchError, ApexifyResourceLimitError } from "../runtime/errors";
 import { emitDiagnostic } from "../runtime/diagnostics";
@@ -8,6 +8,8 @@ import { redactUrl, validateRemoteTarget } from "./network-policy";
 
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+type PinnedLookupAddress = { address: string; family: 4 | 6 };
 
 let activeRemoteRequests = 0;
 const remoteWaiters: Array<() => void> = [];
@@ -96,12 +98,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 function createPinnedLookup(addresses: readonly string[]): LookupFunction {
   let cursor = 0;
-  return ((hostname: string, options: unknown, callback: unknown) => {
-    const cb = callback as (error: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
+  return ((_hostname: string, options: unknown, callback: unknown) => {
+    const cb = callback as (error: NodeJS.ErrnoException | null, address: string | PinnedLookupAddress[], family?: number) => void;
     const address = addresses[cursor++ % addresses.length];
-    const family = address.includes(":") ? 6 : 4;
+    const family: 4 | 6 = address.includes(":") ? 6 : 4;
     if (typeof options === "object" && options !== null && "all" in options && (options as { all?: boolean }).all) {
-      cb(null, [{ address, family }] as LookupAddress[]);
+      cb(null, [{ address, family }]);
     } else {
       cb(null, address, family);
     }
