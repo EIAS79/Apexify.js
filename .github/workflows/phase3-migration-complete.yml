@@ -1,0 +1,30 @@
+name: Phase 3 migration completion
+
+on:
+  push:
+    branches:
+      - reengineering/phase-3-core-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ !contains(github.event.head_commit.message, '[phase3-migration-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-3-core-architecture
+          fetch-depth: 0
+      - name: Apply remaining centralized-media migrations
+        run: node scripts/phase3-complete-migration.cjs
+      - name: Remove one-shot migration machinery
+        run: rm scripts/phase3-complete-migration.cjs .github/workflows/phase3-migration-complete.yml
+      - name: Commit and push migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: finish Phase 3 media migration [phase3-migration-applied]"
+          git push origin HEAD:reengineering/phase-3-core-architecture
