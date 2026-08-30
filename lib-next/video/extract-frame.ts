@@ -1,17 +1,16 @@
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs";
-import path from "path";
+import { promises as fs } from "fs";
 import type { FfmpegSession } from "./ffmpeg-session";
 import { getErrorMessage } from "../core/errors";
 import { resolveVideoInputToPath } from "./video-input-resolve";
 import { ffprobeVideoFile } from "./ffprobe-metadata";
+import { withTempWorkspace } from "./temp-workspace";
 
-const execAsync = promisify(exec);
+function finiteNonNegative(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a finite non-negative number.`);
+  return value;
+}
 
-/**
- * Extract one raster frame from a video (legacy `ApexPainter` / `VideoCreator` dependency shape).
- */
+/** Extract one raster frame from a video using the centralized shell-free runner. */
 export async function extractVideoFrameBuffer(
   session: FfmpegSession,
   videoSource: string | Buffer,
@@ -21,83 +20,55 @@ export async function extractVideoFrameBuffer(
   quality: number = 2
 ): Promise<Buffer | null> {
   try {
-    const ffmpegAvailable = await session.checkAvailable();
-    if (!ffmpegAvailable) {
+    if (!(await session.checkAvailable())) {
       throw new Error(
-        "❌ FFMPEG NOT FOUND\n" +
-          "Video processing features require FFmpeg to be installed on your system.\n" +
+        "FFMPEG NOT FOUND\nVideo processing features require FFmpeg/ffprobe to be installed.\n" +
           session.getInstallInstructions()
       );
     }
+    if (outputFormat !== "jpg" && outputFormat !== "png") {
+      throw new Error("extractVideoFrame: outputFormat must be 'jpg' or 'png'.");
+    }
+    finiteNonNegative(frameNumber, "extractVideoFrame frameNumber");
+    if (!Number.isFinite(quality) || quality < 1 || quality > 31) {
+      throw new Error("extractVideoFrame quality must be between 1 and 31.");
+    }
 
-    const frameDir = path.join(process.cwd(), ".temp-frames");
-    const timestamp = Date.now();
-    const frameOutputPath = path.join(frameDir, `frame-${timestamp}.${outputFormat}`);
+    return await withTempWorkspace(
+      { ...session.workspaceOptions, prefix: "apexify-frame-" },
+      async (workspace) => {
+        const frameOutputPath = workspace.path(`frame.${outputFormat}`);
+        const { videoPath } = await resolveVideoInputToPath(videoSource, workspace, "input");
 
-    const { videoPath, shouldCleanup } = await resolveVideoInputToPath(
-      videoSource,
-      frameDir,
-      `extract-${timestamp}`
-    );
-
-    let time: number;
-    if (timeSeconds !== undefined) {
-      time = timeSeconds;
-    } else if (frameNumber === 0) {
-      time = 0;
-    } else {
-      try {
-        const videoInfo = await ffprobeVideoFile(videoPath, session, true);
-        if (videoInfo && videoInfo.fps > 0) {
-          time = frameNumber / videoInfo.fps;
+        let time: number;
+        if (timeSeconds !== undefined) {
+          time = finiteNonNegative(timeSeconds, "extractVideoFrame timeSeconds");
+        } else if (frameNumber === 0) {
+          time = 0;
         } else {
-          console.warn(`Could not get video FPS, assuming 30 FPS for frame ${frameNumber}`);
-          time = frameNumber / 30;
+          const videoInfo = await ffprobeVideoFile(videoPath, session, true);
+          time = videoInfo.fps > 0 ? frameNumber / videoInfo.fps : frameNumber / 30;
         }
-      } catch {
-        console.warn(`Could not get video info, assuming 30 FPS for frame ${frameNumber}`);
-        time = frameNumber / 30;
+
+        const args = ["-i", videoPath, "-ss", String(time), "-frames:v", "1"];
+        if (outputFormat === "png") args.push("-pix_fmt", "rgba");
+        else args.push("-q:v", String(quality));
+        args.push("-y", frameOutputPath);
+
+        await session.runFfmpeg(args, {
+          timeoutMs: 30_000,
+          maxStdoutBytes: 2 * 1024 * 1024,
+          maxStderrBytes: 10 * 1024 * 1024,
+        });
+
+        const buffer = await fs.readFile(frameOutputPath);
+        if (buffer.length === 0) throw new Error("Frame extraction produced an empty file.");
+        return buffer;
       }
-    }
-
-    const escapedVideoPath = videoPath.replace(/"/g, '\\"');
-    const escapedOutputPath = frameOutputPath.replace(/"/g, '\\"');
-
-    let command: string;
-    if (outputFormat === "png") {
-      const pixFmt = "-pix_fmt rgba";
-      command = `ffmpeg -i "${escapedVideoPath}" -ss ${time} -frames:v 1 ${pixFmt} -y "${escapedOutputPath}"`;
-    } else {
-      const qualityFlag = `-q:v ${quality}`;
-      command = `ffmpeg -i "${escapedVideoPath}" -ss ${time} -frames:v 1 ${qualityFlag} -y "${escapedOutputPath}"`;
-    }
-
-    try {
-      await execAsync(command, {
-        timeout: 30000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-
-      if (!fs.existsSync(frameOutputPath)) {
-        throw new Error("Frame extraction failed - output file not created");
-      }
-
-      const buffer = fs.readFileSync(frameOutputPath);
-
-      if (fs.existsSync(frameOutputPath)) fs.unlinkSync(frameOutputPath);
-      if (shouldCleanup && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
-
-      return buffer;
-    } catch (error) {
-      if (fs.existsSync(frameOutputPath)) fs.unlinkSync(frameOutputPath);
-      if (shouldCleanup && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
-      throw error;
-    }
+    );
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) {
-      throw error;
-    }
-    throw new Error(`extractVideoFrame failed: ${errorMessage}`);
+    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) throw error;
+    throw new Error(`extractVideoFrame failed: ${errorMessage}`, { cause: error });
   }
 }
