@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { createCanvas } = require('@napi-rs/canvas');
 
 async function main() {
-  const { detectColors, imgEffects } = require('../node_modules/.cache/apexify-phase3/phase3-entry.cjs');
+  const { detectColors, imgEffects, removeColor, bgRemoval } = require('../node_modules/.cache/apexify-phase3/phase3-entry.cjs');
 
   // 2x1 PNG: one opaque red pixel + one fully transparent pixel.
   const source = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGP4z8Dwn4GBgQEADPwB//0td20AAAAASUVORK5CYII=';
@@ -32,6 +32,16 @@ async function main() {
 
   const emboss = await imgEffects(effectSource, [{ type: 'emboss', intensity: 1 }]);
   assert.ok(Buffer.isBuffer(emboss) && emboss.length > 0, 'typed emboss effect must be implemented');
+
+  const emptyEffects = await imgEffects(effectSource, []);
+  assert.ok(Buffer.isBuffer(emptyEffects) && emptyEffects.length > 0, 'empty effect arrays must remain valid');
+
+  const unknownEffects = await imgEffects(effectSource, [{ type: 'future-unknown-filter' }]);
+  assert.ok(Buffer.isBuffer(unknownEffects) && unknownEffects.length > 0, 'unknown effects remain non-fatal for compatibility');
+
+  assert.deepEqual(await detectColors('./phase3-file-does-not-exist.png'), [], 'detectColors failure must retain [] fallback');
+  assert.equal(await removeColor('./phase3-file-does-not-exist.png', { red: 0, green: 0, blue: 0 }), undefined, 'removeColor failure must retain undefined fallback');
+  assert.equal(await bgRemoval('https://example.com/image.png', ''), undefined, 'bgRemoval missing-key failure must retain undefined fallback');
 
   console.log('Phase 3 compatibility tests passed.');
 }

@@ -5,7 +5,8 @@ import { getCanvasContext } from "./errors";
 import { resolveMediaBuffer, resolveMediaInput } from "../media/source";
 import { fetchRemoteMedia } from "../media/remote-fetch";
 import { applyContextImageFilters } from "../render/context-image-filters";
-import { ApexifyDecodeError, ApexifyExternalServiceError, ApexifyInputError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyInputError } from "../runtime/errors";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 type LegacyImageFilter = {
   type: "flip" | "rotate" | "brightness" | "contrast" | "invert" | "greyscale" | "sepia" | "blur" | "posterize" | "pixelate";
@@ -86,7 +87,17 @@ function createGradientOverlay(width: number, height: number, options: GradientC
   }
   options.colors.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
   ctx.globalAlpha = opacity;
-  ctx.fillStyle = gradient;
+  if ((options.type === "linear" || options.type === "radial") && options.repeat && options.repeat !== "no-repeat") {
+    const patternCanvas = createCanvas(width, height);
+    const patternCtx = getCanvasContext(patternCanvas);
+    patternCtx.fillStyle = gradient;
+    patternCtx.fillRect(0, 0, width, height);
+    const pattern = ctx.createPattern(patternCanvas, "repeat");
+    if (!pattern) throw new ApexifyDecodeError("Failed to create repeating gradient pattern.");
+    ctx.fillStyle = pattern;
+  } else {
+    ctx.fillStyle = gradient;
+  }
   ctx.fillRect(0, 0, width, height);
   return canvas.toBuffer("image/png");
 }
@@ -101,8 +112,8 @@ export async function imgEffects(
   imagePath: string,
   filters: Array<ImageFilter | LegacyImageFilter>
 ): Promise<Buffer> {
-  if (!Array.isArray(filters) || filters.length === 0) {
-    throw new ApexifyInputError("imgEffects: at least one filter is required.");
+  if (!Array.isArray(filters)) {
+    throw new ApexifyInputError("imgEffects: filters must be an array.");
   }
   try {
     const image = await loadImage(await resolveMediaBuffer(imagePath, { kind: "image" }));
@@ -166,7 +177,13 @@ export async function imgEffects(
           await applyContextImageFilters(ctx, [filter as ImageFilter], image.width, image.height);
           break;
         default:
-          throw new ApexifyInputError(`imgEffects: unsupported filter type ${String((filter as { type: string }).type)}.`);
+          emitDiagnostic({
+            level: "warn",
+            code: "IMAGE_EFFECT_UNSUPPORTED",
+            message: "Unsupported image effect was ignored for backward compatibility.",
+            details: { type: String((filter as { type: string }).type) },
+          });
+          break;
       }
     }
     return canvas.toBuffer("image/png");
@@ -378,8 +395,9 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
       .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
       .filter(({ frequency }) => Number(frequency) >= 0.1)
       .sort((a, b) => Number(b.frequency) - Number(a.frequency));
-  } catch (cause) {
-    throw new ApexifyDecodeError("Color analysis failed.", { cause });
+  } catch {
+    emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });
+    return [];
   }
 }
 
@@ -387,7 +405,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
 export async function removeColor(
   inputImagePath: string,
   colorToRemove: { red: number; green: number; blue: number }
-): Promise<Buffer> {
+): Promise<Buffer | undefined> {
   try {
     const image = await loadImage(await resolveMediaBuffer(inputImagePath, { kind: "image" }));
     const canvas = createCanvas(image.width, image.height);
@@ -405,14 +423,18 @@ export async function removeColor(
     }
     ctx.putImageData(imageData, 0, 0);
     return canvas.toBuffer("image/png");
-  } catch (cause) {
-    throw new ApexifyDecodeError("Color removal failed.", { cause });
+  } catch {
+    emitDiagnostic({ level: "warn", code: "COLOR_REMOVAL_FAILED", message: "Color removal failed." });
+    return undefined;
   }
 }
 
 /** remove.bg uses the same bounded remote transport as all other network I/O. */
-export async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer> {
-  if (!API_KEY) throw new ApexifyInputError("API_KEY is required for remove.bg.");
+export async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer | undefined> {
+  if (!API_KEY) {
+    emitDiagnostic({ level: "warn", code: "REMOVE_BG_API_KEY_MISSING", message: "remove.bg API key is required." });
+    return undefined;
+  }
   try {
     const body = JSON.stringify({ image_url: imgURL, size: "auto" });
     const result = await fetchRemoteMedia("https://api.remove.bg/v1.0/removebg", {
@@ -423,7 +445,8 @@ export async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer
       body,
     });
     return result.buffer;
-  } catch (cause) {
-    throw new ApexifyExternalServiceError("remove.bg request failed.", { cause });
+  } catch {
+    emitDiagnostic({ level: "warn", code: "REMOVE_BG_FAILED", message: "remove.bg request failed." });
+    return undefined;
   }
 }
