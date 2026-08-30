@@ -7,21 +7,21 @@ import { createGradientFill } from "../render/gradient-fill";
 import { resolveMediaInput } from "../media/source";
 import { BoundedCache } from "../media/cache";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
-import { ApexifyDecodeError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyResourceLimitError } from "../runtime/errors";
 
-let imageCache: BoundedCache<string, Promise<Image>> | undefined;
+let imageCache: BoundedCache<string, Image> | undefined;
 let imageCacheSignature = "";
 
-function getImageCache(): BoundedCache<string, Promise<Image>> {
+function getImageCache(): BoundedCache<string, Image> {
   const config = getDefaultApexifyRuntimeConfig().cache;
   const signature = `${config.enabled}:${config.ttlMs}:${config.maxEntries}:${config.maxBytes}`;
   if (!imageCache || signature !== imageCacheSignature) {
-    imageCache = new BoundedCache({
+    imageCache = new BoundedCache<string, Image>({
       enabled: config.enabled,
       ttlMs: config.ttlMs,
       maxEntries: config.maxEntries,
       maxBytes: config.maxBytes,
-      sizeOf: () => 1,
+      sizeOf: (value) => Math.max(1, value.width * value.height * 4),
     });
     imageCacheSignature = signature;
   }
@@ -86,28 +86,30 @@ async function resolveToCanvasImage(src: string | Buffer): Promise<Image> {
     const limits = getDefaultApexifyRuntimeConfig().limits;
     const pixels = (metadata.width ?? 0) * (metadata.height ?? 0);
     if (pixels > limits.maxDecodedImagePixels) {
-      throw new ApexifyDecodeError(`Decoded image pixel count ${pixels} exceeds configured maximum ${limits.maxDecodedImagePixels}.`, {
-        details: { pixels, maximum: limits.maxDecodedImagePixels },
-      });
+      throw new ApexifyResourceLimitError("maxDecodedImagePixels", limits.maxDecodedImagePixels, pixels);
     }
     const png = await sharp(resolved).png().toBuffer();
     return await loadImage(png);
   } catch (cause) {
-    if (cause instanceof ApexifyDecodeError) throw cause;
+    if (cause instanceof ApexifyResourceLimitError || cause instanceof ApexifyDecodeError) throw cause;
     throw new ApexifyDecodeError("Image source could not be decoded.", { cause });
   }
 }
 
-export function loadImageCached(src: string | Buffer): Promise<Image> {
+export async function loadImageCached(src: string | Buffer): Promise<Image> {
   if (Buffer.isBuffer(src)) return resolveToCanvasImage(src);
   const key = /^https?:\/\//i.test(src) ? src : path.resolve(process.cwd(), src);
   const cache = getImageCache();
   const cached = cache.get(key);
   if (cached) return cached;
-  const pending = resolveToCanvasImage(src);
-  cache.set(key, pending);
-  pending.catch(() => cache.delete(key));
-  return pending;
+  try {
+    const image = await resolveToCanvasImage(src);
+    cache.set(key, image);
+    return image;
+  } catch (error) {
+    cache.delete(key);
+    throw error;
+  }
 }
 
 /** Optional “box background” under the bitmap, inside the image clip. */
