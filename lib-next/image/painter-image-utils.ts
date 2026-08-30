@@ -2,6 +2,7 @@
  * Raster / stitch / color helpers for {@link ApexPainter#image} — one surface, no canvas instance state.
  */
 import sharp from "sharp";
+import type { ResizeOptions as SharpResizeOptions, FormatEnum } from "sharp";
 import type { PainterImageUtils, ResizeOptions } from "../types";
 import { stitchImages, createCollage } from "../output/stitch";
 import { compressImage, extractPalette } from "../output/compression";
@@ -66,7 +67,7 @@ function validateConverterInputs(source: string | Buffer, newExtension: string):
 
 async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
   const source = await resolveRasterInput(options.imagePath);
-  const resizeOptions: sharp.ResizeOptions = {
+  const resizeOptions: SharpResizeOptions = {
     width: options.size?.width || 500,
     height: options.size?.height || 500,
     fit: options.maintainAspectRatio ? sharp.fit.inside : sharp.fit.fill,
@@ -83,7 +84,7 @@ async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
 async function convertResolved(source: string | Buffer, newExtension: string): Promise<Buffer> {
   const resolved = await resolveRasterInput(source);
   return sharp(resolved)
-    .toFormat(newExtension.toLowerCase() as keyof sharp.FormatEnum)
+    .toFormat(newExtension.toLowerCase() as keyof FormatEnum)
     .toBuffer();
 }
 
