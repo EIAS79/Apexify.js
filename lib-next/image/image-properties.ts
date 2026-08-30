@@ -7,7 +7,7 @@ import { createGradientFill } from "../render/gradient-fill";
 import { resolveMediaInput, type MediaSource } from "../media/source";
 import { BoundedCache } from "../media/cache";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
-import { ApexifyDecodeError, ApexifyResourceLimitError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyError, ApexifyResourceLimitError } from "../runtime/errors";
 
 let imageCache: BoundedCache<string, Image> | undefined;
 let imageCacheSignature = "";
@@ -96,7 +96,7 @@ async function resolveToCanvasImage(src: MediaSource): Promise<Image> {
     const png = await sharp(resolved).png().toBuffer();
     return await loadImage(png);
   } catch (cause) {
-    if (cause instanceof ApexifyResourceLimitError || cause instanceof ApexifyDecodeError) throw cause;
+    if (cause instanceof ApexifyError) throw cause;
     throw new ApexifyDecodeError("Image source could not be decoded.", { cause });
   }
 }
