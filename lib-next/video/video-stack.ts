@@ -3,7 +3,7 @@ import { VideoHelpers } from "./video-helpers";
 import { VideoPipeline } from "./video-pipeline-builder";
 import type { ExtractFramesOptions, VideoPipelineLayer } from "../types";
 import { createFfmpegSession, type FfmpegSession, type FfmpegSessionOptions } from "./ffmpeg-session";
-import { probeVideoCodec, probeVideoMetadata } from "./ffprobe-metadata";
+import { probeVideoCodecSource, probeVideoMetadata } from "./ffprobe-metadata";
 import { extractVideoFrameBuffer } from "./extract-frame";
 import { extractFramesAtInterval } from "./extract-interval-frames";
 import { extractAllVideoFrames } from "./extract-all-frames";
@@ -34,7 +34,7 @@ export class VideoStack {
       checkFFmpegAvailable: () => session.checkAvailable(),
       getFFmpegInstallInstructions: () => session.getInstallInstructions(),
       getVideoInfo,
-      getVideoCodec: async (sourcePath: string) => probeVideoCodec(sourcePath, session),
+      getVideoCodec: (source: string | Buffer) => probeVideoCodecSource(source, session),
       extractVideoFrame,
       extractFrames,
       extractAllFrames,
