@@ -35,9 +35,9 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: unmanaged cache Map outside central cache abstraction`);
   }
 
-  // URL redaction is a security boundary. Keep the implementation authoritative
-  // in media/network-policy.ts instead of allowing independent sanitizers to drift.
-  if (rel !== 'lib-next/media/network-policy.ts' && /function\s+(?:redactUrl|sanitizeUrl)\s*\(/i.test(text)) {
+  // URL redaction is a security boundary. Keep both single-URL and text-wide
+  // sanitization authoritative in media/network-policy.ts.
+  if (rel !== 'lib-next/media/network-policy.ts' && /function\s+(?:redactUrl|redactUrlsInText|redactProcessText|redactUrlSecrets|sanitizeUrl)\s*\(/i.test(text)) {
     failures.push(`${rel}: duplicate URL redaction helper outside central network policy`);
   }
 

@@ -149,16 +149,15 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
     ctx.drawImage(image, 0, 0);
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
     const counts = new Map<string, number>();
-    let visiblePixels = 0;
+    const totalPixels = canvas.width * canvas.height;
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] < 50) continue;
-      visiblePixels += 1;
       const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    if (visiblePixels === 0) return [];
+    if (totalPixels === 0) return [];
     return [...counts.entries()]
-      .map(([color, frequency]) => ({ color, frequency: ((frequency / visiblePixels) * 100).toFixed(2) }))
+      .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
       .filter(({ frequency }) => Number(frequency) >= 0.1)
       .sort((a, b) => Number(b.frequency) - Number(a.frequency));
   } catch (cause) {
