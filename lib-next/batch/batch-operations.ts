@@ -8,7 +8,9 @@ import type {
   BatchChainPainter,
 } from "../types";
 import { resolveAssetRefsDeep } from "../assets/asset-strings";
-import { getErrorMessage } from "../core/errors";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { assertCollection } from "../runtime/validation";
 
 export type { BatchChainAssetOpts, BatchChainPainter } from "../types";
 
@@ -16,30 +18,53 @@ function resolveChainMethod(painter: object, path: string): unknown {
   const segments = path.split(".");
   let cur: unknown = painter;
   for (const seg of segments) {
-    if (cur == null || typeof cur !== "object") {
-      return undefined;
-    }
+    if (cur == null || typeof cur !== "object") return undefined;
     cur = (cur as Record<string, unknown>)[seg];
   }
   return cur;
 }
 
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, Math.max(1, concurrency));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= items.length) return;
+        results[index] = await worker(items[index], index);
+      }
+    })
+  );
+  return results;
+}
+
+function rethrowOperationError(error: unknown, message: string, details: Record<string, unknown>): never {
+  if (error instanceof ApexifyError) throw error;
+  throw new ApexifyInputError(message, { cause: error, details });
+}
+
 /**
- * Processes multiple operations in parallel.
+ * Processes multiple operations with central bounded concurrency.
  */
 export async function batchOperations(
   painter: BatchChainPainter,
   operations: BatchOperation[],
   opts?: BatchChainAssetOpts
 ): Promise<Buffer[]> {
-  if (!operations || operations.length === 0) {
-    throw new Error("batch: operations array is required");
-  }
+  assertCollection(operations, "batch.operations", { min: 1, limit: "maxBatchOperations" });
   if (opts?.resolveAssetRefs && !opts.resolve) {
-    throw new Error("batch: resolveAssetRefs requires opts.resolve (use ApexPainter.batch).");
+    throw new ApexifyInputError("batch: resolveAssetRefs requires opts.resolve (use ApexPainter.batch).");
   }
 
-  const promises = operations.map(async (op) => {
+  const concurrency = getDefaultApexifyRuntimeConfig().limits.maxBatchConcurrency;
+  return mapWithConcurrency(operations, concurrency, async (op, index) => {
     try {
       switch (op.type) {
         case "canvas": {
@@ -52,7 +77,7 @@ export async function batchOperations(
           const baseCanvas = await painter.createCanvas({ width: 800, height: 600 }, {
             resolveAssetRefs: opts?.resolveAssetRefs,
           });
-          return await painter.createImage(
+          return painter.createImage(
             op.config as ImageProperties | ImageProperties[],
             baseCanvas,
             undefined,
@@ -63,85 +88,71 @@ export async function batchOperations(
           const textBaseCanvas = await painter.createCanvas({ width: 800, height: 600 }, {
             resolveAssetRefs: opts?.resolveAssetRefs,
           });
-          return await painter.createText(
+          return painter.createText(
             op.config as TextProperties | TextProperties[],
             textBaseCanvas,
             { resolveAssetRefs: opts?.resolveAssetRefs }
           );
         }
         default:
-          throw new Error(`batch: Unknown operation type: ${(op as BatchOperation).type}`);
+          throw new ApexifyInputError(`batch: unknown operation type: ${String((op as BatchOperation).type)}.`);
       }
     } catch (error) {
-      const errorMessage = getErrorMessage(error);
-      throw new Error(`batch: Failed to process ${op.type} operation: ${errorMessage}`);
+      rethrowOperationError(error, `batch: operation ${index} failed.`, { index, type: op.type });
     }
   });
-
-  return Promise.all(promises);
 }
 
 /**
- * Chains multiple operations sequentially.
+ * Chains multiple operations sequentially with a bounded operation count.
  */
 export async function chainOperations(
   painter: BatchChainPainter,
   operations: ChainOperation[],
   opts?: BatchChainAssetOpts
 ): Promise<Buffer> {
-  if (!operations || operations.length === 0) {
-    throw new Error("chain: operations array is required");
-  }
+  assertCollection(operations, "chain.operations", { min: 1, limit: "maxBatchOperations" });
   if (opts?.resolveAssetRefs && !opts.resolve) {
-    throw new Error("chain: resolveAssetRefs requires opts.resolve (use ApexPainter.chain).");
+    throw new ApexifyInputError("chain: resolveAssetRefs requires opts.resolve (use ApexPainter.chain).");
   }
 
   let currentBuffer: Buffer | undefined;
 
-  for (const op of operations) {
+  for (let index = 0; index < operations.length; index++) {
+    const op = operations[index];
     try {
       const method =
         typeof op.method === "string" && op.method.includes(".")
           ? resolveChainMethod(painter as object, op.method)
           : (painter as unknown as Record<string, unknown>)[op.method];
       if (typeof method !== "function") {
-        throw new Error(`chain: Method "${op.method}" does not exist on painter`);
+        throw new ApexifyInputError(`chain: method "${op.method}" does not exist on painter.`);
       }
 
       const resolve = opts?.resolveAssetRefs ? opts.resolve : undefined;
       const args = op.args.map((arg) => {
         if (
           arg === "current" ||
-          (typeof arg === "object" &&
-            arg !== null &&
-            (arg as { __isCurrentBuffer?: boolean }).__isCurrentBuffer)
+          (typeof arg === "object" && arg !== null && (arg as { __isCurrentBuffer?: boolean }).__isCurrentBuffer)
         ) {
           return currentBuffer;
         }
-        if (resolve) {
-          return resolveAssetRefsDeep(arg, resolve);
-        }
-        return arg;
+        return resolve ? resolveAssetRefsDeep(arg, resolve) : arg;
       });
 
       const result = await (method as (...a: unknown[]) => unknown).apply(painter, args);
-
       if (Buffer.isBuffer(result)) {
         currentBuffer = result;
-      } else if (result && typeof result === "object" && "buffer" in result) {
+      } else if (result && typeof result === "object" && "buffer" in result && Buffer.isBuffer((result as { buffer?: unknown }).buffer)) {
         currentBuffer = (result as { buffer: Buffer }).buffer;
       } else {
-        throw new Error(`chain: Operation "${op.method}" did not return a buffer`);
+        throw new ApexifyInputError(`chain: operation "${op.method}" did not return a buffer.`);
       }
     } catch (error) {
-      const errorMessage = getErrorMessage(error);
-      throw new Error(`chain: Failed to execute "${op.method}": ${errorMessage}`);
+      rethrowOperationError(error, `chain: operation ${index} failed.`, { index, method: op.method });
     }
   }
 
-  if (!currentBuffer) {
-    throw new Error("chain: No buffer was produced from operations");
-  }
-
+  if (!currentBuffer) throw new ApexifyInputError("chain: no buffer was produced from operations.");
   return currentBuffer;
 }
