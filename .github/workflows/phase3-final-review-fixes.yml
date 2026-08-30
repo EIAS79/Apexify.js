@@ -1,0 +1,115 @@
+name: Phase 3 Final Review Fixes
+
+on:
+  push:
+    branches:
+      - reengineering/phase-3-core-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-3-core-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Pin npm toolchain
+        run: npm install --global npm@11.19.1
+      - name: Apply final review fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          general = Path('lib-next/core/general-functions.ts')
+          text = general.read_text(encoding='utf-8')
+          old = '''    const counts = new Map<string, number>();
+    let visiblePixels = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 50) continue;
+      visiblePixels += 1;
+      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    if (visiblePixels === 0) return [];
+    return [...counts.entries()]
+      .map(([color, frequency]) => ({ color, frequency: ((frequency / visiblePixels) * 100).toFixed(2) }))
+'''
+          new = '''    const counts = new Map<string, number>();
+    const totalPixels = canvas.width * canvas.height;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 50) continue;
+      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    if (totalPixels === 0) return [];
+    return [...counts.entries()]
+      .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
+'''
+          if old not in text:
+              raise SystemExit('detectColors compatibility target not found')
+          general.write_text(text.replace(old, new), encoding='utf-8')
+
+          entry = Path('tests/phase3-entry.ts')
+          entry_text = entry.read_text(encoding='utf-8')
+          export_line = 'export { detectColors } from "../lib-next/core/general-functions";\n'
+          if export_line not in entry_text:
+              entry.write_text(entry_text + export_line, encoding='utf-8')
+
+          compat = Path('tests/phase3-compat.cjs')
+          compat.write_text(r'''\'use strict\';
+
+const assert = require('node:assert/strict');
+
+async function main() {
+  const { detectColors } = require('../node_modules/.cache/apexify-phase3/phase3-entry.cjs');
+  // 2x1 PNG: one opaque red pixel + one fully transparent pixel.
+  const source = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGP4z8Dwn4GBgQEADPwB//0td20AAAAASUVORK5CYII=';
+  const colors = await detectColors(source);
+  const red = colors.find((entry) => entry.color === '255,0,0');
+  assert.ok(red, 'opaque red pixel must be reported');
+  assert.equal(red.frequency, '50.00', 'detectColors must retain historical total-pixel frequency semantics');
+  console.log('Phase 3 compatibility tests passed.');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+''', encoding='utf-8')
+
+          package = Path('package.json')
+          package_text = package.read_text(encoding='utf-8')
+          old_script = '"test:phase3": "node scripts/phase3-bypass-scan.cjs && node scripts/build-phase3-fixture.mjs && node tests/phase3-runtime.cjs && node tests/phase3-post.cjs"'
+          new_script = '"test:phase3": "node scripts/phase3-bypass-scan.cjs && node scripts/build-phase3-fixture.mjs && node tests/phase3-runtime.cjs && node tests/phase3-post.cjs && node tests/phase3-compat.cjs"'
+          if old_script not in package_text:
+              raise SystemExit('package test:phase3 target not found')
+          package.write_text(package_text.replace(old_script, new_script), encoding='utf-8')
+
+          scan = Path('scripts/phase3-bypass-scan.cjs')
+          scan_text = scan.read_text(encoding='utf-8')
+          old_scan = r'''/function\s+(?:redactUrl|sanitizeUrl)\s*\(/i'''
+          new_scan = r'''/function\s+(?:redactUrl|redactUrlsInText|redactProcessText|redactUrlSecrets|sanitizeUrl)\s*\(/i'''
+          if old_scan not in scan_text:
+              raise SystemExit('URL redaction scanner target not found')
+          scan.write_text(scan_text.replace(old_scan, new_scan), encoding='utf-8')
+      - name: Install and verify
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: Remove one-off workflow and commit
+        run: |
+          rm .github/workflows/phase3-final-review-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib-next/core/general-functions.ts tests/phase3-entry.ts tests/phase3-compat.cjs package.json scripts/phase3-bypass-scan.cjs .github/workflows/phase3-final-review-fixes.yml
+          git commit -m "test(phase3): preserve color analysis compatibility"
+          git push origin HEAD:reengineering/phase-3-core-architecture
