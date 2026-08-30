@@ -1,5 +1,5 @@
 import { loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import { getCanvasContext, getErrorMessage } from "../core/errors";
+import { getCanvasContext } from "../core/errors";
 import type {
   SceneLayer,
   SceneRenderInput,
@@ -12,6 +12,7 @@ import type {
 import { customLines } from "../path/custom-lines";
 import { validateSceneCustomLinesOptions } from "./scene-normalizer";
 import { validateSceneRenderInput } from "./scene-validation";
+import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 
 function drawSurfaceOntoParent(
   ctx: SKRSContext2D,
@@ -22,32 +23,21 @@ function drawSurfaceOntoParent(
   const h = p.height;
   ctx.save();
   ctx.globalAlpha = p.opacity ?? 1;
-  if (p.globalCompositeOperation) {
-    ctx.globalCompositeOperation = p.globalCompositeOperation;
-  }
+  if (p.globalCompositeOperation) ctx.globalCompositeOperation = p.globalCompositeOperation;
   ctx.translate(p.x + w / 2, p.y + h / 2);
-  if (p.rotation) {
-    ctx.rotate((p.rotation * Math.PI) / 180);
-  }
+  if (p.rotation) ctx.rotate((p.rotation * Math.PI) / 180);
   const sx = p.scaleX ?? 1;
   const sy = p.scaleY ?? 1;
-  if (sx !== 1 || sy !== 1) {
-    ctx.scale(sx, sy);
-  }
+  if (sx !== 1 || sy !== 1) ctx.scale(sx, sy);
   ctx.translate(-w / 2, -h / 2);
   ctx.drawImage(surfaceImage, 0, 0, w, h);
   ctx.restore();
 }
 
-/**
- * Composes root and nested surfaces to one PNG using paint-onto-context (no buffer chain per layer).
- */
+/** Composes root and nested surfaces to one PNG using paint-onto-context. */
 export class SceneCreator {
   constructor(private readonly deps: SceneCreatorDeps) {}
 
-  /**
-   * Paints an ordered list of layers onto an existing context for a surface of `size` pixels.
-   */
   async paintLayersOntoContext(
     ctx: SKRSContext2D,
     layers: SceneLayer[],
@@ -56,12 +46,7 @@ export class SceneCreator {
     for (const layer of layers) {
       switch (layer.type) {
         case "image":
-          await this.deps.imageCreator.paintImageLayersOntoContext(
-            ctx,
-            layer.images,
-            size,
-            layer.options
-          );
+          await this.deps.imageCreator.paintImageLayersOntoContext(ctx, layer.images, size, layer.options);
           break;
         case "text":
           await this.deps.textCreator.renderTextsOntoContext(ctx, layer.texts);
@@ -74,29 +59,19 @@ export class SceneCreator {
           const dw = layer.width ?? img.width;
           const dh = layer.height ?? img.height;
           ctx.save();
-          if (layer.globalCompositeOperation) {
-            ctx.globalCompositeOperation = layer.globalCompositeOperation;
-          }
-          if (layer.globalAlpha !== undefined) {
-            ctx.globalAlpha = layer.globalAlpha;
-          }
+          if (layer.globalCompositeOperation) ctx.globalCompositeOperation = layer.globalCompositeOperation;
+          if (layer.globalAlpha !== undefined) ctx.globalAlpha = layer.globalAlpha;
           ctx.drawImage(img, layer.x, layer.y, dw, dh);
           ctx.restore();
           break;
         }
         case "chart": {
-          const chartBuf = await this.deps.chartCreator.createChart(
-            layer.chartType,
-            layer.data,
-            layer.options
-          );
+          const chartBuf = await this.deps.chartCreator.createChart(layer.chartType, layer.data, layer.options);
           const chartImg = await loadImage(chartBuf);
           const dw = layer.width ?? chartImg.width;
           const dh = layer.height ?? chartImg.height;
           ctx.save();
-          if (layer.opacity !== undefined) {
-            ctx.globalAlpha = layer.opacity;
-          }
+          if (layer.opacity !== undefined) ctx.globalAlpha = layer.opacity;
           ctx.drawImage(chartImg, layer.x, layer.y, dw, dh);
           ctx.restore();
           break;
@@ -107,9 +82,7 @@ export class SceneCreator {
           const dw = layer.width ?? chartImg.width;
           const dh = layer.height ?? chartImg.height;
           ctx.save();
-          if (layer.opacity !== undefined) {
-            ctx.globalAlpha = layer.opacity;
-          }
+          if (layer.opacity !== undefined) ctx.globalAlpha = layer.opacity;
           ctx.drawImage(chartImg, layer.x, layer.y, dw, dh);
           ctx.restore();
           break;
@@ -120,9 +93,7 @@ export class SceneCreator {
           const dw = layer.width ?? chartImg.width;
           const dh = layer.height ?? chartImg.height;
           ctx.save();
-          if (layer.opacity !== undefined) {
-            ctx.globalAlpha = layer.opacity;
-          }
+          if (layer.opacity !== undefined) ctx.globalAlpha = layer.opacity;
           ctx.drawImage(chartImg, layer.x, layer.y, dw, dh);
           ctx.restore();
           break;
@@ -149,42 +120,33 @@ export class SceneCreator {
 
   private async renderSurface(layer: Extract<SceneLayer, { type: "surface" }>): Promise<Buffer> {
     const { placement, background, layers: childLayers } = layer;
-    const w = placement.width;
-    const h = placement.height;
     const work: CanvasConfig = {
-      width: w,
-      height: h,
+      width: placement.width,
+      height: placement.height,
       ...(background ?? {}),
     };
-    const { cv, width: rw, height: rh } = await this.deps.canvasCreator.composeCanvasForScene(work);
+    const { cv, width, height } = await this.deps.canvasCreator.composeCanvasForScene(work);
     const ctx = getCanvasContext(cv);
-    await this.paintLayersOntoContext(ctx, childLayers, { width: rw, height: rh });
+    await this.paintLayersOntoContext(ctx, childLayers, { width, height });
     return cv.toBuffer("image/png");
   }
 
   /**
-   * Root scene → single PNG. Background uses {@link CanvasCreator.composeCanvasForScene} (no PNG encode/decode hop).
-   * @param options Pass `{ validate: false }` to skip upfront checks; otherwise width/height and nested `surface` depth are validated.
+   * Root scene → single PNG. Safety/resource validation is mandatory.
+   * `options.validate` remains accepted for source compatibility but cannot disable safety limits.
    */
   async render(input: SceneRenderInput, options?: SceneRenderOptions): Promise<SceneRenderResult> {
     try {
-      if (options?.validate !== false) {
-        validateSceneRenderInput(input, { maxSurfaceDepth: options?.maxSurfaceDepth });
-      }
+      validateSceneRenderInput(input, { maxSurfaceDepth: options?.maxSurfaceDepth });
       const { width, height, background, layers } = input;
-
-      const rootWork: CanvasConfig = {
-        width,
-        height,
-        ...(background ?? {}),
-      };
-
+      const rootWork: CanvasConfig = { width, height, ...(background ?? {}) };
       const { cv, width: w, height: h } = await this.deps.canvasCreator.composeCanvasForScene(rootWork);
       const ctx = getCanvasContext(cv);
       await this.paintLayersOntoContext(ctx, layers, { width: w, height: h });
       return cv.toBuffer("image/png");
     } catch (error) {
-      throw new Error(`SceneCreator.render failed: ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError("Scene rendering failed.", { cause: error });
     }
   }
 }
