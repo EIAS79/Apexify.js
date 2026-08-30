@@ -85,6 +85,13 @@ export interface PainterPixels {
   ): Promise<Buffer>;
 }
 
+export interface PainterImgurCredentials {
+  clientId: string;
+  clientSecret: string;
+  accessToken: string;
+  refreshToken: string;
+}
+
 /** Encode / transfer finished PNG buffers: `painter.output.dataURL(buf)`, `.url(buf)`, etc. */
 export interface PainterOutput {
   /** `data:image/png;base64,…` */
@@ -95,9 +102,10 @@ export interface PainterOutput {
   arrayBuffer(buffer: Buffer): ArrayBuffer;
   /**
    * Upload PNG bytes to Imgur and return the public link.
-   * Requires `IMGUR_CLIENT_ID`, `IMGUR_CLIENT_SECRET`, `IMGUR_ACCESS_TOKEN`, `IMGUR_REFRESH_TOKEN`.
+   * Pass credentials explicitly or configure the four documented IMGUR_* environment variables.
+   * Apexify.js contains no credential defaults.
    */
-  url(buffer: Buffer): Promise<string>;
+  url(buffer: Buffer, credentials?: Partial<PainterImgurCredentials>): Promise<string>;
 }
 
 /** Procedural SFX: `painter.createAudio.preset('laser')`, `.synth({ layers: [...] })`, `.sequence({ events })`. */

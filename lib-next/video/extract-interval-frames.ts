@@ -1,150 +1,104 @@
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs";
+import { promises as fs } from "fs";
 import path from "path";
-import axios from "axios";
 import type { FfmpegSession } from "./ffmpeg-session";
 import type { ExtractFramesOptions } from "../types";
 import { getErrorMessage } from "../core/errors";
-
-const execAsync = promisify(exec);
+import { resolveVideoInputToPath } from "./video-input-resolve";
+import { probeFormatDurationSeconds } from "./ffprobe-metadata";
+import { withTempWorkspace } from "./temp-workspace";
 
 function validateExtractFramesInputs(videoSource: string | Buffer, options: ExtractFramesOptions): void {
-  if (!videoSource) {
-    throw new Error("extractFrames: videoSource is required.");
-  }
-  if (!options || typeof options !== "object") {
-    throw new Error("extractFrames: options object is required.");
-  }
-  if (typeof options.interval !== "number" || options.interval <= 0) {
-    throw new Error("extractFrames: options.interval must be a positive number (milliseconds).");
+  if (!videoSource) throw new Error("extractFrames: videoSource is required.");
+  if (!options || typeof options !== "object") throw new Error("extractFrames: options object is required.");
+  if (!Number.isFinite(options.interval) || options.interval <= 0) {
+    throw new Error("extractFrames: options.interval must be a finite positive number (milliseconds).");
   }
   if (options.outputFormat && !["jpg", "png"].includes(options.outputFormat)) {
     throw new Error("extractFrames: outputFormat must be 'jpg' or 'png'.");
   }
 }
 
-/**
- * Interval-based multi-frame extraction (legacy `ApexPainter.extractFrames` when using `interval`).
- */
+async function resolveOutputDirectory(requested?: string): Promise<string> {
+  if (requested) {
+    const output = path.isAbsolute(requested) ? requested : path.resolve(process.cwd(), requested);
+    await fs.mkdir(output, { recursive: true });
+    return output;
+  }
+  const parent = path.resolve(process.cwd(), "extracted-frames");
+  await fs.mkdir(parent, { recursive: true });
+  return fs.mkdtemp(path.join(parent, "apexify-"));
+}
+
+/** Interval-based multi-frame extraction with isolated transient media state. */
 export async function extractFramesAtInterval(
   videoSource: string | Buffer,
   options: ExtractFramesOptions,
   session: FfmpegSession
 ): Promise<Array<{ source: string; isRemote: boolean }>> {
   try {
-    const ffmpegAvailable = await session.checkAvailable();
-    if (!ffmpegAvailable) {
+    if (!(await session.checkAvailable())) {
       throw new Error(
-        "❌ FFMPEG NOT FOUND\n" +
-          "Video processing features require FFmpeg to be installed on your system.\n" +
+        "FFMPEG NOT FOUND\nVideo processing features require FFmpeg/ffprobe to be installed.\n" +
           session.getInstallInstructions()
       );
     }
-
     validateExtractFramesInputs(videoSource, options);
 
-    const frames: Array<{ source: string; isRemote: boolean }> = [];
-    const frameDir = path.join(process.cwd(), ".temp-frames", `frames-${Date.now()}`);
+    const outputDir = await resolveOutputDirectory(options.outputDirectory);
+    return await withTempWorkspace(
+      { ...session.workspaceOptions, prefix: "apexify-interval-" },
+      async (workspace) => {
+        const { videoPath } = await resolveVideoInputToPath(videoSource, workspace, "input");
+        const duration = await probeFormatDurationSeconds(videoPath, session);
+        if (duration <= 0) throw new Error("Video duration not found in metadata.");
 
-    if (!fs.existsSync(frameDir)) {
-      fs.mkdirSync(frameDir, { recursive: true });
-    }
-
-    const timestamp = Date.now();
-    const tempVideoPath = path.join(frameDir, `temp-video-${timestamp}.mp4`);
-    let videoPath: string;
-    let shouldCleanupVideo = false;
-
-    if (Buffer.isBuffer(videoSource)) {
-      videoPath = tempVideoPath;
-      fs.writeFileSync(videoPath, videoSource);
-      shouldCleanupVideo = true;
-    } else if (typeof videoSource === "string" && /^https?:\/\//i.test(videoSource)) {
-      const response = await axios({
-        method: "get",
-        url: videoSource,
-        responseType: "arraybuffer",
-      });
-      videoPath = tempVideoPath;
-      fs.writeFileSync(videoPath, Buffer.from(response.data));
-      shouldCleanupVideo = true;
-    } else if (typeof videoSource === "string") {
-      videoPath = path.isAbsolute(videoSource) ? videoSource : path.join(process.cwd(), videoSource);
-      if (!fs.existsSync(videoPath)) {
-        throw new Error("Video file not found at specified path.");
-      }
-    } else {
-      throw new Error("extractFrames: videoSource must be a string path/URL or Buffer.");
-    }
-
-    const escapedVideoPath = videoPath.replace(/"/g, '\\"');
-    const { stdout: probeOutput } = await execAsync(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${escapedVideoPath}"`,
-      { maxBuffer: 10 * 1024 * 1024 }
-    );
-
-    const duration = parseFloat(probeOutput.trim());
-    if (isNaN(duration) || duration <= 0) {
-      throw new Error("Video duration not found in metadata.");
-    }
-
-    const outputFormat = options.outputFormat || "jpg";
-    const fps = 1000 / options.interval;
-    const totalFrames = Math.floor(duration * fps);
-
-    const startFrame = options.frameSelection?.start || 0;
-    const endFrame =
-      options.frameSelection?.end !== undefined
-        ? Math.min(options.frameSelection.end, totalFrames - 1)
-        : totalFrames - 1;
-
-    const outputFileTemplate = path.join(frameDir, `frame-%03d.${outputFormat}`);
-    const qualityFlag = outputFormat === "jpg" ? "-q:v 2" : "";
-    const pixFmt = outputFormat === "png" ? "-pix_fmt rgba" : "-pix_fmt yuvj420p";
-
-    const startTime = startFrame / fps;
-    const endTime = (endFrame + 1) / fps;
-    const durationToExtract = endTime - startTime;
-
-    const escapedOutputTemplate = outputFileTemplate.replace(/"/g, '\\"');
-
-    const command = `ffmpeg -i "${escapedVideoPath}" -ss ${startTime} -t ${durationToExtract} -vf fps=${fps} ${pixFmt} ${qualityFlag} -y "${escapedOutputTemplate}"`;
-
-    try {
-      await execAsync(command, {
-        timeout: 60000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-
-      const actualFrameCount = endFrame - startFrame + 1;
-      for (let i = 0; i < actualFrameCount; i++) {
-        const framePath = path.join(frameDir, `frame-${String(i + 1).padStart(3, "0")}.${outputFormat}`);
-
-        if (fs.existsSync(framePath)) {
-          frames.push({
-            source: framePath,
-            isRemote: false,
-          });
+        const outputFormat = options.outputFormat || "jpg";
+        const fps = 1000 / options.interval;
+        const totalFrames = Math.floor(duration * fps);
+        const startFrame = options.frameSelection?.start ?? 0;
+        const endFrame = options.frameSelection?.end !== undefined
+          ? Math.min(options.frameSelection.end, totalFrames - 1)
+          : totalFrames - 1;
+        if (!Number.isFinite(startFrame) || !Number.isFinite(endFrame) || startFrame < 0 || endFrame < startFrame) {
+          throw new Error("extractFrames: invalid frameSelection range.");
         }
-      }
 
-      if (shouldCleanupVideo && fs.existsSync(videoPath)) {
-        fs.unlinkSync(videoPath);
-      }
+        const startTime = startFrame / fps;
+        const durationToExtract = (endFrame + 1) / fps - startTime;
+        const outputTemplate = path.join(outputDir, `frame-%03d.${outputFormat}`);
+        const args = [
+          "-i", videoPath,
+          "-ss", String(startTime),
+          "-t", String(durationToExtract),
+          "-vf", `fps=${fps}`,
+        ];
+        if (outputFormat === "png") args.push("-pix_fmt", "rgba");
+        else args.push("-pix_fmt", "yuvj420p", "-q:v", "2");
+        args.push("-y", outputTemplate);
 
-      return frames;
-    } catch (error) {
-      if (shouldCleanupVideo && fs.existsSync(videoPath)) {
-        fs.unlinkSync(videoPath);
+        await session.runFfmpeg(args, {
+          timeoutMs: 60_000,
+          maxStdoutBytes: 2 * 1024 * 1024,
+          maxStderrBytes: 10 * 1024 * 1024,
+        });
+
+        const frames: Array<{ source: string; isRemote: boolean }> = [];
+        const actualFrameCount = endFrame - startFrame + 1;
+        for (let i = 0; i < actualFrameCount; i++) {
+          const framePath = path.join(outputDir, `frame-${String(i + 1).padStart(3, "0")}.${outputFormat}`);
+          try {
+            await fs.access(framePath);
+            frames.push({ source: framePath, isRemote: false });
+          } catch {
+            break;
+          }
+        }
+        return frames;
       }
-      throw error;
-    }
+    );
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) {
-      throw error;
-    }
-    throw new Error(`extractFrames failed: ${errorMessage}`);
+    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) throw error;
+    throw new Error(`extractFrames failed: ${errorMessage}`, { cause: error });
   }
 }

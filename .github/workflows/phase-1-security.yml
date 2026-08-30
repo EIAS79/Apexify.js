@@ -1,0 +1,62 @@
+name: Phase 1 Security Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - reengineering/phase-1-security-hardening
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    name: Security hardening / Node 20 + FFmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install FFmpeg test dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Install package graph
+        run: npm install
+
+      - name: Capture production dependency audit
+        run: npm audit --omit=dev --json > phase1-audit.json || true
+
+      - name: Scan source before build
+        run: node scripts/phase1-security-scan.cjs
+
+      - name: Build package
+        run: npm run build
+
+      - name: Scan source and built artifacts
+        run: node scripts/phase1-security-scan.cjs
+
+      - name: Run Phase 1 security regression suite
+        run: node tests/security-phase1.cjs
+
+      - name: Package dry run
+        run: npm pack --dry-run --json > phase1-pack.json
+
+      - name: Upload Phase 1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-security-evidence
+          path: |
+            phase1-pack.json
+            phase1-audit.json
+          if-no-files-found: ignore

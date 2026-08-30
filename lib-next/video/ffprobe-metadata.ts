@@ -1,49 +1,48 @@
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs";
-import path from "path";
 import type { FfmpegSession } from "./ffmpeg-session";
 import type { VideoProbeMetadata } from "../types";
 import { getErrorMessage } from "../core/errors";
 import { resolveVideoInputToPath } from "./video-input-resolve";
+import { withTempWorkspace } from "./temp-workspace";
 
-const execAsync = promisify(exec);
+function probeOptions(timeoutMs = 30_000) {
+  return {
+    timeoutMs,
+    maxStdoutBytes: 10 * 1024 * 1024,
+    maxStderrBytes: 2 * 1024 * 1024,
+  } as const;
+}
 
-/**
- * Run ffprobe on an existing file path (does not delete the file).
- */
+/** Run ffprobe on an existing file path using the centralized shell-free runner. */
 export async function ffprobeVideoFile(
   videoPath: string,
   session: FfmpegSession,
   skipFfmpegCheck: boolean = false
 ): Promise<VideoProbeMetadata> {
-  if (!skipFfmpegCheck) {
-    const ok = await session.checkAvailable();
-    if (!ok) {
-      throw new Error(
-        "❌ FFMPEG NOT FOUND\n" +
-          "Video processing features require FFmpeg to be installed on your system.\n" +
-          session.getInstallInstructions()
-      );
-    }
+  if (!skipFfmpegCheck && !(await session.checkAvailable())) {
+    throw new Error(
+      "FFMPEG NOT FOUND\n" +
+        "Video processing features require FFmpeg/ffprobe to be installed.\n" +
+        session.getInstallInstructions()
+    );
   }
 
-  const escapedPath = videoPath.replace(/"/g, '\\"');
-  const { stdout } = await execAsync(
-    `ffprobe -v error -show_entries stream=width,height,r_frame_rate,bit_rate -show_entries format=duration,format_name -of json "${escapedPath}"`,
-    {
-      timeout: 30000,
-      maxBuffer: 10 * 1024 * 1024,
-    }
+  const { stdout } = await session.runFfprobe(
+    [
+      "-v", "error",
+      "-show_entries", "stream=width,height,r_frame_rate,bit_rate",
+      "-show_entries", "format=duration,format_name,bit_rate",
+      "-of", "json",
+      videoPath,
+    ],
+    probeOptions()
   );
 
   const info = JSON.parse(stdout) as {
-    streams?: Array<{ width?: string; height?: string; r_frame_rate?: string; bit_rate?: string }>;
+    streams?: Array<{ width?: number | string; height?: number | string; r_frame_rate?: string; bit_rate?: string }>;
     format?: { duration?: string; bit_rate?: string; format_name?: string };
   };
-  const videoStream = info.streams?.find((s) => s.width && s.height) || info.streams?.[0];
+  const videoStream = info.streams?.find((s) => Number(s.width) > 0 && Number(s.height) > 0) || info.streams?.[0];
   const format = info.format || {};
-
   const fps = videoStream?.r_frame_rate
     ? (() => {
         const [num, den] = videoStream.r_frame_rate!.split("/").map(Number);
@@ -52,43 +51,100 @@ export async function ffprobeVideoFile(
     : 30;
 
   return {
-    duration: parseFloat(format.duration || "0"),
-    width: parseInt(videoStream?.width || "0", 10),
-    height: parseInt(videoStream?.height || "0", 10),
-    fps,
-    bitrate: parseInt(videoStream?.bit_rate || format.bit_rate || "0", 10),
+    duration: Number.parseFloat(format.duration || "0"),
+    width: Number.parseInt(String(videoStream?.width || "0"), 10),
+    height: Number.parseInt(String(videoStream?.height || "0"), 10),
+    fps: Number.isFinite(fps) ? fps : 0,
+    bitrate: Number.parseInt(String(videoStream?.bit_rate || format.bit_rate || "0"), 10),
     format: format.format_name || "unknown",
   };
 }
 
-/**
- * Resolve `videoSource` to a path, probe, then delete temp inputs when applicable.
- */
+export async function probeHasAudioStream(mediaPath: string, session: FfmpegSession): Promise<boolean> {
+  try {
+    const { stdout } = await session.runFfprobe(
+      ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "csv=p=0", mediaPath],
+      probeOptions(20_000)
+    );
+    return stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function probeFormatDurationSeconds(mediaPath: string, session: FfmpegSession): Promise<number> {
+  try {
+    const { stdout } = await session.runFfprobe(
+      ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", mediaPath],
+      probeOptions(20_000)
+    );
+    const value = Number.parseFloat(stdout.trim());
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function probeVideoCodec(mediaPath: string, session: FfmpegSession): Promise<string> {
+  try {
+    const { stdout } = await session.runFfprobe(
+      ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", mediaPath],
+      probeOptions(15_000)
+    );
+    return stdout.trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function probeVideoCodecSource(
+  source: string | Buffer,
+  session: FfmpegSession
+): Promise<string> {
+  return withTempWorkspace(
+    { ...session.workspaceOptions, prefix: "apexify-codec-" },
+    async (workspace) => {
+      const { videoPath } = await resolveVideoInputToPath(source, workspace, "codec-input");
+      return probeVideoCodec(videoPath, session);
+    }
+  );
+}
+
+export async function probeImageDimensions(
+  mediaPath: string,
+  session: FfmpegSession
+): Promise<{ width: number; height: number } | undefined> {
+  try {
+    const { stdout } = await session.runFfprobe(
+      ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", mediaPath],
+      probeOptions(15_000)
+    );
+    const [width, height] = stdout.trim().split("x").map(Number);
+    return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+      ? { width, height }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve a source inside an isolated workspace, probe it, and guarantee cleanup. */
 export async function probeVideoMetadata(
   videoSource: string | Buffer,
   session: FfmpegSession,
   skipFfmpegCheck: boolean = false
 ): Promise<VideoProbeMetadata | null> {
   try {
-    const frameDir = path.join(process.cwd(), ".temp-frames");
-    const { videoPath, shouldCleanup } = await resolveVideoInputToPath(
-      videoSource,
-      frameDir,
-      `probe-${Date.now()}`
+    return await withTempWorkspace(
+      { ...session.workspaceOptions, prefix: "apexify-probe-" },
+      async (workspace) => {
+        const { videoPath } = await resolveVideoInputToPath(videoSource, workspace, "probe-input");
+        return ffprobeVideoFile(videoPath, session, skipFfmpegCheck);
+      }
     );
-
-    const result = await ffprobeVideoFile(videoPath, session, skipFfmpegCheck);
-
-    if (shouldCleanup && fs.existsSync(videoPath)) {
-      fs.unlinkSync(videoPath);
-    }
-
-    return result;
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) {
-      throw error;
-    }
-    throw new Error(`getVideoInfo failed: ${errorMessage}`);
+    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) throw error;
+    throw new Error(`getVideoInfo failed: ${errorMessage}`, { cause: error });
   }
 }
