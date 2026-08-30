@@ -16,8 +16,8 @@ function isRemoteString(value: unknown): boolean { return typeof value === "stri
 function countRemoteLeaves(value: unknown, depth = 0): number {
   if (depth > 12 || value == null || Buffer.isBuffer(value) || value instanceof Uint8Array) return 0;
   if (isRemoteString(value)) return 1;
-  if (Array.isArray(value)) return value.reduce((sum, item) => sum + countRemoteLeaves(item, depth + 1), 0);
-  if (typeof value === "object") return Object.values(value as Record<string, unknown>).reduce((sum, child) => sum + countRemoteLeaves(child, depth + 1), 0);
+  if (Array.isArray(value)) return value.reduce<number>((sum, item) => sum + countRemoteLeaves(item, depth + 1), 0);
+  if (typeof value === "object") return Object.values(value as Record<string, unknown>).reduce<number>((sum, child) => sum + countRemoteLeaves(child, depth + 1), 0);
   return 0;
 }
 
