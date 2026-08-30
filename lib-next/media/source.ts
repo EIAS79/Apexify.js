@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyDecodeError, ApexifyInputError, ApexifyResourceLimitError } from "../runtime/errors";
 import { BoundedCache } from "./cache";
@@ -85,6 +86,17 @@ export function resolveLocalMediaPath(source: string): string {
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
 }
 
+export function normalizeMediaSource(source: MediaSource): string | Buffer {
+  if (Buffer.isBuffer(source)) return source;
+  if (source instanceof Uint8Array) return Buffer.from(source);
+  if (source instanceof URL) {
+    if (source.protocol === "file:") return fileURLToPath(source);
+    return source.toString();
+  }
+  if (typeof source === "string") return source;
+  throw new ApexifyInputError("Media source must be a string path/URL, URL, Buffer, or Uint8Array.");
+}
+
 async function fetchRemoteBuffer(source: string, options: ResolveMediaOptions): Promise<Buffer> {
   const runtime = getDefaultApexifyRuntimeConfig();
   // Revalidate the target on every call, including cache hits. This prevents a
@@ -121,21 +133,23 @@ async function fetchRemoteBuffer(source: string, options: ResolveMediaOptions): 
 }
 
 export async function resolveMediaInput(source: MediaSource, options: ResolveMediaOptions = {}): Promise<string | Buffer> {
-  if (source instanceof URL) source = source.toString();
-  if (source instanceof Uint8Array && !Buffer.isBuffer(source)) source = Buffer.from(source);
-  if (Buffer.isBuffer(source)) {
-    if (source.length === 0) throw new ApexifyInputError("Media buffer is empty.");
-    assertMediaBytes(source, options);
-    return source;
+  const normalized = normalizeMediaSource(source);
+  if (Buffer.isBuffer(normalized)) {
+    if (normalized.length === 0) throw new ApexifyInputError("Media buffer is empty.");
+    assertMediaBytes(normalized, options);
+    return normalized;
   }
-  if (typeof source !== "string" || !source.trim()) throw new ApexifyInputError("Media source must be a non-empty string path/URL or Buffer.");
-  const trimmed = source.trim();
+  if (!normalized.trim()) throw new ApexifyInputError("Media source must be a non-empty path/URL or byte source.");
+  const trimmed = normalized.trim();
   if (/^https?:\/\//i.test(trimmed)) return fetchRemoteBuffer(trimmed, options);
   if (/^data:/i.test(trimmed)) {
     const data = decodeImageDataUrl(trimmed);
     if (!data) throw new ApexifyDecodeError("Only base64 data:image URLs are supported as data media sources.");
     assertMediaBytes(data, options);
     return data;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+    throw new ApexifyInputError("Unsupported media source protocol.");
   }
   return resolveLocalMediaPath(trimmed);
 }
