@@ -14,7 +14,7 @@ function walk(dir, out = []) {
 }
 
 function resolveRelativeSpecifier(sourceFile, specifier, runtimeExtension) {
-  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return specifier;
+  if (specifier !== '.' && specifier !== '..' && !specifier.startsWith('./') && !specifier.startsWith('../')) return specifier;
   if (specifier.endsWith('.json')) return specifier;
 
   const withoutRuntimeExtension = specifier.replace(/\.(?:mjs|cjs|js)$/i, '');
@@ -31,19 +31,20 @@ function resolveRelativeSpecifier(sourceFile, specifier, runtimeExtension) {
 }
 
 function rewriteSpecifiers(sourceFile, text, runtimeExtension) {
+  const relative = `(\\.{1,2}(?:\\/[^'\"]+)?)`;
   const rewrite = (prefix, quote, specifier, suffix = '') =>
     `${prefix}${quote}${resolveRelativeSpecifier(sourceFile, specifier, runtimeExtension)}${quote}${suffix}`;
 
-  text = text.replace(/(\bfrom\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_m, prefix, quote, specifier) =>
+  text = text.replace(new RegExp(`(\\bfrom\\s*)(['\"])${relative}\\2`, 'g'), (_m, prefix, quote, specifier) =>
     rewrite(prefix, quote, specifier)
   );
-  text = text.replace(/(\bimport\s*\(\s*)(['"])(\.{1,2}\/[^'"]+)\2(\s*\))/g, (_m, prefix, quote, specifier, suffix) =>
+  text = text.replace(new RegExp(`(\\bimport\\s*\\(\\s*)(['\"])${relative}\\2(\\s*\\))`, 'g'), (_m, prefix, quote, specifier, suffix) =>
     rewrite(prefix, quote, specifier, suffix)
   );
-  text = text.replace(/(\brequire\s*\(\s*)(['"])(\.{1,2}\/[^'"]+)\2(\s*\))/g, (_m, prefix, quote, specifier, suffix) =>
+  text = text.replace(new RegExp(`(\\brequire\\s*\\(\\s*)(['\"])${relative}\\2(\\s*\\))`, 'g'), (_m, prefix, quote, specifier, suffix) =>
     rewrite(prefix, quote, specifier, suffix)
   );
-  text = text.replace(/(\bimport\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_m, prefix, quote, specifier) =>
+  text = text.replace(new RegExp(`(\\bimport\\s*)(['\"])${relative}\\2`, 'g'), (_m, prefix, quote, specifier) =>
     rewrite(prefix, quote, specifier)
   );
 
