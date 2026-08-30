@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import type { ApexifyRuntime } from "../runtime/context";
-import { defaultApexifyRuntime } from "../runtime/context";
+import { currentApexifyRuntime } from "../runtime/context";
 import { assertByteLimit, remoteByteLimitForKind } from "../runtime/limits";
 import {
   ApexifyDecodeError,
@@ -94,7 +94,7 @@ function acceptHeader(kind: MediaKind): string {
 }
 
 export class MediaSourceResolver {
-  constructor(private readonly runtime: ApexifyRuntime = defaultApexifyRuntime) {}
+  constructor(private readonly runtime: ApexifyRuntime = currentApexifyRuntime()) {}
 
   async resolve(
     source: MediaSource,
@@ -122,7 +122,6 @@ export class MediaSourceResolver {
       return { kind: "buffer", value: data, origin: "data" };
     }
 
-    // A drive-letter path such as C:\\assets\\x.png is not a custom URL scheme.
     if (!isFilesystemPath(trimmed)) {
       const scheme = schemeOf(trimmed);
       if (scheme) {
@@ -195,7 +194,7 @@ export class MediaSourceResolver {
 export async function resolveMediaInput(
   source: MediaSource,
   kind: MediaKind = "generic",
-  runtime: ApexifyRuntime = defaultApexifyRuntime,
+  runtime: ApexifyRuntime = currentApexifyRuntime(),
   options: MediaResolveOptions = {}
 ): Promise<ResolvedMediaInput> {
   return new MediaSourceResolver(runtime).resolve(source, kind, options);
@@ -204,7 +203,7 @@ export async function resolveMediaInput(
 export async function resolveMediaBuffer(
   source: MediaSource,
   kind: MediaKind = "generic",
-  runtime: ApexifyRuntime = defaultApexifyRuntime,
+  runtime: ApexifyRuntime = currentApexifyRuntime(),
   options: MediaResolveOptions = {}
 ): Promise<Buffer> {
   return new MediaSourceResolver(runtime).resolveBuffer(source, kind, options);
@@ -212,7 +211,7 @@ export async function resolveMediaBuffer(
 
 export async function resolveImageInput(
   source: MediaSource,
-  runtime: ApexifyRuntime = defaultApexifyRuntime,
+  runtime: ApexifyRuntime = currentApexifyRuntime(),
   options: MediaResolveOptions = {}
 ): Promise<string | Buffer> {
   return new MediaSourceResolver(runtime).resolveImageInput(source, options);
