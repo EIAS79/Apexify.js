@@ -1,6 +1,6 @@
 {
   "name": "apexify.js",
-  "version": "5.4.6",
+  "version": "6.0.0",
   "description": "Advanced server-side canvas rendering, image processing, charts, GIF/video workflows, procedural audio, scenes and templates for Node.js.",
   "author": "zenith-79",
   "license": "MIT",
@@ -76,16 +76,15 @@
   ],
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",
+    "@skyra/gifenc": "^1.0.1",
     "axios": "^1.15.0",
     "fs-extra": "^11.3.1",
-    "gifencoder": "^2.0.1",
     "imgur": "^2.5.0",
     "jimp": "^1.6.0",
     "jszip": "^3.10.1",
     "sharp": "^0.35.4"
   },
   "devDependencies": {
-    "@types/gifencoder": "^2.0.3",
     "@types/node": "^22.18.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
