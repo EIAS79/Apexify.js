@@ -1,0 +1,180 @@
+name: Phase 3 Public Contract Cleanup
+
+on:
+  push:
+    branches:
+      - reengineering/phase-3-core-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-3-core-architecture
+          fetch-depth: 0
+      - name: Restore legacy public contracts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('lib-next/core/general-functions.ts')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace(
+            'import { ApexifyDecodeError, ApexifyExternalServiceError, ApexifyInputError } from "../runtime/errors";\n',
+            'import { ApexifyDecodeError, ApexifyInputError } from "../runtime/errors";\nimport { emitDiagnostic } from "../runtime/diagnostics";\n'
+          )
+          text = text.replace(
+            '  if (!Array.isArray(filters) || filters.length === 0) {\n    throw new ApexifyInputError("imgEffects: at least one filter is required.");\n  }',
+            '  if (!Array.isArray(filters)) {\n    throw new ApexifyInputError("imgEffects: filters must be an array.");\n  }'
+          )
+          text = text.replace(
+            '        default:\n          throw new ApexifyInputError(`imgEffects: unsupported filter type ${String((filter as { type: string }).type)}.`);',
+            '        default:\n          emitDiagnostic({\n            level: "warn",\n            code: "IMAGE_EFFECT_UNSUPPORTED",\n            message: "Unsupported image effect was ignored for backward compatibility.",\n            details: { type: String((filter as { type: string }).type) },\n          });\n          break;'
+          )
+          text = text.replace(
+            '  } catch (cause) {\n    throw new ApexifyDecodeError("Color analysis failed.", { cause });\n  }\n}\n\n/** Remove one exact RGB color from a resolved image. */',
+            '  } catch {\n    emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });\n    return [];\n  }\n}\n\n/** Remove one exact RGB color from a resolved image. */'
+          )
+          text = text.replace(
+            '): Promise<Buffer> {\n  try {\n    const image = await loadImage(await resolveMediaBuffer(inputImagePath, { kind: "image" }));',
+            '): Promise<Buffer | undefined> {\n  try {\n    const image = await loadImage(await resolveMediaBuffer(inputImagePath, { kind: "image" }));',
+            1
+          )
+          text = text.replace(
+            '  } catch (cause) {\n    throw new ApexifyDecodeError("Color removal failed.", { cause });\n  }\n}\n\n/** remove.bg uses the same bounded remote transport as all other network I/O. */\nexport async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer> {\n  if (!API_KEY) throw new ApexifyInputError("API_KEY is required for remove.bg.");\n  try {',
+            '  } catch {\n    emitDiagnostic({ level: "warn", code: "COLOR_REMOVAL_FAILED", message: "Color removal failed." });\n    return undefined;\n  }\n}\n\n/** remove.bg uses the same bounded remote transport as all other network I/O. */\nexport async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer | undefined> {\n  if (!API_KEY) {\n    emitDiagnostic({ level: "warn", code: "REMOVE_BG_API_KEY_MISSING", message: "remove.bg API key is required." });\n    return undefined;\n  }\n  try {'
+          )
+          text = text.replace(
+            '  } catch (cause) {\n    throw new ApexifyExternalServiceError("remove.bg request failed.", { cause });\n  }\n}',
+            '  } catch {\n    emitDiagnostic({ level: "warn", code: "REMOVE_BG_FAILED", message: "remove.bg request failed." });\n    return undefined;\n  }\n}'
+          )
+
+          old_gradient = '''function createGradientOverlay(width: number, height: number, options: GradientConfig, opacity: number): Buffer {
+  const canvas = createCanvas(width, height);
+  const ctx = getCanvasContext(canvas);
+  let gradient: CanvasGradient;
+  if (options.type === "linear") {
+    gradient = ctx.createLinearGradient(
+      options.startX ?? 0,
+      options.startY ?? 0,
+      options.endX ?? width,
+      options.endY ?? height
+    );
+  } else if (options.type === "radial") {
+    gradient = ctx.createRadialGradient(
+      options.startX ?? width / 2,
+      options.startY ?? height / 2,
+      options.startRadius ?? 0,
+      options.endX ?? width / 2,
+      options.endY ?? height / 2,
+      options.endRadius ?? Math.max(width, height)
+    );
+  } else if (options.type === "conic") {
+    gradient = ctx.createConicGradient(
+      ((options.startAngle ?? 0) * Math.PI) / 180,
+      options.centerX ?? width / 2,
+      options.centerY ?? height / 2
+    );
+  } else {
+    throw new ApexifyInputError(`Unsupported gradient type: ${String(options.type)}`);
+  }
+  options.colors.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  return canvas.toBuffer("image/png");
+}
+'''
+          new_gradient = '''function createGradientOverlay(width: number, height: number, options: GradientConfig, opacity: number): Buffer {
+  const canvas = createCanvas(width, height);
+  const ctx = getCanvasContext(canvas);
+  let gradient: CanvasGradient;
+  if (options.type === "linear") {
+    gradient = ctx.createLinearGradient(
+      options.startX ?? 0,
+      options.startY ?? 0,
+      options.endX ?? width,
+      options.endY ?? height
+    );
+  } else if (options.type === "radial") {
+    gradient = ctx.createRadialGradient(
+      options.startX ?? width / 2,
+      options.startY ?? height / 2,
+      options.startRadius ?? 0,
+      options.endX ?? width / 2,
+      options.endY ?? height / 2,
+      options.endRadius ?? Math.max(width, height)
+    );
+  } else if (options.type === "conic") {
+    gradient = ctx.createConicGradient(
+      ((options.startAngle ?? 0) * Math.PI) / 180,
+      options.centerX ?? width / 2,
+      options.centerY ?? height / 2
+    );
+  } else {
+    throw new ApexifyInputError(`Unsupported gradient type: ${String(options.type)}`);
+  }
+  options.colors.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+  ctx.globalAlpha = opacity;
+  if ((options.type === "linear" || options.type === "radial") && options.repeat && options.repeat !== "no-repeat") {
+    const patternCanvas = createCanvas(width, height);
+    const patternCtx = getCanvasContext(patternCanvas);
+    patternCtx.fillStyle = gradient;
+    patternCtx.fillRect(0, 0, width, height);
+    const pattern = ctx.createPattern(patternCanvas, "repeat");
+    if (!pattern) throw new ApexifyDecodeError("Failed to create repeating gradient pattern.");
+    ctx.fillStyle = pattern;
+  } else {
+    ctx.fillStyle = gradient;
+  }
+  ctx.fillRect(0, 0, width, height);
+  return canvas.toBuffer("image/png");
+}
+'''
+          if old_gradient not in text:
+            raise SystemExit('gradient target not found')
+          text = text.replace(old_gradient, new_gradient)
+          p.write_text(text, encoding='utf-8')
+
+          entry = Path('tests/phase3-entry.ts')
+          entry_text = entry.read_text(encoding='utf-8')
+          entry_text = entry_text.replace(
+            'export { detectColors, imgEffects } from "../lib-next/core/general-functions";',
+            'export { detectColors, imgEffects, removeColor, bgRemoval } from "../lib-next/core/general-functions";'
+          )
+          entry.write_text(entry_text, encoding='utf-8')
+
+          compat = Path('tests/phase3-compat.cjs')
+          compat_text = compat.read_text(encoding='utf-8')
+          compat_text = compat_text.replace(
+            "const { detectColors, imgEffects } = require('../node_modules/.cache/apexify-phase3/phase3-entry.cjs');",
+            "const { detectColors, imgEffects, removeColor, bgRemoval } = require('../node_modules/.cache/apexify-phase3/phase3-entry.cjs');"
+          )
+          marker = "  console.log('Phase 3 compatibility tests passed.');"
+          additions = '''  const emptyEffects = await imgEffects(effectSource, []);
+  assert.ok(Buffer.isBuffer(emptyEffects) && emptyEffects.length > 0, 'empty effect arrays must remain valid');
+
+  const unknownEffects = await imgEffects(effectSource, [{ type: 'future-unknown-filter' }]);
+  assert.ok(Buffer.isBuffer(unknownEffects) && unknownEffects.length > 0, 'unknown effects remain non-fatal for compatibility');
+
+  assert.deepEqual(await detectColors('./phase3-file-does-not-exist.png'), [], 'detectColors failure must retain [] fallback');
+  assert.equal(await removeColor('./phase3-file-does-not-exist.png', { red: 0, green: 0, blue: 0 }), undefined, 'removeColor failure must retain undefined fallback');
+  assert.equal(await bgRemoval('https://example.com/image.png', ''), undefined, 'bgRemoval missing-key failure must retain undefined fallback');
+
+'''
+          if marker not in compat_text:
+            raise SystemExit('compat marker not found')
+          compat.write_text(compat_text.replace(marker, additions + marker), encoding='utf-8')
+      - name: Remove one-off workflow and commit
+        run: |
+          rm .github/workflows/phase3-public-contract-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib-next/core/general-functions.ts tests/phase3-entry.ts tests/phase3-compat.cjs .github/workflows/phase3-public-contract-cleanup.yml
+          git commit -m "fix(phase3): preserve migrated helper contracts"
+          git push origin HEAD:reengineering/phase-3-core-architecture
