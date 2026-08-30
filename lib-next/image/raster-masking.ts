@@ -2,6 +2,7 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
 import type { MaskOptions } from "../types";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
+import { resolveMediaInput, type MediaSource } from "../media/source";
 
 function validateMaskingInputs(
   source: string | Buffer | PathLike | Uint8Array,
@@ -39,8 +40,10 @@ export async function applyRasterMask(
   try {
     validateMaskingInputs(source, maskSource, options);
 
-    const img = await loadImage(source as string | Buffer | URL);
-    const mask = await loadImage(maskSource as string | Buffer | URL);
+    const resolvedSource = await resolveMediaInput(source as MediaSource, { kind: "image" });
+    const resolvedMask = await resolveMediaInput(maskSource as MediaSource, { kind: "image" });
+    const img = await loadImage(resolvedSource);
+    const mask = await loadImage(resolvedMask);
 
     const canvas = createCanvas(img.width, img.height);
     const ctx = getCanvasContext(canvas);

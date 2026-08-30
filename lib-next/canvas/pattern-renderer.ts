@@ -1,6 +1,6 @@
 import { SKRSContext2D, loadImage } from '@napi-rs/canvas';
 import type { PatternOptions, PatternViewport, RenderPatternStackOptions } from "../types";
-import path from 'path';
+import { resolveMediaInput } from "../media/source";
 
 export type { PatternViewport, RenderPatternStackOptions };
 
@@ -328,12 +328,8 @@ export class EnhancedPatternRenderer {
     if (!options.customPatternImage) return;
 
     try {
-      let imagePath = options.customPatternImage;
-      if (!/^https?:\/\//.test(imagePath)) {
-        imagePath = path.isAbsolute(imagePath) ? imagePath : path.join(process.cwd(), imagePath);
-      }
-
-      const image = await loadImage(imagePath);
+      const imageSource = await resolveMediaInput(options.customPatternImage, { kind: "image" });
+      const image = await loadImage(imageSource);
       const scale = options.scale || 1;
       const repeat = options.repeat || 'repeat';
 

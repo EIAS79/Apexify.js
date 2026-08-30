@@ -1,8 +1,7 @@
 import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
-import path from 'path';
-import fs from 'fs';
 import type { StitchOptions, CollageLayout } from "../types";
 import { getCanvasContext } from "../core/errors";
+import { resolveMediaInput } from "../media/source";
 
 /**
  * Stitches multiple images together
@@ -27,16 +26,8 @@ export async function stitchImages(
 
   const loadedImages: Image[] = [];
   for (const imgSource of images) {
-    let img: Image;
-    if (Buffer.isBuffer(imgSource)) {
-      img = await loadImage(imgSource);
-    } else if (imgSource.startsWith('http')) {
-      img = await loadImage(imgSource);
-    } else {
-      const imgPath = path.join(process.cwd(), imgSource);
-      img = await loadImage(fs.readFileSync(imgPath));
-    }
-    loadedImages.push(img);
+    const resolvedSource = await resolveMediaInput(imgSource, { kind: 'image' });
+    loadedImages.push(await loadImage(resolvedSource));
   }
 
   if (loadedImages.length === 0) {
@@ -143,15 +134,8 @@ export async function createCollage(
 
   const loadedImages: Array<{ image: Image; width: number; height: number }> = [];
   for (const imgConfig of images) {
-    let img: Image;
-    if (Buffer.isBuffer(imgConfig.source)) {
-      img = await loadImage(imgConfig.source);
-    } else if (typeof imgConfig.source === 'string' && imgConfig.source.startsWith('http')) {
-      img = await loadImage(imgConfig.source);
-    } else {
-      const imgPath = path.join(process.cwd(), imgConfig.source as string);
-      img = await loadImage(fs.readFileSync(imgPath));
-    }
+    const resolvedSource = await resolveMediaInput(imgConfig.source, { kind: 'image' });
+    const img = await loadImage(resolvedSource);
 
     loadedImages.push({
       image: img,

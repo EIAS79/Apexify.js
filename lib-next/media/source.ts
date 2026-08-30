@@ -7,7 +7,7 @@ import { BoundedCache } from "./cache";
 import { validateRemoteTarget } from "./network-policy";
 import { fetchRemoteMedia, type RemoteFetchOptions } from "./remote-fetch";
 
-export type MediaSource = string | Buffer;
+export type MediaSource = string | Buffer | Uint8Array | URL;
 export type MediaKind = "image" | "video" | "generic";
 
 export interface ResolveMediaOptions extends Omit<RemoteFetchOptions, "kind"> {
@@ -121,6 +121,8 @@ async function fetchRemoteBuffer(source: string, options: ResolveMediaOptions): 
 }
 
 export async function resolveMediaInput(source: MediaSource, options: ResolveMediaOptions = {}): Promise<string | Buffer> {
+  if (source instanceof URL) source = source.toString();
+  if (source instanceof Uint8Array && !Buffer.isBuffer(source)) source = Buffer.from(source);
   if (Buffer.isBuffer(source)) {
     if (source.length === 0) throw new ApexifyInputError("Media buffer is empty.");
     assertMediaBytes(source, options);
