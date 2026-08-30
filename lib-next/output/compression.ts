@@ -1,303 +1,226 @@
-import sharp from 'sharp';
+import sharp from "sharp";
 import type { Sharp } from "sharp";
-import path from 'path';
 import type { CompressionOptions, PaletteOptions } from "../types";
+import type { ApexifyRuntime } from "../runtime/context";
+import { defaultApexifyRuntime } from "../runtime/context";
+import { ApexifyInputError } from "../runtime/errors";
+import { resolveImageInput } from "../media/source";
 
-/**
- * Compresses an image with quality control
- * @param image - Image source (path, URL, or Buffer)
- * @param options - Compression options
- * @returns Compressed image buffer
- */
+interface Pixel {
+  r: number;
+  g: number;
+  b: number;
+}
+
+interface CountedColor extends Pixel {
+  count: number;
+}
+
+async function sharpForImage(
+  image: string | Buffer,
+  runtime: ApexifyRuntime
+): Promise<Sharp> {
+  return sharp(await resolveImageInput(image, runtime));
+}
+
 export async function compressImage(
   image: string | Buffer,
-  options: CompressionOptions = {}
+  options: CompressionOptions = {},
+  runtime: ApexifyRuntime = defaultApexifyRuntime
 ): Promise<Buffer> {
   const {
     quality = 90,
-    format = 'jpeg',
+    format = "jpeg",
     maxWidth,
     maxHeight,
-    progressive = false
+    progressive = false,
   } = options;
 
-  let sharpImage: Sharp;
-
-  if (Buffer.isBuffer(image)) {
-    sharpImage = sharp(image);
-  } else if (typeof image === 'string' && image.startsWith('http')) {
-    const response = await fetch(image);
-    const buffer = await response.arrayBuffer();
-    sharpImage = sharp(Buffer.from(buffer));
-  } else {
-    const imagePath = path.join(process.cwd(), image);
-    sharpImage = sharp(imagePath);
+  if (!Number.isFinite(quality) || quality < 1 || quality > 100) {
+    throw new ApexifyInputError("compress: quality must be between 1 and 100.");
   }
 
+  let sharpImage = await sharpForImage(image, runtime);
   if (maxWidth || maxHeight) {
     sharpImage = sharpImage.resize(maxWidth, maxHeight, {
-      fit: 'inside',
-      withoutEnlargement: true
+      fit: "inside",
+      withoutEnlargement: true,
     });
   }
 
   switch (format) {
-    case 'jpeg':
-      return await sharpImage
-        .jpeg({ quality, progressive })
-        .toBuffer();
-
-    case 'webp':
-      return await sharpImage
-        .webp({ quality })
-        .toBuffer();
-
-    case 'avif':
-      return await sharpImage
-        .avif({ quality })
-        .toBuffer();
-
-    default:
-      return await sharpImage
-        .jpeg({ quality, progressive })
-        .toBuffer();
+    case "jpeg": return sharpImage.jpeg({ quality, progressive }).toBuffer();
+    case "webp": return sharpImage.webp({ quality }).toBuffer();
+    case "avif": return sharpImage.avif({ quality }).toBuffer();
+    default: throw new ApexifyInputError(`compress: unsupported format ${String(format)}.`);
   }
 }
 
-/**
- * Extracts color palette from an image
- * @param image - Image source (path, URL, or Buffer)
- * @param options - Palette extraction options
- * @returns Array of colors with percentages
- */
 export async function extractPalette(
   image: string | Buffer,
-  options: PaletteOptions = {}
+  options: PaletteOptions = {},
+  runtime: ApexifyRuntime = defaultApexifyRuntime
 ): Promise<Array<{ color: string; percentage: number }>> {
-  const {
-    count = 10,
-    method = 'kmeans',
-    format = 'hex'
-  } = options;
-
-  let sharpImage: Sharp;
-
-  if (Buffer.isBuffer(image)) {
-    sharpImage = sharp(image);
-  } else if (typeof image === 'string' && image.startsWith('http')) {
-    const response = await fetch(image);
-    const buffer = await response.arrayBuffer();
-    sharpImage = sharp(Buffer.from(buffer));
-  } else {
-    const imagePath = path.join(process.cwd(), image);
-    sharpImage = sharp(imagePath);
+  const { count = 10, method = "kmeans", format = "hex" } = options;
+  if (!Number.isInteger(count) || count < 1 || count > 256) {
+    throw new ApexifyInputError("extractPalette: count must be an integer between 1 and 256.");
   }
 
-  const { data, info } = await sharpImage
-    .resize(200, 200, { fit: 'inside' })
+  const { data, info } = await (await sharpForImage(image, runtime))
+    .resize(200, 200, { fit: "inside", withoutEnlargement: true })
+    .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const pixels: Array<{ r: number; g: number; b: number }> = [];
+  const pixels: Pixel[] = [];
   for (let i = 0; i < data.length; i += info.channels) {
-    pixels.push({
-      r: data[i],
-      g: data[i + 1],
-      b: data[i + 2]
-    });
+    pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
   }
+  if (pixels.length === 0) return [];
 
-  let colors: Array<{ r: number; g: number; b: number; count: number }> = [];
+  let colors: CountedColor[];
+  if (method === "median-cut") colors = medianCut(pixels, count);
+  else if (method === "octree") colors = octreeQuantization(pixels, count);
+  else colors = kmeansClustering(pixels, count);
 
-  if (method === 'median-cut') {
-    colors = medianCut(pixels, count);
-  } else if (method === 'octree') {
-    colors = octreeQuantization(pixels, count);
-  } else {
-
-    colors = kmeansClustering(pixels, count);
-  }
-
-  const totalPixels = pixels.length;
-  const palette = colors.map(color => {
-    let colorString: string;
-
-    if (format === 'hex') {
-      colorString = `#${[color.r, color.g, color.b].map(c =>
-        c.toString(16).padStart(2, '0')
-      ).join('')}`;
-    } else if (format === 'rgb') {
-      colorString = `rgb(${color.r}, ${color.g}, ${color.b})`;
-    } else {
-
-      const hsl = rgbToHsl(color.r, color.g, color.b);
-      colorString = `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
-    }
-
-    return {
-      color: colorString,
-      percentage: (color.count / totalPixels) * 100
-    };
-  });
-
-  return palette.sort((a, b) => b.percentage - a.percentage);
+  return colors
+    .map((color) => ({
+      color: formatColor(color, format),
+      percentage: (color.count / pixels.length) * 100,
+    }))
+    .sort((a, b) => b.percentage - a.percentage);
 }
 
-/**
- * K-means clustering for color extraction
- */
-function kmeansClustering(
-  pixels: Array<{ r: number; g: number; b: number }>,
-  k: number
-): Array<{ r: number; g: number; b: number; count: number }> {
+function formatColor(color: Pixel, format: string): string {
+  if (format === "hex") {
+    return `#${[color.r, color.g, color.b].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+  }
+  if (format === "rgb") return `rgb(${color.r}, ${color.g}, ${color.b})`;
+  const hsl = rgbToHsl(color.r, color.g, color.b);
+  return `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
+}
 
-  const centroids: Array<{ r: number; g: number; b: number }> = [];
-  for (let i = 0; i < k; i++) {
-    const randomPixel = pixels[Math.floor(Math.random() * pixels.length)];
-    centroids.push({ r: randomPixel.r, g: randomPixel.g, b: randomPixel.b });
+function squaredDistance(a: Pixel, b: Pixel): number {
+  const dr = a.r - b.r;
+  const dg = a.g - b.g;
+  const db = a.b - b.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+/** Deterministic k-means seed selection keeps tests/repeated renders stable. */
+function kmeansClustering(pixels: Pixel[], requested: number): CountedColor[] {
+  const k = Math.min(requested, pixels.length);
+  const centroids: Pixel[] = [];
+  for (let i = 0; i < k; i += 1) {
+    const index = k === 1 ? 0 : Math.floor((i * (pixels.length - 1)) / (k - 1));
+    const pixel = pixels[index];
+    centroids.push({ ...pixel });
   }
 
-  for (let iter = 0; iter < 10; iter++) {
-    const clusters: Array<Array<{ r: number; g: number; b: number }>> =
-      new Array(k).fill(null).map(() => []);
-
+  for (let iteration = 0; iteration < 10; iteration += 1) {
+    const sums = new Array(k).fill(null).map(() => ({ r: 0, g: 0, b: 0, count: 0 }));
     for (const pixel of pixels) {
-      let minDist = Infinity;
-      let nearestCluster = 0;
-
-      for (let i = 0; i < centroids.length; i++) {
-        const dist = Math.sqrt(
-          Math.pow(pixel.r - centroids[i].r, 2) +
-          Math.pow(pixel.g - centroids[i].g, 2) +
-          Math.pow(pixel.b - centroids[i].b, 2)
-        );
-        if (dist < minDist) {
-          minDist = dist;
-          nearestCluster = i;
+      let nearest = 0;
+      let minimum = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < centroids.length; i += 1) {
+        const distance = squaredDistance(pixel, centroids[i]);
+        if (distance < minimum) {
+          minimum = distance;
+          nearest = i;
         }
       }
-      clusters[nearestCluster].push(pixel);
+      const sum = sums[nearest];
+      sum.r += pixel.r;
+      sum.g += pixel.g;
+      sum.b += pixel.b;
+      sum.count += 1;
     }
-
-    for (let i = 0; i < k; i++) {
-      if (clusters[i].length > 0) {
-        const avgR = clusters[i].reduce((sum, p) => sum + p.r, 0) / clusters[i].length;
-        const avgG = clusters[i].reduce((sum, p) => sum + p.g, 0) / clusters[i].length;
-        const avgB = clusters[i].reduce((sum, p) => sum + p.b, 0) / clusters[i].length;
-        centroids[i] = { r: Math.round(avgR), g: Math.round(avgG), b: Math.round(avgB) };
-      }
+    for (let i = 0; i < k; i += 1) {
+      const sum = sums[i];
+      if (sum.count === 0) continue;
+      centroids[i] = {
+        r: Math.round(sum.r / sum.count),
+        g: Math.round(sum.g / sum.count),
+        b: Math.round(sum.b / sum.count),
+      };
     }
   }
 
-  const counts: number[] = new Array(k).fill(0);
+  const counts = new Array<number>(k).fill(0);
   for (const pixel of pixels) {
-    let minDist = Infinity;
-    let nearestCluster = 0;
-
-    for (let i = 0; i < centroids.length; i++) {
-      const dist = Math.sqrt(
-        Math.pow(pixel.r - centroids[i].r, 2) +
-        Math.pow(pixel.g - centroids[i].g, 2) +
-        Math.pow(pixel.b - centroids[i].b, 2)
-      );
-      if (dist < minDist) {
-        minDist = dist;
-        nearestCluster = i;
+    let nearest = 0;
+    let minimum = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < centroids.length; i += 1) {
+      const distance = squaredDistance(pixel, centroids[i]);
+      if (distance < minimum) {
+        minimum = distance;
+        nearest = i;
       }
     }
-    counts[nearestCluster]++;
+    counts[nearest] += 1;
   }
 
-  return centroids.map((centroid, i) => ({
-    ...centroid,
-    count: counts[i]
-  })).filter(c => c.count > 0);
+  return centroids
+    .map((centroid, index) => ({ ...centroid, count: counts[index] }))
+    .filter((entry) => entry.count > 0);
 }
 
-/**
- * Median cut algorithm for color extraction
- */
-function medianCut(
-  pixels: Array<{ r: number; g: number; b: number }>,
-  count: number
-): Array<{ r: number; g: number; b: number; count: number }> {
+function medianCut(pixels: Pixel[], count: number): CountedColor[] {
+  const buckets: Pixel[][] = [pixels.slice()];
+  while (buckets.length < count) {
+    let largestIndex = -1;
+    let largestLength = 1;
+    for (let i = 0; i < buckets.length; i += 1) {
+      if (buckets[i].length > largestLength) {
+        largestLength = buckets[i].length;
+        largestIndex = i;
+      }
+    }
+    if (largestIndex < 0) break;
 
-  const buckets: Array<Array<{ r: number; g: number; b: number }>> = [pixels];
-
-  while (buckets.length < count && buckets.length < 8) {
-    const largestBucket = buckets.reduce((max, bucket, i) =>
-      bucket.length > buckets[max].length ? i : max, 0
-    );
-
-    const bucket = buckets[largestBucket];
-    if (bucket.length <= 1) break;
-
+    const bucket = buckets[largestIndex];
     const ranges = {
-      r: Math.max(...bucket.map(p => p.r)) - Math.min(...bucket.map(p => p.r)),
-      g: Math.max(...bucket.map(p => p.g)) - Math.min(...bucket.map(p => p.g)),
-      b: Math.max(...bucket.map(p => p.b)) - Math.min(...bucket.map(p => p.b))
+      r: Math.max(...bucket.map((p) => p.r)) - Math.min(...bucket.map((p) => p.r)),
+      g: Math.max(...bucket.map((p) => p.g)) - Math.min(...bucket.map((p) => p.g)),
+      b: Math.max(...bucket.map((p) => p.b)) - Math.min(...bucket.map((p) => p.b)),
     };
-
-    const channel = ranges.r > ranges.g && ranges.r > ranges.b ? 'r' :
-                   ranges.g > ranges.b ? 'g' : 'b';
-
+    const channel: keyof Pixel = ranges.r >= ranges.g && ranges.r >= ranges.b
+      ? "r"
+      : ranges.g >= ranges.b ? "g" : "b";
     bucket.sort((a, b) => a[channel] - b[channel]);
-    const median = Math.floor(bucket.length / 2);
-
-    buckets.splice(largestBucket, 1, bucket.slice(0, median), bucket.slice(median));
+    const midpoint = Math.floor(bucket.length / 2);
+    buckets.splice(largestIndex, 1, bucket.slice(0, midpoint), bucket.slice(midpoint));
   }
 
-  return buckets.map(bucket => {
-    const avgR = Math.round(bucket.reduce((sum, p) => sum + p.r, 0) / bucket.length);
-    const avgG = Math.round(bucket.reduce((sum, p) => sum + p.g, 0) / bucket.length);
-    const avgB = Math.round(bucket.reduce((sum, p) => sum + p.b, 0) / bucket.length);
-    return {
-      r: avgR,
-      g: avgG,
-      b: avgB,
-      count: bucket.length
-    };
-  });
+  return buckets.map((bucket) => ({
+    r: Math.round(bucket.reduce((sum, p) => sum + p.r, 0) / bucket.length),
+    g: Math.round(bucket.reduce((sum, p) => sum + p.g, 0) / bucket.length),
+    b: Math.round(bucket.reduce((sum, p) => sum + p.b, 0) / bucket.length),
+    count: bucket.length,
+  }));
 }
 
-/**
- * Octree quantization (simplified)
- */
-function octreeQuantization(
-  pixels: Array<{ r: number; g: number; b: number }>,
-  count: number
-): Array<{ r: number; g: number; b: number; count: number }> {
-
+function octreeQuantization(pixels: Pixel[], count: number): CountedColor[] {
+  // Existing public behavior used the same approximation; preserve it behind the same option.
   return kmeansClustering(pixels, count);
 }
 
-/**
- * Converts RGB to HSL
- */
 function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0, s = 0;
+  let red = r / 255;
+  let green = g / 255;
+  let blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  let h = 0;
+  let s = 0;
   const l = (max + min) / 2;
-
   if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-      case g: h = ((b - r) / d + 2) / 6; break;
-      case b: h = ((r - g) / d + 4) / 6; break;
-    }
+    const delta = max - min;
+    s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+    if (max === red) h = ((green - blue) / delta + (green < blue ? 6 : 0)) / 6;
+    else if (max === green) h = ((blue - red) / delta + 2) / 6;
+    else h = ((red - green) / delta + 4) / 6;
   }
-
-  return {
-    h: Math.round(h * 360),
-    s: Math.round(s * 100),
-    l: Math.round(l * 100)
-  };
+  red = green = blue = 0;
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
 }
