@@ -3,7 +3,7 @@ import { GifEncoder } from "@skyra/gifenc";
 import fs from "node:fs";
 import type { Frame } from "../types";
 import { resolveMediaBuffer } from "../media/source";
-import { ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertGifResourceLimits, assertWithinLimit } from "../runtime/limits";
 
 export type AnimateOptions = {
@@ -201,6 +201,6 @@ export async function animateFrames(
     return options?.gif ? undefined : buffers;
   } catch (error) {
     if (error instanceof ApexifyError) throw error;
-    throw new ApexifyError("APEXIFY_ANIMATION_FAILED", "Animation rendering failed.", { cause: error });
+    throw new ApexifyDecodeError("Animation rendering failed.", { cause: error });
   }
 }
