@@ -416,8 +416,7 @@ export async function drawBackgroundLayers(
         default:
           break;
       }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch {
       emitDiagnostic({ level: "warn", code: "APEXIFY_BACKGROUND_RENDERER_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/canvas/background-renderer.ts." });
     }
     ctx.restore();
