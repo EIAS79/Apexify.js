@@ -120,13 +120,13 @@ jobs:
           if-no-files-found: ignore
 
   benchmark:
-    name: Baseline benchmarks / Node 22
+    name: Baseline benchmarks / Node 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
       - name: Install current dependency graph
         run: npm install
       - name: Build current package
