@@ -66,13 +66,23 @@ try {
   run(process.execPath, ['index.mjs'], { cwd: fixtureEsm });
   run(process.execPath, ['index.cjs'], { cwd: fixtureCjs });
 
-  const typeFixture = path.join(fixtureEsm, 'typecheck.mts');
   fs.writeFileSync(
-    typeFixture,
+    path.join(fixtureEsm, 'typecheck.mts'),
     `import { ApexPainter } from 'apexify.js';\nimport type { CanvasConfig, SceneRenderInput } from 'apexify.js';\nimport type { VideoPipelineLayer } from 'apexify.js/types';\nconst painter: ApexPainter = new ApexPainter({ type: 'buffer' });\nconst canvas: CanvasConfig = { width: 1, height: 1 };\nlet scene!: SceneRenderInput;\nlet layer!: VideoPipelineLayer;\nvoid painter; void canvas; void scene; void layer;\n`
   );
+  writeJson(path.join(fixtureEsm, 'tsconfig.json'), {
+    compilerOptions: {
+      noEmit: true,
+      strict: true,
+      skipLibCheck: true,
+      target: 'ES2022',
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+    },
+    files: ['./typecheck.mts'],
+  });
   const tsc = path.join(path.dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
-  run(process.execPath, [tsc, '--noEmit', '--strict', '--skipLibCheck', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', typeFixture], { cwd: root });
+  run(process.execPath, [tsc, '-p', 'tsconfig.json'], { cwd: fixtureEsm });
 
   console.log(`verify-packed-package: ${packInfo.filename} installed and passed ESM, CJS, types, and contents checks.`);
 } finally {
