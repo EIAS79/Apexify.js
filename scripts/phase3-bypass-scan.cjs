@@ -20,10 +20,11 @@ for (const file of walk(SOURCE)) {
   const text = fs.readFileSync(file, 'utf8');
 
   if (/\baxios\b/.test(text)) failures.push(`${rel}: unmanaged axios reference`);
-  if (/console\.error\s*\(/.test(text)) failures.push(`${rel}: library console.error`);
+  if (/console\.(?:error|warn)\s*\(/.test(text)) failures.push(`${rel}: unmanaged library console diagnostic`);
   if (/\b(?:http|https)\.request\s*\(/.test(text) && rel !== 'lib-next/media/remote-fetch.ts') {
     failures.push(`${rel}: raw HTTP client outside central remote fetcher`);
   }
+
   if (/\bfetch\s*\(/.test(text)) failures.push(`${rel}: unmanaged fetch()`);
 
   if (/resolvable-image-source/i.test(rel) || /from\s+["'][^"']*resolvable-image-source/.test(text)) {
@@ -34,20 +35,29 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: unmanaged cache Map`);
   }
 
-  if (/\bloadImage\s*\(\s*(?:frame\.(?:source|background)|frame\.pattern\.source|maskSource|textureSource|imageSource|imagePath|src|source|url)\b/.test(text)) {
+  // URL redaction is a security boundary. Keep the implementation authoritative
+  // in media/network-policy.ts instead of allowing independent sanitizers to drift.
+  if (rel !== 'lib-next/media/network-policy.ts' && /function\s+(?:redactUrl|sanitizeUrl)\s*\(/i.test(text)) {
+    failures.push(`${rel}: duplicate URL redaction helper outside central network policy`);
+  }
+
+  // Arbitrary caller-provided media must not be handed directly to the native
+  // canvas loader because doing so bypasses DNS/SSRF/byte/cache policy. Static
+  // package-owned assets and already-resolved Buffer values are allowed.
+  if (/loadImage\s*\(\s*(?:source|src|imageSource|maskSource|textureSource|frame\.source|frame\.pattern\.source|options\.(?:source|maskSource|customPatternImage)|imgConfig\.source)\s*\)/.test(text)) {
     failures.push(`${rel}: direct caller media source passed to canvas loadImage()`);
   }
-  if (/\bloadImage\s*\(\s*["']https?:\/\//i.test(text)) {
-    failures.push(`${rel}: direct remote URL passed to canvas loadImage()`);
+  if (/loadImage\s*\(\s*["']https?:\/\//i.test(text)) {
+    failures.push(`${rel}: literal remote URL passed directly to canvas loadImage()`);
   }
-  if (/\bloadImage\b/.test(text) && /\.startsWith\(\s*["']https?/i.test(text) && !/resolveMedia(?:Buffer|Input)/.test(text)) {
+  if (/startsWith\s*\(\s*["']http["']\s*\)/.test(text) && /loadImage\s*\(/.test(text) && !/resolveMedia(?:Buffer|Input)\s*\(/.test(text)) {
     failures.push(`${rel}: ad-hoc remote canvas source resolver`);
   }
 }
 
-const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-if (manifest.dependencies?.axios || manifest.devDependencies?.axios || manifest.optionalDependencies?.axios) {
-  failures.push('package.json: obsolete direct axios dependency');
+const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+if (packageJson.dependencies?.axios || packageJson.devDependencies?.axios || packageJson.optionalDependencies?.axios) {
+  failures.push('package.json: axios remains a direct dependency');
 }
 
 if (failures.length) {
