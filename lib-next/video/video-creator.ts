@@ -1,5 +1,5 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import type { CanvasResults, VideoTextOverlayOperation } from "../types";
+import type { VideoTextOverlayOperation } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 
 export interface MixAudioOverlayClip {
