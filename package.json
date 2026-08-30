@@ -42,7 +42,7 @@
     "build:js": "node scripts/build-package.mjs",
     "build:types": "tsc -p tsconfig.types.json",
     "build": "npm run clean && npm run typecheck && npm run build:js && npm run build:types && node scripts/verify-dist.cjs",
-    "test:security": "node scripts/phase1-security-scan.cjs && node tests/security-phase1.cjs",
+    "test:security": "node scripts/phase1-security-scan.cjs && node scripts/build-security-fixture.mjs && node tests/security-phase1.cjs",
     "test": "npm run test:security",
     "verify:package": "npm run build && node scripts/verify-packed-package.cjs",
     "verify:release": "npm run build && npm test && node scripts/verify-packed-package.cjs",
