@@ -1,52 +1,27 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs";
-import path from "path";
-import type { CanvasResults } from "../types";
+import type { CanvasResults, VideoTextOverlayOperation } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
-import type { VideoTextOverlayOperation } from "../types";
 
-const execAsync = promisify(exec);
-
-/**
- * One external audio clip placed on the video timeline for {@link VideoCreationOptions.mixAudio}.
- */
 export interface MixAudioOverlayClip {
   source: string | Buffer;
-  /** Seconds on the output timeline when this clip starts. */
   startTime: number;
-  /** Seconds of audio to use from the file (default: min of file remainder and video end). */
   duration?: number;
-  /** Seconds to skip into the overlay file before playing (default 0). */
   sourceStart?: number;
-  /** Linear gain (default 1). */
   volume?: number;
-  /** Playback speed for this clip (`atempo`, clamped ~0.25–4). Not wall-clock stretch of `duration`; faster speed shortens how long the trimmed audio plays on the timeline. */
   speed?: number;
-  /** Pitch shift in semitones (+12 = octave up). Uses `asetrate` + compensating `atempo` (no librubberband). */
   pitchSemitones?: number;
 }
 
-/**
- * Mix multiple audio files onto a video (background music, SFX, voice-over) while keeping or dropping original audio.
- */
 export interface MixAudioOperation {
   outputPath: string;
   overlays: MixAudioOverlayClip[];
-  /** When true (default), include the video’s existing audio in the mix. When false, only silence + overlays. */
   keepOriginalAudio?: boolean;
-  /** Gain applied to the original audio before mixing (default 1). */
   originalVolume?: number;
-  /** Playback speed for the video’s original audio track (default 1). */
   originalSpeed?: number;
-  /** Pitch shift in semitones for the original audio (default 0). */
   originalPitchSemitones?: number;
 }
 
-/**
- * Video creation options interface
- */
+/** Public video operation options. Runtime behavior is implemented by VideoHelpers. */
 export interface VideoCreationOptions {
   source: string | Buffer;
   getInfo?: boolean;
@@ -55,19 +30,19 @@ export interface VideoCreationOptions {
     frame?: number;
     width?: number;
     height?: number;
-    outputFormat?: 'jpg' | 'png';
+    outputFormat?: "jpg" | "png";
     quality?: number;
   };
   extractFrames?: {
     times?: number[];
     interval?: number;
     frameSelection?: { start?: number; end?: number };
-    outputFormat?: 'jpg' | 'png';
+    outputFormat?: "jpg" | "png";
     quality?: number;
     outputDirectory?: string;
   };
   extractAllFrames?: {
-    outputFormat?: 'jpg' | 'png';
+    outputFormat?: "jpg" | "png";
     outputDirectory?: string;
     quality?: number;
     prefix?: string;
@@ -79,47 +54,31 @@ export interface VideoCreationOptions {
     grid?: { cols: number; rows: number };
     width?: number;
     height?: number;
-    outputFormat?: 'jpg' | 'png';
+    outputFormat?: "jpg" | "png";
     quality?: number;
   };
   convert?: {
     outputPath: string;
-    format?: 'mp4' | 'webm' | 'avi' | 'mov' | 'mkv';
-    quality?: 'low' | 'medium' | 'high' | 'ultra';
+    format?: "mp4" | "webm" | "avi" | "mov" | "mkv";
+    quality?: "low" | "medium" | "high" | "ultra";
     bitrate?: number;
     fps?: number;
     resolution?: { width: number; height: number };
   };
-  trim?: {
-    startTime: number;
-    endTime: number;
-    outputPath: string;
-  };
-  extractAudio?: {
-    outputPath: string;
-    format?: 'mp3' | 'wav' | 'aac' | 'ogg';
-    bitrate?: number;
-  };
+  trim?: { startTime: number; endTime: number; outputPath: string };
+  extractAudio?: { outputPath: string; format?: "mp3" | "wav" | "aac" | "ogg"; bitrate?: number };
   addWatermark?: {
     watermarkPath: string;
-    position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
     opacity?: number;
     size?: { width: number; height: number };
     outputPath: string;
   };
-  changeSpeed?: {
-    speed: number;
-    outputPath: string;
-  };
-  generatePreview?: {
-    count?: number;
-    outputDirectory?: string;
-    outputFormat?: 'jpg' | 'png';
-    quality?: number;
-  };
+  changeSpeed?: { speed: number; outputPath: string };
+  generatePreview?: { count?: number; outputDirectory?: string; outputFormat?: "jpg" | "png"; quality?: number };
   applyEffects?: {
     filters: Array<{
-      type: 'blur' | 'brightness' | 'contrast' | 'saturation' | 'grayscale' | 'sepia' | 'invert' | 'sharpen' | 'noise';
+      type: "blur" | "brightness" | "contrast" | "saturation" | "grayscale" | "sepia" | "invert" | "sharpen" | "noise";
       intensity?: number;
       value?: number;
     }>;
@@ -128,7 +87,7 @@ export interface VideoCreationOptions {
   merge?: {
     videos: Array<string | Buffer>;
     outputPath: string;
-    mode?: 'sequential' | 'side-by-side' | 'grid';
+    mode?: "sequential" | "side-by-side" | "grid";
     grid?: { cols: number; rows: number };
   };
   replaceSegment?: {
@@ -141,28 +100,18 @@ export interface VideoCreationOptions {
     targetEndTime: number;
     outputPath: string;
   };
-  rotate?: {
-    angle?: 90 | 180 | 270;
-    flip?: 'horizontal' | 'vertical' | 'both';
-    outputPath: string;
-  };
-  crop?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    outputPath: string;
-  };
+  rotate?: { angle?: 90 | 180 | 270; flip?: "horizontal" | "vertical" | "both"; outputPath: string };
+  crop?: { x: number; y: number; width: number; height: number; outputPath: string };
   compress?: {
     outputPath: string;
-    quality?: 'low' | 'medium' | 'high' | 'ultra';
+    quality?: "low" | "medium" | "high" | "ultra";
     targetSize?: number;
     maxBitrate?: number;
   };
-  /** @deprecated Prefer {@link addTextOverlay} for createText parity. */
+  /** @deprecated Prefer addTextOverlay. */
   addText?: {
     text: string;
-    position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'top-center' | 'bottom-center';
+    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" | "top-center" | "bottom-center";
     fontSize?: number;
     fontColor?: string;
     backgroundColor?: string;
@@ -170,30 +119,12 @@ export interface VideoCreationOptions {
     endTime?: number;
     outputPath: string;
   };
-  addFade?: {
-    fadeIn?: number;
-    fadeOut?: number;
-    outputPath: string;
-  };
-  reverse?: {
-    outputPath: string;
-  };
-  createLoop?: {
-    outputPath: string;
-    smooth?: boolean;
-  };
-  batch?: {
-    videos: Array<{ source: string | Buffer; operations: any }>;
-    outputDirectory: string;
-  };
-  detectScenes?: {
-    threshold?: number;
-    outputPath?: string;
-  };
-  stabilize?: {
-    outputPath: string;
-    smoothing?: number;
-  };
+  addFade?: { fadeIn?: number; fadeOut?: number; outputPath: string };
+  reverse?: { outputPath: string };
+  createLoop?: { outputPath: string; smooth?: boolean };
+  batch?: { videos: Array<{ source: string | Buffer; operations: any }>; outputDirectory: string };
+  detectScenes?: { threshold?: number; outputPath?: string };
+  stabilize?: { outputPath: string; smoothing?: number };
   colorCorrect?: {
     brightness?: number;
     contrast?: number;
@@ -204,48 +135,29 @@ export interface VideoCreationOptions {
   };
   pictureInPicture?: {
     overlayVideo: string | Buffer;
-    position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
     size?: { width: number; height: number };
     opacity?: number;
     outputPath: string;
   };
   splitScreen?: {
     videos: Array<string | Buffer>;
-    layout?: 'side-by-side' | 'top-bottom' | 'grid';
+    layout?: "side-by-side" | "top-bottom" | "grid";
     grid?: { cols: number; rows: number };
     outputPath: string;
   };
-  createTimeLapse?: {
-    speed?: number;
-    outputPath: string;
-  };
-  /** Drop all audio streams (video-only file). Same as {@link mute} with no `ranges`. */
-  removeAudio?: {
-    outputPath: string;
-  };
-  /**
-   * Mix one or more external audio clips at chosen times (paths, URLs, or buffers).
-   * Original soundtrack can stay (e.g. duck under music) or be omitted via `keepOriginalAudio: false`.
-   */
+  createTimeLapse?: { speed?: number; outputPath: string };
+  removeAudio?: { outputPath: string };
   mixAudio?: MixAudioOperation;
-  mute?: {
-    outputPath: string;
-    /** Silence these time ranges (seconds); omit for full strip → use {@link removeAudio} or mute without ranges. */
-    ranges?: Array<{ start: number; end: number }>;
-  };
-  /** Adjust loudness; optional per-interval volume/pitch/speed (interval pitch/speed uses FFmpeg `rubberband` when set). */
+  mute?: { outputPath: string; ranges?: Array<{ start: number; end: number }> };
   adjustVolume?: {
     outputPath: string;
-    /** Percentage of unity gain (100 = unchanged). Ignored when `ranges` is set. */
     volume?: number;
     ranges?: Array<{
       start: number;
       end: number;
-      /** Percentage linear gain /100 (100 = unity). */
       volume: number;
-      /** Local playback speed in this interval (requires librubberband). */
       speed?: number;
-      /** Pitch shift in semitones in this interval (requires librubberband). */
       pitchSemitones?: number;
     }>;
   };
@@ -253,51 +165,34 @@ export interface VideoCreationOptions {
     frames: Array<string | Buffer>;
     outputPath: string;
     fps?: number;
-    format?: 'mp4' | 'webm' | 'avi' | 'mov' | 'mkv';
-    quality?: 'low' | 'medium' | 'high' | 'ultra';
+    format?: "mp4" | "webm" | "avi" | "mov" | "mkv";
+    quality?: "low" | "medium" | "high" | "ultra";
     bitrate?: number;
     resolution?: { width: number; height: number };
   };
   detectFormat?: boolean;
-  freezeFrame?: {
-    time: number;
-    duration: number;
-    outputPath: string;
-  };
+  freezeFrame?: { time: number; duration: number; outputPath: string };
   exportPreset?: {
-    preset: 'youtube' | 'instagram' | 'tiktok' | 'twitter' | 'facebook' |
-            '4k' | '1080p' | '720p' | 'mobile' | 'web';
+    preset: "youtube" | "instagram" | "tiktok" | "twitter" | "facebook" | "4k" | "1080p" | "720p" | "mobile" | "web";
     outputPath: string;
   };
-  normalizeAudio?: {
-    targetLevel?: number;
-    method?: 'peak' | 'rms' | 'lufs';
-    outputPath: string;
-  };
-  applyLUT?: {
-    lutPath: string;
-    intensity?: number;
-    outputPath: string;
-  };
+  normalizeAudio?: { targetLevel?: number; method?: "peak" | "rms" | "lufs"; outputPath: string };
+  applyLUT?: { lutPath: string; intensity?: number; outputPath: string };
   addTransition?: {
-    type: 'fade' | 'wipe' | 'slide' | 'zoom' | 'rotate' | 'dissolve' | 'blur' | 'circle' | 'pixelize';
+    type: "fade" | "wipe" | "slide" | "zoom" | "rotate" | "dissolve" | "blur" | "circle" | "pixelize";
     duration: number;
-    direction?: 'left' | 'right' | 'up' | 'down' | 'in' | 'out';
+    direction?: "left" | "right" | "up" | "down" | "in" | "out";
     secondVideo?: string | Buffer;
     outputPath: string;
   };
-  /**
-   * Canvas-rendered captions with full {@link TextProperties} (same as `createText`), timed on the video.
-   * @see VideoTextOverlayClip
-   */
   addTextOverlay?: VideoTextOverlayOperation;
-  /** @deprecated Prefer {@link addTextOverlay} for createText parity. Simple FFmpeg `drawtext`. */
+  /** @deprecated Prefer addTextOverlay. */
   addAnimatedText?: {
     text: string;
-    animation?: 'fadeIn' | 'fadeOut' | 'slideIn' | 'slideOut' | 'typewriter' | 'bounce' | 'zoom' | 'rotate';
+    animation?: "fadeIn" | "fadeOut" | "slideIn" | "slideOut" | "typewriter" | "bounce" | "zoom" | "rotate";
     startTime: number;
     endTime: number;
-    position?: { x: number; y: number } | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center' | 'top-center' | 'bottom-center';
+    position?: { x: number; y: number } | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" | "top-center" | "bottom-center";
     fontSize?: number;
     fontColor?: string;
     fontPath?: string;
@@ -306,588 +201,241 @@ export interface VideoCreationOptions {
     backgroundColor?: string;
     outputPath: string;
   };
-  onProgress?: (progress: {
-    percent: number;
-    time: number;
-    speed: number;
-  }) => void;
+  onProgress?: (progress: { percent: number; time: number; speed: number }) => void;
 }
 
-/**
- * Extended class for video creation functionality
- */
-export class VideoCreator {
+type Helper3 = (a: any, b: any, c?: any) => Promise<any>;
 
+/** Routes public video operations to the secured VideoHelpers implementation. */
+export class VideoCreator {
   private checkFFmpegAvailable?: () => Promise<boolean>;
   private getFFmpegInstallInstructions?: () => string;
   private getVideoInfo?: (videoSource: string | Buffer, skipFFmpegCheck?: boolean) => Promise<any>;
+  private getVideoCodec?: (videoSource: string | Buffer) => Promise<string>;
   private extractVideoFrame?: (
     videoSource: string | Buffer,
     frameNumber?: number,
     timeSeconds?: number,
-    outputFormat?: 'jpg' | 'png',
+    outputFormat?: "jpg" | "png",
     quality?: number
   ) => Promise<Buffer | null>;
   private extractFrames?: (videoSource: string | Buffer, options: any) => Promise<any>;
   private extractAllFrames?: (videoSource: string | Buffer, options?: any) => Promise<any>;
 
-  /**
-   * Sets dependencies from ApexPainter
-   */
+  private generateVideoThumbnail?: Helper3;
+  private convertVideo?: Helper3;
+  private trimVideo?: Helper3;
+  private extractAudio?: Helper3;
+  private addWatermarkToVideo?: Helper3;
+  private changeVideoSpeed?: Helper3;
+  private generateVideoPreview?: Helper3;
+  private applyVideoEffects?: Helper3;
+  private mergeVideos?: (options: any) => Promise<any>;
+  private replaceVideoSegment?: Helper3;
+  private rotateVideo?: Helper3;
+  private cropVideo?: Helper3;
+  private compressVideo?: Helper3;
+  private addTextToVideo?: Helper3;
+  private addFadeToVideo?: Helper3;
+  private reverseVideo?: Helper3;
+  private createVideoLoop?: Helper3;
+  private batchProcessVideos?: (options: any) => Promise<any>;
+  private detectVideoScenes?: Helper3;
+  private stabilizeVideo?: Helper3;
+  private colorCorrectVideo?: Helper3;
+  private addPictureInPicture?: Helper3;
+  private createSplitScreen?: (options: any) => Promise<any>;
+  private createTimeLapseVideo?: Helper3;
+  private muteVideo?: Helper3;
+  private mixVideoAudio?: Helper3;
+  private adjustVideoVolume?: Helper3;
+  private createVideoFromFrames?: (options: any) => Promise<any>;
+  private freezeVideoFrame?: Helper3;
+  private exportVideoPreset?: Helper3;
+  private normalizeVideoAudio?: Helper3;
+  private applyLUTToVideo?: Helper3;
+  private addVideoTransition?: Helper3;
+  private addTextOverlayToVideo?: Helper3;
+  private addAnimatedTextToVideo?: Helper3;
+
   setDependencies(deps: {
     checkFFmpegAvailable: () => Promise<boolean>;
     getFFmpegInstallInstructions: () => string;
     getVideoInfo: (videoSource: string | Buffer, skipFFmpegCheck?: boolean) => Promise<any>;
+    getVideoCodec: (videoSource: string | Buffer) => Promise<string>;
     extractVideoFrame: (
       videoSource: string | Buffer,
       frameNumber?: number,
       timeSeconds?: number,
-      outputFormat?: 'jpg' | 'png',
+      outputFormat?: "jpg" | "png",
       quality?: number
     ) => Promise<Buffer | null>;
     extractFrames?: (videoSource: string | Buffer, options: any) => Promise<any>;
     extractAllFrames?: (videoSource: string | Buffer, options?: any) => Promise<any>;
   }): void {
-    this.checkFFmpegAvailable = deps.checkFFmpegAvailable;
-    this.getFFmpegInstallInstructions = deps.getFFmpegInstallInstructions;
-    this.getVideoInfo = deps.getVideoInfo;
-    this.extractVideoFrame = deps.extractVideoFrame;
-    this.extractFrames = deps.extractFrames;
-    this.extractAllFrames = deps.extractAllFrames;
+    Object.assign(this, deps);
   }
 
-  /**
-   * Main createVideo method - handles all video operations
-   */
+  setHelperMethods(helpers: {
+    generateVideoThumbnail?: Helper3;
+    convertVideo?: Helper3;
+    trimVideo?: Helper3;
+    extractAudio?: Helper3;
+    addWatermarkToVideo?: Helper3;
+    changeVideoSpeed?: Helper3;
+    generateVideoPreview?: Helper3;
+    applyVideoEffects?: Helper3;
+    mergeVideos?: (options: any) => Promise<any>;
+    replaceVideoSegment?: Helper3;
+    rotateVideo?: Helper3;
+    cropVideo?: Helper3;
+    compressVideo?: Helper3;
+    addTextToVideo?: Helper3;
+    addFadeToVideo?: Helper3;
+    reverseVideo?: Helper3;
+    createVideoLoop?: Helper3;
+    batchProcessVideos?: (options: any) => Promise<any>;
+    detectVideoScenes?: Helper3;
+    stabilizeVideo?: Helper3;
+    colorCorrectVideo?: Helper3;
+    addPictureInPicture?: Helper3;
+    createSplitScreen?: (options: any) => Promise<any>;
+    createTimeLapseVideo?: Helper3;
+    muteVideo?: Helper3;
+    mixVideoAudio?: Helper3;
+    adjustVideoVolume?: Helper3;
+    createVideoFromFrames?: (options: any) => Promise<any>;
+    freezeVideoFrame?: Helper3;
+    exportVideoPreset?: Helper3;
+    normalizeVideoAudio?: Helper3;
+    applyLUTToVideo?: Helper3;
+    addVideoTransition?: Helper3;
+    addTextOverlayToVideo?: Helper3;
+    addAnimatedTextToVideo?: Helper3;
+  }): void {
+    Object.assign(this, helpers);
+  }
+
+  private require<T>(value: T | undefined, name: string): T {
+    if (!value) throw new Error(`${name} dependency not set.`);
+    return value;
+  }
+
   async createVideo(options: VideoCreationOptions): Promise<any> {
     try {
-      if (!this.checkFFmpegAvailable || !this.getFFmpegInstallInstructions) {
-        throw new Error('VideoCreator dependencies not set. Call setDependencies() first.');
-      }
-
-      const ffmpegAvailable = await this.checkFFmpegAvailable();
-      if (!ffmpegAvailable) {
-        const errorMessage =
-          '❌ FFMPEG NOT FOUND\n' +
-          'Video processing features require FFmpeg to be installed on your system.\n' +
-          this.getFFmpegInstallInstructions();
-        throw new Error(errorMessage);
+      const available = await this.require(this.checkFFmpegAvailable, "checkFFmpegAvailable")();
+      if (!available) {
+        throw new Error(
+          "FFMPEG NOT FOUND\nVideo processing features require FFmpeg/ffprobe to be installed.\n" +
+            this.require(this.getFFmpegInstallInstructions, "getFFmpegInstallInstructions")()
+        );
       }
 
       let videoInfo: any = null;
-      if (options.getInfo || options.extractFrame?.frame || options.generateThumbnail || options.generatePreview) {
-        if (!this.getVideoInfo) {
-          throw new Error('getVideoInfo dependency not set');
-        }
-        videoInfo = await this.getVideoInfo(options.source, true);
+      if (options.getInfo || options.generateThumbnail || options.generatePreview || options.extractFrame?.frame !== undefined) {
+        videoInfo = await this.require(this.getVideoInfo, "getVideoInfo")(options.source, true);
       }
-
-      if (options.getInfo) {
-        if (!this.getVideoInfo) {
-          throw new Error('getVideoInfo dependency not set');
-        }
-        return videoInfo || await this.getVideoInfo(options.source, true);
-      }
+      if (options.getInfo) return videoInfo ?? this.require(this.getVideoInfo, "getVideoInfo")(options.source, true);
 
       if (options.extractFrame) {
-        if (!this.extractVideoFrame) {
-          throw new Error('extractVideoFrame dependency not set');
-        }
-        const frameBuffer = await this.extractVideoFrame(
+        const frameBuffer = await this.require(this.extractVideoFrame, "extractVideoFrame")(
           options.source,
           options.extractFrame.frame ?? 0,
           options.extractFrame.time,
-          options.extractFrame.outputFormat || 'png',
-          options.extractFrame.quality || 2
+          options.extractFrame.outputFormat ?? "png",
+          options.extractFrame.quality ?? 2
         );
-
-        if (!frameBuffer || frameBuffer.length === 0) {
-          throw new Error('Failed to extract video frame');
-        }
-
+        if (!frameBuffer?.length) throw new Error("Failed to extract video frame.");
         const frameImage = await loadImage(frameBuffer);
-        const videoWidth = frameImage.width;
-        const videoHeight = frameImage.height;
-
-        const width = options.extractFrame.width ?? videoWidth;
-        const height = options.extractFrame.height ?? videoHeight;
-
+        const width = options.extractFrame.width ?? frameImage.width;
+        const height = options.extractFrame.height ?? frameImage.height;
         const canvas = createCanvas(width, height);
-        const ctx = getCanvasContext(canvas);
-
-        ctx.drawImage(frameImage, 0, 0, width, height);
-
-        return {
-          buffer: canvas.toBuffer('image/png'),
-          canvas: { width, height }
-        };
+        getCanvasContext(canvas).drawImage(frameImage, 0, 0, width, height);
+        return { buffer: canvas.toBuffer("image/png"), canvas: { width, height } };
       }
 
       if (options.extractFrames) {
         if (options.extractFrames.times) {
-          if (!this.extractVideoFrame) {
-            throw new Error('extractVideoFrame dependency not set');
-          }
           const frames: Buffer[] = [];
           for (const time of options.extractFrames.times) {
-            const frame = await this.extractVideoFrame(
-              options.source,
-              0,
-              time,
-              options.extractFrames.outputFormat || 'jpg',
-              options.extractFrames.quality || 2
+            const frame = await this.require(this.extractVideoFrame, "extractVideoFrame")(
+              options.source, 0, time, options.extractFrames.outputFormat ?? "jpg", options.extractFrames.quality ?? 2
             );
-            if (frame) {
-              frames.push(frame);
-            }
+            if (frame) frames.push(frame);
           }
           return frames;
-        } else if (options.extractFrames.interval && this.extractFrames) {
-          return await this.extractFrames(options.source, {
+        }
+        if (options.extractFrames.interval !== undefined) {
+          return this.require(this.extractFrames, "extractFrames")(options.source, {
             interval: options.extractFrames.interval,
-            outputFormat: options.extractFrames.outputFormat || 'jpg',
+            outputFormat: options.extractFrames.outputFormat ?? "jpg",
             frameSelection: options.extractFrames.frameSelection,
-            outputDirectory: options.extractFrames.outputDirectory
+            outputDirectory: options.extractFrames.outputDirectory,
           });
         }
       }
 
-      if (options.extractAllFrames && this.extractAllFrames) {
-        return await this.extractAllFrames(options.source, {
-          outputFormat: options.extractAllFrames.outputFormat,
-          outputDirectory: options.extractAllFrames.outputDirectory,
-          quality: options.extractAllFrames.quality,
-          prefix: options.extractAllFrames.prefix,
-          startTime: options.extractAllFrames.startTime,
-          endTime: options.extractAllFrames.endTime
-        });
-      }
-
-      if (options.generateThumbnail) {
-        if (!this.generateVideoThumbnail) {
-          throw new Error('generateVideoThumbnail helper method not set');
-        }
-        return await this.generateVideoThumbnail(options.source, options.generateThumbnail, videoInfo);
-      }
-
-      if (options.convert) {
-        if (!this.convertVideo) {
-          throw new Error('convertVideo helper method not set');
-        }
-        return await this.convertVideo(options.source, options.convert);
-      }
-
-      if (options.trim) {
-        if (!this.trimVideo) {
-          throw new Error('trimVideo helper method not set');
-        }
-        return await this.trimVideo(options.source, options.trim);
-      }
-
-      if (options.extractAudio) {
-        if (!this.extractAudio) {
-          throw new Error('extractAudio helper method not set');
-        }
-        return await this.extractAudio(options.source, options.extractAudio);
-      }
-
-      if (options.addWatermark) {
-        if (!this.addWatermarkToVideo) {
-          throw new Error('addWatermarkToVideo helper method not set');
-        }
-        return await this.addWatermarkToVideo(options.source, options.addWatermark);
-      }
-
-      if (options.changeSpeed) {
-        if (!this.changeVideoSpeed) {
-          throw new Error('changeVideoSpeed helper method not set');
-        }
-        return await this.changeVideoSpeed(options.source, options.changeSpeed);
-      }
-
-      if (options.generatePreview) {
-        if (!this.generateVideoPreview) {
-          throw new Error('generateVideoPreview helper method not set');
-        }
-        return await this.generateVideoPreview(options.source, options.generatePreview, videoInfo);
-      }
-
-      if (options.applyEffects) {
-        if (!this.applyVideoEffects) {
-          throw new Error('applyVideoEffects helper method not set');
-        }
-        return await this.applyVideoEffects(options.source, options.applyEffects);
-      }
-
-      if (options.merge) {
-        if (!this.mergeVideos) {
-          throw new Error('mergeVideos helper method not set');
-        }
-        return await this.mergeVideos(options.merge);
-      }
-
-      if (options.replaceSegment) {
-        if (!this.replaceVideoSegment) {
-          throw new Error('replaceVideoSegment helper method not set');
-        }
-        return await this.replaceVideoSegment(options.source, options.replaceSegment);
-      }
-
-      if (options.rotate) {
-        if (!this.rotateVideo) {
-          throw new Error('rotateVideo helper method not set');
-        }
-        return await this.rotateVideo(options.source, options.rotate);
-      }
-
-      if (options.crop) {
-        if (!this.cropVideo) {
-          throw new Error('cropVideo helper method not set');
-        }
-        return await this.cropVideo(options.source, options.crop);
-      }
-
-      if (options.compress) {
-        if (!this.compressVideo) {
-          throw new Error('compressVideo helper method not set');
-        }
-        return await this.compressVideo(options.source, options.compress);
-      }
-
-      if (options.addText) {
-        if (!this.addTextToVideo) {
-          throw new Error('addTextToVideo helper method not set');
-        }
-        return await this.addTextToVideo(options.source, options.addText);
-      }
-
-      if (options.addFade) {
-        if (!this.addFadeToVideo) {
-          throw new Error('addFadeToVideo helper method not set');
-        }
-        return await this.addFadeToVideo(options.source, options.addFade);
-      }
-
-      if (options.reverse) {
-        if (!this.reverseVideo) {
-          throw new Error('reverseVideo helper method not set');
-        }
-        return await this.reverseVideo(options.source, options.reverse);
-      }
-
-      if (options.createLoop) {
-        if (!this.createVideoLoop) {
-          throw new Error('createVideoLoop helper method not set');
-        }
-        return await this.createVideoLoop(options.source, options.createLoop);
-      }
-
-      if (options.batch) {
-        if (!this.batchProcessVideos) {
-          throw new Error('batchProcessVideos helper method not set');
-        }
-        return await this.batchProcessVideos(options.batch);
-      }
-
-      if (options.detectScenes) {
-        if (!this.detectVideoScenes) {
-          throw new Error('detectVideoScenes helper method not set');
-        }
-        return await this.detectVideoScenes(options.source, options.detectScenes);
-      }
-
-      if (options.stabilize) {
-        if (!this.stabilizeVideo) {
-          throw new Error('stabilizeVideo helper method not set');
-        }
-        return await this.stabilizeVideo(options.source, options.stabilize);
-      }
-
-      if (options.colorCorrect) {
-        if (!this.colorCorrectVideo) {
-          throw new Error('colorCorrectVideo helper method not set');
-        }
-        return await this.colorCorrectVideo(options.source, options.colorCorrect);
-      }
-
-      if (options.pictureInPicture) {
-        if (!this.addPictureInPicture) {
-          throw new Error('addPictureInPicture helper method not set');
-        }
-        return await this.addPictureInPicture(options.source, options.pictureInPicture);
-      }
-
-      if (options.splitScreen) {
-        if (!this.createSplitScreen) {
-          throw new Error('createSplitScreen helper method not set');
-        }
-        return await this.createSplitScreen(options.splitScreen);
-      }
-
-      if (options.createTimeLapse) {
-        if (!this.createTimeLapseVideo) {
-          throw new Error('createTimeLapseVideo helper method not set');
-        }
-        return await this.createTimeLapseVideo(options.source, options.createTimeLapse);
-      }
-
-      if (options.removeAudio) {
-        if (!this.muteVideo) {
-          throw new Error('muteVideo helper method not set');
-        }
-        return await this.muteVideo(options.source, { outputPath: options.removeAudio.outputPath });
-      }
-
-      if (options.mixAudio) {
-        if (!this.mixVideoAudio) {
-          throw new Error('mixVideoAudio helper method not set');
-        }
-        return await this.mixVideoAudio(options.source, options.mixAudio);
-      }
-
-      if (options.mute) {
-        if (!this.muteVideo) {
-          throw new Error('muteVideo helper method not set');
-        }
-        return await this.muteVideo(options.source, options.mute);
-      }
-
-      if (options.adjustVolume) {
-        if (!this.adjustVideoVolume) {
-          throw new Error('adjustVideoVolume helper method not set');
-        }
-        return await this.adjustVideoVolume(options.source, options.adjustVolume);
-      }
-
-      if (options.createFromFrames) {
-        if (!this.createVideoFromFrames) {
-          throw new Error('createVideoFromFrames helper method not set');
-        }
-        return await this.createVideoFromFrames(options.createFromFrames);
-      }
+      if (options.extractAllFrames) return this.require(this.extractAllFrames, "extractAllFrames")(options.source, options.extractAllFrames);
+      if (options.generateThumbnail) return this.require(this.generateVideoThumbnail, "generateVideoThumbnail")(options.source, options.generateThumbnail, videoInfo);
+      if (options.convert) return this.require(this.convertVideo, "convertVideo")(options.source, options.convert);
+      if (options.trim) return this.require(this.trimVideo, "trimVideo")(options.source, options.trim);
+      if (options.extractAudio) return this.require(this.extractAudio, "extractAudio")(options.source, options.extractAudio);
+      if (options.addWatermark) return this.require(this.addWatermarkToVideo, "addWatermarkToVideo")(options.source, options.addWatermark);
+      if (options.changeSpeed) return this.require(this.changeVideoSpeed, "changeVideoSpeed")(options.source, options.changeSpeed);
+      if (options.generatePreview) return this.require(this.generateVideoPreview, "generateVideoPreview")(options.source, options.generatePreview, videoInfo);
+      if (options.applyEffects) return this.require(this.applyVideoEffects, "applyVideoEffects")(options.source, options.applyEffects);
+      if (options.merge) return this.require(this.mergeVideos, "mergeVideos")(options.merge);
+      if (options.replaceSegment) return this.require(this.replaceVideoSegment, "replaceVideoSegment")(options.source, options.replaceSegment);
+      if (options.rotate) return this.require(this.rotateVideo, "rotateVideo")(options.source, options.rotate);
+      if (options.crop) return this.require(this.cropVideo, "cropVideo")(options.source, options.crop);
+      if (options.compress) return this.require(this.compressVideo, "compressVideo")(options.source, options.compress);
+      if (options.addText) return this.require(this.addTextToVideo, "addTextToVideo")(options.source, options.addText);
+      if (options.addFade) return this.require(this.addFadeToVideo, "addFadeToVideo")(options.source, options.addFade);
+      if (options.reverse) return this.require(this.reverseVideo, "reverseVideo")(options.source, options.reverse);
+      if (options.createLoop) return this.require(this.createVideoLoop, "createVideoLoop")(options.source, options.createLoop);
+      if (options.batch) return this.require(this.batchProcessVideos, "batchProcessVideos")(options.batch);
+      if (options.detectScenes) return this.require(this.detectVideoScenes, "detectVideoScenes")(options.source, options.detectScenes);
+      if (options.stabilize) return this.require(this.stabilizeVideo, "stabilizeVideo")(options.source, options.stabilize);
+      if (options.colorCorrect) return this.require(this.colorCorrectVideo, "colorCorrectVideo")(options.source, options.colorCorrect);
+      if (options.pictureInPicture) return this.require(this.addPictureInPicture, "addPictureInPicture")(options.source, options.pictureInPicture);
+      if (options.splitScreen) return this.require(this.createSplitScreen, "createSplitScreen")(options.splitScreen);
+      if (options.createTimeLapse) return this.require(this.createTimeLapseVideo, "createTimeLapseVideo")(options.source, options.createTimeLapse);
+      if (options.removeAudio) return this.require(this.muteVideo, "muteVideo")(options.source, { outputPath: options.removeAudio.outputPath });
+      if (options.mixAudio) return this.require(this.mixVideoAudio, "mixVideoAudio")(options.source, options.mixAudio);
+      if (options.mute) return this.require(this.muteVideo, "muteVideo")(options.source, options.mute);
+      if (options.adjustVolume) return this.require(this.adjustVideoVolume, "adjustVideoVolume")(options.source, options.adjustVolume);
+      if (options.createFromFrames) return this.require(this.createVideoFromFrames, "createVideoFromFrames")(options.createFromFrames);
 
       if (options.detectFormat) {
-        if (!this.getVideoInfo) {
-          throw new Error('getVideoInfo dependency not set');
-        }
-        const info = await this.getVideoInfo(options.source, true);
-        let codec = 'unknown';
-        try {
-          const frameDir = path.join(process.cwd(), '.temp-frames');
-          let videoPath: string;
-          if (Buffer.isBuffer(options.source)) {
-            const tempPath = path.join(frameDir, `temp-video-${Date.now()}.mp4`);
-            fs.writeFileSync(tempPath, options.source);
-            videoPath = tempPath;
-          } else {
-            let resolvedPath = options.source as string;
-            if (!/^https?:\/\//.test(resolvedPath)) {
-              resolvedPath = path.isAbsolute(resolvedPath)
-                ? resolvedPath
-                : path.join(process.cwd(), resolvedPath);
-            }
-            videoPath = resolvedPath;
-          }
-          const escapedPath = videoPath.replace(/"/g, '\\"');
-          const { stdout } = await execAsync(
-            `ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "${escapedPath}"`,
-            { timeout: 10000, maxBuffer: 1024 * 1024 }
-          );
-          codec = stdout.toString().trim() || 'unknown';
-        } catch {
-          codec = 'unknown';
-        }
-
+        const [info, codec] = await Promise.all([
+          this.require(this.getVideoInfo, "getVideoInfo")(options.source, true),
+          this.require(this.getVideoCodec, "getVideoCodec")(options.source),
+        ]);
         return {
-          format: info?.format || 'unknown',
-          codec: codec,
-          container: info?.format || 'unknown',
+          format: info?.format || "unknown",
+          codec: codec || "unknown",
+          container: info?.format || "unknown",
           width: info?.width,
           height: info?.height,
           fps: info?.fps,
           bitrate: info?.bitrate,
-          duration: info?.duration
+          duration: info?.duration,
         };
       }
 
-      if (options.freezeFrame) {
-        if (!this.freezeVideoFrame) {
-          throw new Error('freezeVideoFrame helper method not set');
-        }
-        return await this.freezeVideoFrame(options.source, options.freezeFrame, options.onProgress);
-      }
+      if (options.freezeFrame) return this.require(this.freezeVideoFrame, "freezeVideoFrame")(options.source, options.freezeFrame, options.onProgress);
+      if (options.exportPreset) return this.require(this.exportVideoPreset, "exportVideoPreset")(options.source, options.exportPreset, options.onProgress);
+      if (options.normalizeAudio) return this.require(this.normalizeVideoAudio, "normalizeVideoAudio")(options.source, options.normalizeAudio, options.onProgress);
+      if (options.applyLUT) return this.require(this.applyLUTToVideo, "applyLUTToVideo")(options.source, options.applyLUT, options.onProgress);
+      if (options.addTransition) return this.require(this.addVideoTransition, "addVideoTransition")(options.source, options.addTransition, options.onProgress);
+      if (options.addTextOverlay) return this.require(this.addTextOverlayToVideo, "addTextOverlayToVideo")(options.source, options.addTextOverlay, options.onProgress);
+      if (options.addAnimatedText) return this.require(this.addAnimatedTextToVideo, "addAnimatedTextToVideo")(options.source, options.addAnimatedText, options.onProgress);
 
-      if (options.exportPreset) {
-        if (!this.exportVideoPreset) {
-          throw new Error('exportVideoPreset helper method not set');
-        }
-        return await this.exportVideoPreset(options.source, options.exportPreset, options.onProgress);
-      }
-
-      if (options.normalizeAudio) {
-        if (!this.normalizeVideoAudio) {
-          throw new Error('normalizeVideoAudio helper method not set');
-        }
-        return await this.normalizeVideoAudio(options.source, options.normalizeAudio, options.onProgress);
-      }
-
-      if (options.applyLUT) {
-        if (!this.applyLUTToVideo) {
-          throw new Error('applyLUTToVideo helper method not set');
-        }
-        return await this.applyLUTToVideo(options.source, options.applyLUT, options.onProgress);
-      }
-
-      if (options.addTransition) {
-        if (!this.addVideoTransition) {
-          throw new Error('addVideoTransition helper method not set');
-        }
-        return await this.addVideoTransition(options.source, options.addTransition, options.onProgress);
-      }
-
-      if (options.addTextOverlay) {
-        if (!this.addTextOverlayToVideo) {
-          throw new Error('addTextOverlayToVideo helper method not set');
-        }
-        return await this.addTextOverlayToVideo(
-          options.source,
-          options.addTextOverlay,
-          options.onProgress
-        );
-      }
-
-      if (options.addAnimatedText) {
-        if (!this.addAnimatedTextToVideo) {
-          throw new Error('addAnimatedTextToVideo helper method not set');
-        }
-        return await this.addAnimatedTextToVideo(options.source, options.addAnimatedText, options.onProgress);
-      }
-
-      throw new Error('No video operation specified');
+      throw new Error("No video operation specified.");
     } catch (error) {
-      const errorMessage = getErrorMessage(error);
-      if (errorMessage.includes('FFMPEG NOT FOUND') || errorMessage.includes('FFmpeg')) {
-        throw error;
-      }
-      throw new Error(`createVideo failed: ${errorMessage}`);
+      const message = getErrorMessage(error);
+      if (message.includes("FFMPEG NOT FOUND") || message.includes("FFmpeg")) throw error;
+      throw new Error(`createVideo failed: ${message}`, { cause: error });
     }
   }
-
-  private generateVideoThumbnail?: (videoSource: string | Buffer, options: any, videoInfo: any) => Promise<CanvasResults>;
-  private convertVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private trimVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private extractAudio?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private addWatermarkToVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private changeVideoSpeed?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private generateVideoPreview?: (videoSource: string | Buffer, options: any, videoInfo: any) => Promise<any>;
-  private applyVideoEffects?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private mergeVideos?: (options: any) => Promise<any>;
-  private replaceVideoSegment?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private rotateVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private cropVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private compressVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private addTextToVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private addFadeToVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private reverseVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private createVideoLoop?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private batchProcessVideos?: (options: any) => Promise<any>;
-  private detectVideoScenes?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private stabilizeVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private colorCorrectVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private addPictureInPicture?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private createSplitScreen?: (options: any) => Promise<any>;
-  private createTimeLapseVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private muteVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private mixVideoAudio?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private adjustVideoVolume?: (videoSource: string | Buffer, options: any) => Promise<any>;
-  private createVideoFromFrames?: (options: any) => Promise<any>;
-  private freezeVideoFrame?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-  private exportVideoPreset?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-  private normalizeVideoAudio?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-  private applyLUTToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-  private addVideoTransition?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-  private addTextOverlayToVideo?: (
-    videoSource: string | Buffer,
-    options: any,
-    onProgress?: any
-  ) => Promise<any>;
-  private addAnimatedTextToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-
-  /**
-   * Sets helper methods from ApexPainter
-   */
-  setHelperMethods(helpers: {
-    generateVideoThumbnail?: (videoSource: string | Buffer, options: any, videoInfo: any) => Promise<CanvasResults>;
-    convertVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    trimVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    extractAudio?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    addWatermarkToVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    changeVideoSpeed?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    generateVideoPreview?: (videoSource: string | Buffer, options: any, videoInfo: any) => Promise<any>;
-    applyVideoEffects?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    mergeVideos?: (options: any) => Promise<any>;
-    replaceVideoSegment?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    rotateVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    cropVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    compressVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    addTextToVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    addFadeToVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    reverseVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    createVideoLoop?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    batchProcessVideos?: (options: any) => Promise<any>;
-    detectVideoScenes?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    stabilizeVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    colorCorrectVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    addPictureInPicture?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    createSplitScreen?: (options: any) => Promise<any>;
-    createTimeLapseVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    muteVideo?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    mixVideoAudio?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    adjustVideoVolume?: (videoSource: string | Buffer, options: any) => Promise<any>;
-    createVideoFromFrames?: (options: any) => Promise<any>;
-    freezeVideoFrame?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-    exportVideoPreset?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-    normalizeVideoAudio?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-    applyLUTToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-    addVideoTransition?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-    addTextOverlayToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-    addAnimatedTextToVideo?: (videoSource: string | Buffer, options: any, onProgress?: any) => Promise<any>;
-  }): void {
-    this.generateVideoThumbnail = helpers.generateVideoThumbnail;
-    this.convertVideo = helpers.convertVideo;
-    this.trimVideo = helpers.trimVideo;
-    this.extractAudio = helpers.extractAudio;
-    this.addWatermarkToVideo = helpers.addWatermarkToVideo;
-    this.changeVideoSpeed = helpers.changeVideoSpeed;
-    this.generateVideoPreview = helpers.generateVideoPreview;
-    this.applyVideoEffects = helpers.applyVideoEffects;
-    this.mergeVideos = helpers.mergeVideos;
-    this.replaceVideoSegment = helpers.replaceVideoSegment;
-    this.rotateVideo = helpers.rotateVideo;
-    this.cropVideo = helpers.cropVideo;
-    this.compressVideo = helpers.compressVideo;
-    this.addTextToVideo = helpers.addTextToVideo;
-    this.addFadeToVideo = helpers.addFadeToVideo;
-    this.reverseVideo = helpers.reverseVideo;
-    this.createVideoLoop = helpers.createVideoLoop;
-    this.batchProcessVideos = helpers.batchProcessVideos;
-    this.detectVideoScenes = helpers.detectVideoScenes;
-    this.stabilizeVideo = helpers.stabilizeVideo;
-    this.colorCorrectVideo = helpers.colorCorrectVideo;
-    this.addPictureInPicture = helpers.addPictureInPicture;
-    this.createSplitScreen = helpers.createSplitScreen;
-    this.createTimeLapseVideo = helpers.createTimeLapseVideo;
-    this.muteVideo = helpers.muteVideo;
-    this.mixVideoAudio = helpers.mixVideoAudio;
-    this.adjustVideoVolume = helpers.adjustVideoVolume;
-    this.createVideoFromFrames = helpers.createVideoFromFrames;
-    this.freezeVideoFrame = helpers.freezeVideoFrame;
-    this.exportVideoPreset = helpers.exportVideoPreset;
-    this.normalizeVideoAudio = helpers.normalizeVideoAudio;
-    this.applyLUTToVideo = helpers.applyLUTToVideo;
-    this.addVideoTransition = helpers.addVideoTransition;
-    this.addTextOverlayToVideo = helpers.addTextOverlayToVideo;
-    this.addAnimatedTextToVideo = helpers.addAnimatedTextToVideo;
-  }
 }
-
