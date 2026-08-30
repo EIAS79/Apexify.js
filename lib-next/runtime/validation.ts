@@ -8,7 +8,7 @@ export interface NumberRule {
   exclusiveMin?: boolean;
 }
 
-export function assertRecord(value: unknown, name: string): asserts value is Record<string, unknown> {
+export function assertRecord<T>(value: T, name: string): asserts value is T & Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new ApexifyInputError(`${name} must be an object.`);
   }
@@ -60,7 +60,7 @@ export function assertOptionalEnum<T extends string>(value: unknown, name: strin
   if (value !== undefined) assertEnum(value, name, allowed);
 }
 
-export function assertCollection(value: unknown, name: string, options: { min?: number; limit?: "maxCollectionItems" | "maxFiltersPerOperation" | "maxBackgroundLayers" | "maxVideoOverlays" | "maxBatchOperations" } = {}): asserts value is unknown[] {
+export function assertCollection<T>(value: T, name: string, options: { min?: number; limit?: "maxCollectionItems" | "maxFiltersPerOperation" | "maxBackgroundLayers" | "maxVideoOverlays" | "maxBatchOperations" } = {}): asserts value is T & unknown[] {
   if (!Array.isArray(value)) throw new ApexifyInputError(`${name} must be an array.`);
   if (options.min !== undefined && value.length < options.min) {
     throw new ApexifyInputError(`${name} must contain at least ${options.min} item(s).`);
