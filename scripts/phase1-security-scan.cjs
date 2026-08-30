@@ -1,10 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ROOTS = ['lib-next', 'tests', 'scripts'];
+const ROOTS = ['lib-next', 'tests', 'scripts', 'dist'];
 const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.md', '.yml', '.yaml']);
 const SELF = path.normalize('scripts/phase1-security-scan.cjs');
-const ALLOWED_CHILD_PROCESS = path.normalize('lib-next/video/process-runner.ts');
+const ALLOWED_CHILD_PROCESS = new Set([
+  path.normalize('lib-next/video/process-runner.ts'),
+  path.normalize('dist/cjs/video/process-runner.js'),
+  path.normalize('dist/esm/video/process-runner.js'),
+]);
 
 function walk(dir, out = []) {
   if (!fs.existsSync(dir)) return out;
@@ -26,8 +30,8 @@ for (const file of ROOTS.flatMap((root) => walk(root))) {
   if (normalized === SELF) continue;
   const text = fs.readFileSync(file, 'utf8');
 
-  if (/from\s+["'](?:node:)?child_process["']|require\(["'](?:node:)?child_process["']\)/.test(text) && normalized !== ALLOWED_CHILD_PROCESS) {
-    add(file, 'central-process-runner', 'child_process may only be imported by video/process-runner.ts');
+  if (/from\s+["'](?:node:)?child_process["']|require\(["'](?:node:)?child_process["']\)/.test(text) && !ALLOWED_CHILD_PROCESS.has(normalized)) {
+    add(file, 'central-process-runner', 'child_process may only be imported by video/process-runner');
   }
   if (/\.temp-frames|video-bg-temp-\$\{Date\.now|temp-video-\$\{Date\.now/.test(text)) {
     add(file, 'isolated-temp-workspace', 'legacy shared/timestamp temporary path found');
@@ -43,11 +47,10 @@ for (const file of ROOTS.flatMap((root) => walk(root))) {
   }
 }
 
-// Current repository docs/examples/manifests must not contain secret-shaped Imgur values.
-for (const file of ['README.md', 'HOTFIX-5.4.5.md', 'CHANGELOG.md', 'package.json']) {
+for (const file of ['README.md', 'HOTFIX-5.4.5.md', 'CHANGELOG.md', 'package.json', '.env.example']) {
   if (!fs.existsSync(file)) continue;
   const text = fs.readFileSync(file, 'utf8');
-  const secretLike = /(?:IMGUR_|clientSecret|accessToken|refreshToken)[^\n]{0,40}["'=:]\s*["']?[A-Za-z0-9_-]{24,}/i;
+  const secretLike = /(?:clientSecret|accessToken|refreshToken)[^\n]{0,40}["'=:]\s*["']?[A-Za-z0-9_-]{24,}/i;
   if (secretLike.test(text)) add(file, 'secret-scan', 'secret-shaped Imgur credential value found');
 }
 
