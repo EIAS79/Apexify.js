@@ -1,6 +1,6 @@
 import { SKRSContext2D, Image, loadImage } from "@napi-rs/canvas";
-import path from "path";
-import fs from "fs";
+import { resolveMediaBuffer } from "../media/source";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 export function drawArrow(
   ctx: SKRSContext2D,
@@ -260,22 +260,18 @@ export async function applyLineTexture(
   _lineLength: number
 ): Promise<void> {
   try {
-    let textureImage: Image;
-    if (Buffer.isBuffer(textureSource)) {
-      textureImage = await loadImage(textureSource);
-    } else if (textureSource.startsWith("http")) {
-      textureImage = await loadImage(textureSource);
-    } else {
-      const texturePath = path.join(process.cwd(), textureSource);
-      textureImage = await loadImage(fs.readFileSync(texturePath));
-    }
-
+    const textureImage: Image = await loadImage(await resolveMediaBuffer(textureSource, { kind: "image" }));
     const pat = ctx.createPattern(textureImage, "repeat");
     if (pat) {
       ctx.strokeStyle = pat;
     }
   } catch (error) {
-    console.error("Error applying line texture:", error);
+    emitDiagnostic({
+      level: "warn",
+      code: "LINE_TEXTURE_LOAD_FAILED",
+      message: "Line texture could not be loaded; the existing stroke style was preserved.",
+      details: { errorType: error instanceof Error ? error.name : typeof error },
+    });
   }
 }
 

@@ -1,7 +1,9 @@
-import { createCanvas, loadImage, type CanvasGradient } from "@napi-rs/canvas";
+import { createCanvas, type CanvasGradient } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
 import type { BlendOptions } from "../types";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
+import { loadImageCached } from "./image-properties";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
 function validateGradientBlendInputs(
   source: string | Buffer | PathLike | Uint8Array,
@@ -39,7 +41,8 @@ export async function blendGradientOverImage(
   try {
     validateGradientBlendInputs(source, options);
 
-    const img = await loadImage(source as string | Buffer | URL);
+    const img = await loadImageCached(source);
+    assertCanvasResourceLimits(img.width, img.height);
     const canvas = createCanvas(img.width, img.height);
     const ctx = getCanvasContext(canvas);
 
@@ -76,7 +79,7 @@ export async function blendGradientOverImage(
     ctx.fillRect(0, 0, img.width, img.height);
 
     if (options.maskSource) {
-      const mask = await loadImage(options.maskSource as string | Buffer | URL);
+      const mask = await loadImageCached(options.maskSource);
       ctx.globalCompositeOperation = "destination-in";
       ctx.drawImage(mask, 0, 0, img.width, img.height);
     }
@@ -84,6 +87,6 @@ export async function blendGradientOverImage(
     ctx.globalCompositeOperation = "source-over";
     return canvas.toBuffer("image/png");
   } catch (error) {
-    throw new Error(`gradientBlend failed: ${getErrorMessage(error)}`);
+    throw new Error(`gradientBlend failed: ${getErrorMessage(error)}`, { cause: error });
   }
 }

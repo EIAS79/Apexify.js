@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../runtime/diagnostics";
 import { createCanvas } from "@napi-rs/canvas";
 import { resolveTextDecorations, resolveTextLayout, resolveTextPlacement, type TextProperties, type TextMetrics } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
@@ -52,7 +53,7 @@ export class TextMetricsCreator {
         try {
           await registerTextFontFromPath(fontPath, fontName || "customFont");
         } catch (error) {
-          console.warn(`measureText: failed to register font from path: ${fontPath}`, error);
+          emitDiagnostic({ level: "warn", code: "APEXIFY_TEXT_METRICS_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/text/text-metrics.ts." });
         }
       }
 

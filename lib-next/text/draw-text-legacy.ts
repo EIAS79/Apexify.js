@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../runtime/diagnostics";
 import { GlobalFonts, SKRSContext2D } from "@napi-rs/canvas";
 import path from "path";
 import { resolveTextDecorations, resolveTextEffects, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextObject } from "../types";
@@ -27,7 +28,7 @@ export function drawText(ctx: SKRSContext2D, textOptions: TextObject) {
       const fullPath = path.isAbsolute(fontPath) ? fontPath : path.join(process.cwd(), fontPath);
       GlobalFonts.registerFromPath(fullPath, fontName || "customFont");
     } catch (err) {
-      console.warn(`drawText: failed to register font from path: ${fontPath}`, err);
+      emitDiagnostic({ level: "warn", code: "APEXIFY_DRAW_TEXT_LEGACY_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/text/draw-text-legacy.ts." });
     }
   }
 

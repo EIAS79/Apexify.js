@@ -1,2 +1,2 @@
-/** Image transcode/resize used by video tooling — implemented in `lib-next/core`. */
-export { converter, resizingImg } from "../core/general-functions";
+/** Image transcode/resize used by video tooling; all source resolution is centralized in media/source. */
+export { converter, resizingImg } from "../output/convert";

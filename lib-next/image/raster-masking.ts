@@ -1,7 +1,9 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
 import type { MaskOptions } from "../types";
 import { getCanvasContext, getErrorMessage } from "../core/errors";
+import { loadImageCached } from "./image-properties";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
 function validateMaskingInputs(
   source: string | Buffer | PathLike | Uint8Array,
@@ -39,8 +41,9 @@ export async function applyRasterMask(
   try {
     validateMaskingInputs(source, maskSource, options);
 
-    const img = await loadImage(source as string | Buffer | URL);
-    const mask = await loadImage(maskSource as string | Buffer | URL);
+    const img = await loadImageCached(source);
+    const mask = await loadImageCached(maskSource);
+    assertCanvasResourceLimits(img.width, img.height);
 
     const canvas = createCanvas(img.width, img.height);
     const ctx = getCanvasContext(canvas);
@@ -78,6 +81,6 @@ export async function applyRasterMask(
     ctx.putImageData(imgData, 0, 0);
     return canvas.toBuffer("image/png");
   } catch (error) {
-    throw new Error(`masking failed: ${getErrorMessage(error)}`);
+    throw new Error(`masking failed: ${getErrorMessage(error)}`, { cause: error });
   }
 }

@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, SKRSContext2D, loadImage, Image } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
@@ -182,7 +183,7 @@ async function renderEnhancedText(
       GlobalFonts.registerFromPath(fullPath, style.fontName);
       ctx.font = fontString.replace(`"${fontFamily}"`, `"${style.fontName}"`);
     } catch (error) {
-      console.warn(`Failed to register font: ${style.fontPath}`, error);
+      emitDiagnostic({ level: "warn", code: "APEXIFY_COMPARISONCHART_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/chart/impl/comparisonchart.ts." });
     }
   }
 

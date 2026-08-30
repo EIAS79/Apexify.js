@@ -17,6 +17,8 @@ import { applyStroke } from "../render/stroke-renderer";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { applyContextImageFilters } from "../render/context-image-filters";
 import { withTempWorkspace } from "../video/temp-workspace";
+import { assertCanvasResourceLimits } from "../runtime/limits";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 export type { CanvasResults };
 
@@ -47,11 +49,11 @@ export class CanvasCreator {
 
   private validateCanvasConfig(canvas: CanvasConfig): void {
     if (!canvas) throw new Error("createCanvas: canvas configuration is required.");
-    if (canvas.width !== undefined && (typeof canvas.width !== "number" || canvas.width <= 0)) {
-      throw new Error("createCanvas: width must be a positive number.");
+    if (canvas.width !== undefined && (typeof canvas.width !== "number" || !Number.isFinite(canvas.width) || canvas.width <= 0)) {
+      throw new Error("createCanvas: width must be a finite positive number.");
     }
-    if (canvas.height !== undefined && (typeof canvas.height !== "number" || canvas.height <= 0)) {
-      throw new Error("createCanvas: height must be a positive number.");
+    if (canvas.height !== undefined && (typeof canvas.height !== "number" || !Number.isFinite(canvas.height) || canvas.height <= 0)) {
+      throw new Error("createCanvas: height must be a finite positive number.");
     }
     if (canvas.opacity !== undefined && (typeof canvas.opacity !== "number" || canvas.opacity < 0 || canvas.opacity > 1)) {
       throw new Error("createCanvas: opacity must be a number between 0 and 1.");
@@ -130,7 +132,11 @@ export class CanvasCreator {
           if (!canvas.height) canvas.height = img.height;
         }
       } catch {
-        console.warn("createCanvas: Failed to extract video frame for sizing, using defaults");
+        emitDiagnostic({
+          level: "warn",
+          code: "CANVAS_VIDEO_SIZE_FALLBACK",
+          message: "Video frame sizing failed; canvas defaults will be used.",
+        });
       }
     }
   }
@@ -252,6 +258,7 @@ export class CanvasCreator {
     await this.resolveCanvasDimensions(canvas);
     const width = canvas.width ?? 500;
     const height = canvas.height ?? 500;
+    assertCanvasResourceLimits(width, height);
     const cv = createCanvas(width, height);
     await this.paintConfiguredCanvasSurface(cv, canvas, width, height);
     return { cv, width, height };
@@ -263,6 +270,7 @@ export class CanvasCreator {
     await this.resolveCanvasDimensions(work);
     const width = work.width ?? 500;
     const height = work.height ?? 500;
+    assertCanvasResourceLimits(width, height);
     if (targetCv.width !== width || targetCv.height !== height) {
       throw new Error(`paintCanvasOntoExisting: target is ${targetCv.width}×${targetCv.height} but config resolves to ${width}×${height}.`);
     }
@@ -274,7 +282,7 @@ export class CanvasCreator {
       const { cv } = await this.composeCanvasForScene(canvas);
       return { buffer: cv.toBuffer("image/png"), canvas };
     } catch (error) {
-      throw new Error(`createCanvas failed: ${getErrorMessage(error)}`);
+      throw new Error(`createCanvas failed: ${getErrorMessage(error)}`, { cause: error });
     }
   }
 }

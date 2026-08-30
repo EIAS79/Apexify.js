@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import type { SaveOptions, SaveResult } from "../types";
 import { getErrorMessage } from "../core/errors";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 /** Mutable counter for `naming: "counter"` (matches legacy `ApexPainter.saveCounter`). */
 export interface SaveCounterSession {
@@ -111,7 +112,11 @@ export async function saveImageBuffer(
           break;
         case "gif":
           if (!buffer.toString("ascii", 0, 3).includes("GIF")) {
-            console.warn("save: Converting to GIF may not preserve quality. Consider using PNG.");
+            emitDiagnostic({
+              level: "warn",
+              code: "SAVE_GIF_PASSTHROUGH",
+              message: "Saving a non-GIF buffer with GIF format requested; source bytes are preserved.",
+            });
             finalBuffer = buffer;
           }
           break;
@@ -130,7 +135,7 @@ export async function saveImageBuffer(
       format: opts.format,
     };
   } catch (error) {
-    throw new Error(`save failed: ${getErrorMessage(error)}`);
+    throw new Error(`save failed: ${getErrorMessage(error)}`, { cause: error });
   }
 }
 
@@ -163,6 +168,6 @@ export async function saveImageBuffers(
 
     return results;
   } catch (error) {
-    throw new Error(`saveMultiple failed: ${getErrorMessage(error)}`);
+    throw new Error(`saveMultiple failed: ${getErrorMessage(error)}`, { cause: error });
   }
 }

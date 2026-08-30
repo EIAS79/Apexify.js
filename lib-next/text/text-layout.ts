@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../runtime/diagnostics";
 import { SKRSContext2D, GlobalFonts } from "@napi-rs/canvas";
 import path from "path";
 import { resolveTextDecorations, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextProperties } from "../types";
@@ -10,7 +11,7 @@ export async function registerTextFontFromPath(fontPath: string, fontName: strin
     const fullPath = path.isAbsolute(fontPath) ? fontPath : path.join(process.cwd(), fontPath);
     GlobalFonts.registerFromPath(fullPath, fontName);
   } catch (error) {
-    console.warn(`Failed to register font from path: ${fontPath}`, error);
+    emitDiagnostic({ level: "warn", code: "APEXIFY_TEXT_LAYOUT_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/text/text-layout.ts." });
   }
 }
 

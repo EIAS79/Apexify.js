@@ -1,11 +1,12 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 
 export interface TempWorkspaceOptions {
-  /** Parent directory. Defaults to OS temp, or APEXIFY_TEMP_DIR when configured. */
+  /** Parent directory. Defaults to central runtime policy, APEXIFY_TEMP_DIR, then OS temp. */
   rootDirectory?: string;
-  /** Debug-only opt out of cleanup. Defaults to APEXIFY_RETAIN_TEMP_FILES=true. */
+  /** Debug-only opt out of cleanup. Defaults to central runtime policy or APEXIFY_RETAIN_TEMP_FILES=true. */
   retain?: boolean;
   prefix?: string;
 }
@@ -51,6 +52,8 @@ export class TempWorkspace {
 
 function configuredRetain(options?: TempWorkspaceOptions): boolean {
   if (options?.retain !== undefined) return options.retain;
+  const runtime = getDefaultApexifyRuntimeConfig().temp;
+  if (runtime.retainFiles) return true;
   return process.env.APEXIFY_RETAIN_TEMP_FILES === "true";
 }
 
@@ -58,8 +61,9 @@ function configuredRetain(options?: TempWorkspaceOptions): boolean {
 export async function createTempWorkspace(
   options: TempWorkspaceOptions = {}
 ): Promise<TempWorkspace> {
-  const root = options.rootDirectory || process.env.APEXIFY_TEMP_DIR || os.tmpdir();
-  const prefix = (options.prefix || "apexify-").replace(/[^a-zA-Z0-9._-]/g, "-");
+  const runtime = getDefaultApexifyRuntimeConfig().temp;
+  const root = options.rootDirectory ?? runtime.rootDirectory ?? process.env.APEXIFY_TEMP_DIR ?? os.tmpdir();
+  const prefix = (options.prefix ?? "apexify-").replace(/[^a-zA-Z0-9._-]/g, "-");
   await fs.mkdir(root, { recursive: true });
   const directory = await fs.mkdtemp(path.join(root, prefix));
   return new TempWorkspace(directory, configuredRetain(options));

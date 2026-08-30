@@ -42,13 +42,30 @@ if (/\bfrom\s+["']\.{1,2}\/[^"']+(?<!\.cjs)["']/.test(cjsTypes)) {
   throw new Error('CommonJS declarations contain an extensionless relative export/import.');
 }
 
+const expectedRuntimeKeys = [
+  'ApexPainter',
+  'ApexifyConfigError',
+  'ApexifyDecodeError',
+  'ApexifyError',
+  'ApexifyExternalServiceError',
+  'ApexifyInputError',
+  'ApexifyProcessError',
+  'ApexifyRemoteFetchError',
+  'ApexifyResourceLimitError',
+  'DEFAULT_APEXIFY_RUNTIME_CONFIG',
+  'configureApexifyRuntime',
+  'getDefaultApexifyRuntimeConfig',
+  'resetApexifyRuntimeConfig',
+  'resolveApexifyRuntimeConfig',
+].sort();
+
 (async () => {
   const esm = await import(pathToFileURL(path.join(root, 'dist/esm/index.js')).href);
   const cjs = require(path.join(root, 'dist/cjs/index.cjs'));
   for (const [label, mod] of [['ESM', esm], ['CommonJS', cjs]]) {
     if (typeof mod.ApexPainter !== 'function') throw new Error(`${label} build does not export ApexPainter.`);
     const runtimeKeys = Object.keys(mod).filter((key) => key !== 'default').sort();
-    if (runtimeKeys.join(',') !== 'ApexPainter') {
+    if (runtimeKeys.join(',') !== expectedRuntimeKeys.join(',')) {
       throw new Error(`${label} root runtime exports changed unexpectedly: ${runtimeKeys.join(', ')}`);
     }
   }

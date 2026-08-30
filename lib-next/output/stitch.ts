@@ -1,8 +1,8 @@
-import { createCanvas, loadImage, Image } from '@napi-rs/canvas';
-import path from 'path';
-import fs from 'fs';
+import { createCanvas, type Image } from '@napi-rs/canvas';
 import type { StitchOptions, CollageLayout } from "../types";
 import { getCanvasContext } from "../core/errors";
+import { loadImageCached } from "../image/image-properties";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
 /**
  * Stitches multiple images together
@@ -27,16 +27,7 @@ export async function stitchImages(
 
   const loadedImages: Image[] = [];
   for (const imgSource of images) {
-    let img: Image;
-    if (Buffer.isBuffer(imgSource)) {
-      img = await loadImage(imgSource);
-    } else if (imgSource.startsWith('http')) {
-      img = await loadImage(imgSource);
-    } else {
-      const imgPath = path.join(process.cwd(), imgSource);
-      img = await loadImage(fs.readFileSync(imgPath));
-    }
-    loadedImages.push(img);
+    loadedImages.push(await loadImageCached(imgSource));
   }
 
   if (loadedImages.length === 0) {
@@ -70,6 +61,7 @@ export async function stitchImages(
     canvasHeight = maxHeight * rows + spacing * (rows - 1);
   }
 
+  assertCanvasResourceLimits(canvasWidth, canvasHeight);
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = getCanvasContext(canvas);
 
@@ -143,20 +135,11 @@ export async function createCollage(
 
   const loadedImages: Array<{ image: Image; width: number; height: number }> = [];
   for (const imgConfig of images) {
-    let img: Image;
-    if (Buffer.isBuffer(imgConfig.source)) {
-      img = await loadImage(imgConfig.source);
-    } else if (typeof imgConfig.source === 'string' && imgConfig.source.startsWith('http')) {
-      img = await loadImage(imgConfig.source);
-    } else {
-      const imgPath = path.join(process.cwd(), imgConfig.source as string);
-      img = await loadImage(fs.readFileSync(imgPath));
-    }
-
+    const img = await loadImageCached(imgConfig.source);
     loadedImages.push({
       image: img,
-      width: imgConfig.width || img.width,
-      height: imgConfig.height || img.height
+      width: imgConfig.width ?? img.width,
+      height: imgConfig.height ?? img.height
     });
   }
 
@@ -169,7 +152,6 @@ export async function createCollage(
     canvasWidth = cellWidth * columns + spacing * (columns - 1);
     canvasHeight = cellHeight * rows + spacing * (rows - 1);
   } else if (type === 'masonry') {
-
     const colWidths: number[] = new Array(columns).fill(0);
     const colHeights: number[] = new Array(columns).fill(0);
 
@@ -182,15 +164,14 @@ export async function createCollage(
     canvasWidth = Math.max(...colWidths) * columns + spacing * (columns - 1);
     canvasHeight = Math.max(...colHeights);
   } else if (type === 'carousel') {
-
     canvasWidth = loadedImages.reduce((sum, img) => sum + img.width, 0) + spacing * (loadedImages.length - 1);
     canvasHeight = Math.max(...loadedImages.map(img => img.height));
   } else {
-
     canvasWidth = 800;
     canvasHeight = 600;
   }
 
+  assertCanvasResourceLimits(canvasWidth, canvasHeight);
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = getCanvasContext(canvas);
 
@@ -233,8 +214,9 @@ export async function createCollage(
     if (borderRadius > 0) {
       ctx.restore();
     }
+
+    if (type === 'carousel') currentX += imgData.width;
   }
 
   return canvas.toBuffer('image/png');
 }
-

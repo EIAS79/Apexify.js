@@ -1,8 +1,10 @@
 import { createCanvas, loadImage, SKRSContext2D } from "@napi-rs/canvas";
 import { GifEncoder } from "@skyra/gifenc";
-import fs from "fs";
+import fs from "node:fs";
 import type { Frame } from "../types";
-import { getErrorMessage } from "../core/errors";
+import { resolveMediaBuffer } from "../media/source";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { assertCanvasResourceLimits, assertGifResourceLimits, assertWithinLimit } from "../runtime/limits";
 
 export type AnimateOptions = {
   gif?: boolean;
@@ -20,20 +22,27 @@ export function validateAnimateInputs(
   options?: AnimateOptions
 ): void {
   if (!frames || !Array.isArray(frames) || frames.length === 0) {
-    throw new Error("animate: frames array with at least one frame is required.");
+    throw new ApexifyInputError("animate: frames array with at least one frame is required.");
   }
   if (typeof defaultDuration !== "number" || defaultDuration < 0) {
-    throw new Error("animate: defaultDuration must be a non-negative number.");
+    throw new ApexifyInputError("animate: defaultDuration must be a non-negative number.");
   }
   if (typeof defaultWidth !== "number" || defaultWidth <= 0) {
-    throw new Error("animate: defaultWidth must be a positive number.");
+    throw new ApexifyInputError("animate: defaultWidth must be a positive number.");
   }
   if (typeof defaultHeight !== "number" || defaultHeight <= 0) {
-    throw new Error("animate: defaultHeight must be a positive number.");
+    throw new ApexifyInputError("animate: defaultHeight must be a positive number.");
   }
   if (options?.gif && !options.gifPath) {
-    throw new Error("animate: gifPath is required when gif is enabled.");
+    throw new ApexifyInputError("animate: gifPath is required when gif is enabled.");
   }
+  assertCanvasResourceLimits(defaultWidth, defaultHeight);
+  assertWithinLimit("maxGifFrames", frames.length);
+  if (options?.gif) assertGifResourceLimits(defaultWidth, defaultHeight, frames.length);
+}
+
+async function loadAnimationImage(source: string | Buffer) {
+  return loadImage(await resolveMediaBuffer(source, { kind: "image" }));
 }
 
 /**
@@ -62,7 +71,7 @@ export async function animateFrames(
 
     if (options?.gif) {
       if (!options.gifPath) {
-        throw new Error("animate: gifPath is required when gif is enabled.");
+        throw new ApexifyInputError("animate: gifPath is required when gif is enabled.");
       }
       encoder = new GifEncoder(defaultWidth, defaultHeight);
       gifStream = fs.createWriteStream(options.gifPath);
@@ -77,6 +86,8 @@ export async function animateFrames(
 
       const width = frame.width || defaultWidth;
       const height = frame.height || defaultHeight;
+      assertCanvasResourceLimits(width, height);
+      if (options?.gif) assertGifResourceLimits(width, height, frames.length);
       const canvas = createCanvas(width, height);
       const ctx = canvas.getContext("2d") as SKRSContext2D;
 
@@ -139,7 +150,7 @@ export async function animateFrames(
       }
 
       if (frame.pattern) {
-        const patternImage = await loadImage(frame.pattern.source);
+        const patternImage = await loadAnimationImage(frame.pattern.source);
         const pattern = ctx.createPattern(patternImage, frame.pattern.repeat || "repeat");
         fillStyle = pattern;
       }
@@ -154,7 +165,7 @@ export async function animateFrames(
       }
 
       if (frame.source) {
-        const image = await loadImage(frame.source);
+        const image = await loadAnimationImage(frame.source);
         ctx.globalCompositeOperation = frame.blendMode || "source-over";
         ctx.drawImage(image, 0, 0, width, height);
       }
@@ -189,6 +200,7 @@ export async function animateFrames(
 
     return options?.gif ? undefined : buffers;
   } catch (error) {
-    throw new Error(`animate failed: ${getErrorMessage(error)}`);
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError("Animation rendering failed.", { cause: error });
   }
 }

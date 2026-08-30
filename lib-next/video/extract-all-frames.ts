@@ -81,11 +81,7 @@ export async function extractAllVideoFrames(
         else args.push("-pix_fmt", "rgb24", "-q:v", String(quality));
         args.push("-y", outputTemplate);
 
-        await session.runFfmpeg(args, {
-          timeoutMs: 300_000,
-          maxStdoutBytes: 2 * 1024 * 1024,
-          maxStderrBytes: 10 * 1024 * 1024,
-        });
+        await session.runFfmpeg(args);
 
         const frames: Array<{ source: string; frameNumber: number; time: number }> = [];
         for (let frameIndex = 0; ; frameIndex++) {

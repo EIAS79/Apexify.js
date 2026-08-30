@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../runtime/diagnostics";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { Image } from "@napi-rs/canvas";
 import type { CanvasConfig, gradient } from "../types";
@@ -415,9 +416,8 @@ export async function drawBackgroundLayers(
         default:
           break;
       }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`drawBackgroundLayers: layer failed (${(layer as { type: string }).type}):`, msg);
+    } catch {
+      emitDiagnostic({ level: "warn", code: "APEXIFY_BACKGROUND_RENDERER_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/canvas/background-renderer.ts." });
     }
     ctx.restore();
   }

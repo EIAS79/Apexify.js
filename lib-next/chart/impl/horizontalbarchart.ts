@@ -1,3 +1,4 @@
+import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
@@ -260,7 +261,7 @@ async function renderEnhancedText(
 
       ctx.font = fontString.replace(fontFamily, style.fontName);
     } catch (error) {
-      console.warn(`Failed to register font: ${style.fontPath}`, error);
+      emitDiagnostic({ level: "warn", code: "APEXIFY_HORIZONTALBARCHART_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/chart/impl/horizontalbarchart.ts." });
     }
   }
 
@@ -1429,7 +1430,7 @@ const titleMargin = chartTitle ? 20 : 0;
 
     if (barY + calculatedBarHeight > originY) {
 
-      console.warn(`Bar at index ${index} (${item.label}) would exceed chart bounds. Skipping.`);
+      emitDiagnostic({ level: "warn", code: "APEXIFY_HORIZONTALBARCHART_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/chart/impl/horizontalbarchart.ts." });
       return;
     }
 

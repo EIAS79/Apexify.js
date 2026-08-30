@@ -1,3 +1,5 @@
+import { resolveMediaBuffer } from "../media/source";
+
 export type ApexifyUpdateStatus = {
   packageName: string;
   currentVersion: string | null;
@@ -10,6 +12,8 @@ type CheckUpdateOptions = {
   packageName?: string;
   silent?: boolean;
 };
+
+const MAX_REGISTRY_RESPONSE_BYTES = 256 * 1024;
 
 function cleanVersion(version?: string): string | null {
   if (!version) return null;
@@ -64,14 +68,16 @@ async function readInstalledVersion(packageName: string): Promise<string | null>
 
 async function fetchLatestVersion(packageName: string): Promise<string | null> {
   try {
+    // The host is fixed to the npm registry; packageName is only an encoded path
+    // component. Transport, SSRF policy, timeout, retries, redirects and byte
+    // limits are all enforced by the shared remote-media/network subsystem.
     const encoded = encodeURIComponent(packageName);
-    const response = await fetch(`https://registry.npmjs.org/${encoded}/latest`);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as { version?: string };
+    const buffer = await resolveMediaBuffer(`https://registry.npmjs.org/${encoded}/latest`, {
+      kind: "generic",
+      maxBytes: MAX_REGISTRY_RESPONSE_BYTES,
+      cache: true,
+    });
+    const data = JSON.parse(buffer.toString("utf8")) as { version?: string };
     return cleanVersion(data.version);
   } catch {
     return null;
