@@ -64,6 +64,11 @@ try {
 
   for (const fixture of [fixtureEsm, fixtureCjs]) {
     run(npmCmd, ['install', '--no-audit', '--no-fund', '--package-lock=false', tarball], { cwd: fixture });
+    run(
+      npmCmd,
+      ['install', '--no-audit', '--no-fund', '--package-lock=false', '--save-dev', 'typescript@7.0.2', '@types/node@22.20.1'],
+      { cwd: fixture }
+    );
   }
 
   fs.writeFileSync(
@@ -87,15 +92,18 @@ try {
     strict: true,
     skipLibCheck: false,
     target: 'ES2022',
+    lib: ['ESNext', 'DOM', 'DOM.Iterable'],
+    types: ['node'],
     module: 'NodeNext',
     moduleResolution: 'NodeNext',
   };
   writeJson(path.join(fixtureEsm, 'tsconfig.json'), { compilerOptions, files: ['./typecheck.mts'] });
   writeJson(path.join(fixtureCjs, 'tsconfig.json'), { compilerOptions, files: ['./typecheck.cts'] });
 
-  const tsc = path.join(path.dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
-  run(process.execPath, [tsc, '-p', 'tsconfig.json'], { cwd: fixtureEsm });
-  run(process.execPath, [tsc, '-p', 'tsconfig.json'], { cwd: fixtureCjs });
+  const esmTsc = path.join(fixtureEsm, 'node_modules', 'typescript', 'bin', 'tsc');
+  const cjsTsc = path.join(fixtureCjs, 'node_modules', 'typescript', 'bin', 'tsc');
+  run(process.execPath, [esmTsc, '-p', 'tsconfig.json'], { cwd: fixtureEsm });
+  run(process.execPath, [cjsTsc, '-p', 'tsconfig.json'], { cwd: fixtureCjs });
 
   console.log(`verify-packed-package: ${packInfo.filename} installed and passed ESM, CJS, dual types, and contents checks.`);
 } finally {
