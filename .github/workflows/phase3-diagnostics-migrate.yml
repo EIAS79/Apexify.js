@@ -1,0 +1,47 @@
+name: Phase 3 Diagnostics Migration
+
+on:
+  push:
+    branches:
+      - reengineering/phase-3-core-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-3-core-architecture
+      - name: Replace internal canvas warning with diagnostic event
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'lib-next/canvas/canvas-creator.ts';
+          let text = fs.readFileSync(file, 'utf8');
+          const importNeedle = 'import { assertCanvasResourceLimits } from "../runtime/limits";';
+          if (!text.includes('from "../runtime/diagnostics"')) {
+            text = text.replace(importNeedle, importNeedle + '\nimport { emitDiagnostic } from "../runtime/diagnostics";');
+          }
+          const warning = '        console.warn("createCanvas: Failed to extract video frame for sizing, using defaults");';
+          const replacement = [
+            '        emitDiagnostic({',
+            '          level: "warn",',
+            '          code: "CANVAS_VIDEO_SIZE_FALLBACK",',
+            '          message: "Video frame sizing failed; canvas defaults will be used.",',
+            '        });',
+          ].join('\n');
+          if (!text.includes(warning)) throw new Error('expected canvas warning not found');
+          text = text.replace(warning, replacement);
+          fs.writeFileSync(file, text);
+          NODE
+          rm .github/workflows/phase3-diagnostics-migrate.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib-next/canvas/canvas-creator.ts .github/workflows/phase3-diagnostics-migrate.yml
+          git commit -m 'refactor(canvas): route sizing fallback through diagnostics'
+          git push origin HEAD:reengineering/phase-3-core-architecture
