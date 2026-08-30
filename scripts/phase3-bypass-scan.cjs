@@ -24,12 +24,7 @@ for (const file of walk(SOURCE)) {
   if (/\b(?:http|https)\.request\s*\(/.test(text) && rel !== 'lib-next/media/remote-fetch.ts') {
     failures.push(`${rel}: raw HTTP client outside central remote fetcher`);
   }
-
-  const directFetch = /\bfetch\s*\(/.test(text);
-  if (directFetch) {
-    const justifiedFixedService = rel === 'lib-next/core/general-functions.ts' && text.includes('PHASE3-JUSTIFIED-FETCH');
-    if (!justifiedFixedService) failures.push(`${rel}: unmanaged fetch()`);
-  }
+  if (/\bfetch\s*\(/.test(text)) failures.push(`${rel}: unmanaged fetch()`);
 
   if (/resolvable-image-source/i.test(rel) || /from\s+["'][^"']*resolvable-image-source/.test(text)) {
     failures.push(`${rel}: obsolete remote image resolver`);
@@ -39,10 +34,6 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: unmanaged cache Map`);
   }
 
-  // Canvas loadImage accepts paths/URLs directly, so passing a caller-shaped
-  // source identifier to it is a media-policy bypass even when no fetch/axios
-  // token is present. Buffer-decoding uses (frameBuffer, png, frames[i], etc.)
-  // remain allowed.
   if (/\bloadImage\s*\(\s*(?:frame\.(?:source|background)|frame\.pattern\.source|maskSource|textureSource|imageSource|imagePath|src|source|url)\b/.test(text)) {
     failures.push(`${rel}: direct caller media source passed to canvas loadImage()`);
   }
