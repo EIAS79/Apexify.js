@@ -20,7 +20,12 @@ async function main() {
 
   runtime.resetApexifyRuntimeConfig();
 
-  for (const ip of ['127.0.0.1', '10.0.0.1', '169.254.1.1', '192.168.1.1', '0.0.0.0', '224.0.0.1', '::1', 'fc00::1', 'fe80::1', '2001:db8::1', '::ffff:127.0.0.1']) {
+  for (const ip of [
+    '127.0.0.1', '10.0.0.1', '100.64.0.1', '169.254.1.1', '192.168.1.1',
+    '192.0.2.1', '192.88.99.1', '198.18.0.1', '203.0.113.1', '0.0.0.0', '224.0.0.1',
+    '::1', 'fc00::1', 'fe80::1', '64:ff9b::7f00:1', '64:ff9b:1::1', '2001::1',
+    '2001:db8::1', '2002::1', '3fff::1', '5f00::1', '::ffff:127.0.0.1'
+  ]) {
     assert.equal(media.classifyIpAddress(ip).blocked, true, `${ip} must be blocked`);
   }
   for (const ip of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111']) {
@@ -73,6 +78,25 @@ async function main() {
     }
     if (req.url === '/slow') {
       setTimeout(() => { if (!res.destroyed) { res.writeHead(200); res.end('slow'); } }, 180);
+      return;
+    }
+    if (req.url === '/trickle') {
+      res.writeHead(200);
+      let sent = 0;
+      const timer = setInterval(() => {
+        if (res.destroyed || sent >= 20) {
+          clearInterval(timer);
+          if (!res.destroyed) res.end();
+          return;
+        }
+        res.write('x');
+        sent += 1;
+      }, 10);
+      res.once('close', () => clearInterval(timer));
+      return;
+    }
+    if (req.url === '/queue-block') {
+      setTimeout(() => { if (!res.destroyed) { res.writeHead(200); res.end('queue'); } }, 160);
       return;
     }
     if (req.url === '/concurrency') {
@@ -159,10 +183,30 @@ async function main() {
       'timeout'
     );
 
+    await expectReject(
+      media.fetchRemoteMedia(`${base}/trickle`, { kind: 'image', timeoutMs: 45, attempts: 1 }),
+      (e) => e instanceof runtime.ApexifyRemoteFetchError && /timed out/.test(e.message),
+      'hard wall-clock timeout'
+    );
+
     const controller = new AbortController();
     const aborted = media.fetchRemoteMedia(`${base}/slow`, { kind: 'image', timeoutMs: 500, attempts: 1, signal: controller.signal });
     setTimeout(() => controller.abort(new Error('test abort')), 10);
     await expectReject(aborted, (e) => /aborted|abort|failed/i.test(String(e.message)), 'abort');
+
+    // Abort must also work while a request is queued behind the concurrency gate.
+    runtime.configureApexifyRuntime({ limits: { maxConcurrentRemoteFetches: 1 } });
+    const blocker = media.fetchRemoteMedia(`${base}/queue-block`, { kind: 'image', timeoutMs: 500, attempts: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const queuedController = new AbortController();
+    const queuedStartedAt = Date.now();
+    const queued = media.fetchRemoteMedia(`${base}/ok`, { kind: 'image', timeoutMs: 500, attempts: 1, signal: queuedController.signal });
+    setTimeout(() => queuedController.abort(new Error('queued abort')), 10);
+    await expectReject(queued, (e) => /aborted/i.test(String(e.message)), 'queued abort');
+    assert.ok(Date.now() - queuedStartedAt < 120, 'queued abort must not wait for the occupied network slot');
+    assert.equal(media.getRemoteConcurrencyStats().queued, 0);
+    await blocker;
+    runtime.configureApexifyRuntime({ limits: { maxConcurrentRemoteFetches: 2 } });
 
     const recovered = await media.fetchRemoteMedia(`${base}/retry`, { kind: 'image' });
     assert.equal(recovered.buffer.toString(), 'recovered');
