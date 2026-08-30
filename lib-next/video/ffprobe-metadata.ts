@@ -43,7 +43,6 @@ export async function ffprobeVideoFile(
   };
   const videoStream = info.streams?.find((s) => Number(s.width) > 0 && Number(s.height) > 0) || info.streams?.[0];
   const format = info.format || {};
-
   const fps = videoStream?.r_frame_rate
     ? (() => {
         const [num, den] = videoStream.r_frame_rate!.split("/").map(Number);
@@ -96,6 +95,19 @@ export async function probeVideoCodec(mediaPath: string, session: FfmpegSession)
   } catch {
     return "unknown";
   }
+}
+
+export async function probeVideoCodecSource(
+  source: string | Buffer,
+  session: FfmpegSession
+): Promise<string> {
+  return withTempWorkspace(
+    { ...session.workspaceOptions, prefix: "apexify-codec-" },
+    async (workspace) => {
+      const { videoPath } = await resolveVideoInputToPath(source, workspace, "codec-input");
+      return probeVideoCodec(videoPath, session);
+    }
+  );
 }
 
 export async function probeImageDimensions(
