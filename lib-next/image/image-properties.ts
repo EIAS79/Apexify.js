@@ -13,8 +13,13 @@ let imageCache: BoundedCache<string, Image> | undefined;
 let imageCacheSignature = "";
 
 function getImageCache(): BoundedCache<string, Image> {
-  const config = getDefaultApexifyRuntimeConfig().cache;
-  const signature = `${config.enabled}:${config.ttlMs}:${config.maxEntries}:${config.maxBytes}`;
+  const runtime = getDefaultApexifyRuntimeConfig();
+  const config = runtime.cache;
+  const signature = JSON.stringify({
+    cache: [config.enabled, config.ttlMs, config.maxEntries, config.maxBytes],
+    network: [runtime.network.allowedProtocols, runtime.network.trustedNetworkAccess, runtime.network.allowedHosts],
+    limits: [runtime.limits.maxRemoteImageBytes, runtime.limits.maxDecodedImagePixels],
+  });
   if (!imageCache || signature !== imageCacheSignature) {
     imageCache = new BoundedCache<string, Image>({
       enabled: config.enabled,
