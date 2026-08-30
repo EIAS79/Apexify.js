@@ -19,7 +19,6 @@ async function main() {
 
   runtime.resetApexifyRuntimeConfig();
 
-  // IP classification: loopback/private/link-local/reserved in IPv4 and IPv6.
   for (const ip of ['127.0.0.1', '10.0.0.1', '169.254.1.1', '192.168.1.1', '0.0.0.0', '224.0.0.1', '::1', 'fc00::1', 'fe80::1', '2001:db8::1', '::ffff:127.0.0.1']) {
     assert.equal(media.classifyIpAddress(ip).blocked, true, `${ip} must be blocked`);
   }
@@ -32,18 +31,9 @@ async function main() {
   assert.ok(!redacted.includes('pass'));
   assert.ok(!redacted.includes('fragment'));
 
-  await expectReject(
-    media.validateRemoteTarget('ftp://example.com/file'),
-    (e) => e instanceof runtime.ApexifyRemoteFetchError,
-    'protocol policy'
-  );
-  await expectReject(
-    media.validateRemoteTarget('http://127.0.0.1/'),
-    (e) => e instanceof runtime.ApexifyRemoteFetchError,
-    'default localhost policy'
-  );
+  await expectReject(media.validateRemoteTarget('ftp://example.com/file'), (e) => e instanceof runtime.ApexifyRemoteFetchError, 'protocol policy');
+  await expectReject(media.validateRemoteTarget('http://127.0.0.1/'), (e) => e instanceof runtime.ApexifyRemoteFetchError, 'default localhost policy');
 
-  // Config inheritance/deep merge and trusted allowlisting are explicit opt-ins.
   runtime.configureApexifyRuntime({ network: { timeoutMs: 777 }, cache: { ttlMs: 55 } });
   const merged = runtime.configureApexifyRuntime({ limits: { maxConcurrentRemoteFetches: 2 } });
   assert.equal(merged.network.timeoutMs, 777);
@@ -61,22 +51,13 @@ async function main() {
       retryJitterRatio: 0,
       maxRedirects: 3,
     },
-    limits: {
-      maxConcurrentRemoteFetches: 2,
-      maxRemoteImageBytes: 64,
-    },
+    limits: { maxConcurrentRemoteFetches: 2, maxRemoteImageBytes: 64 },
   });
 
   let retryCount = 0;
-  let active = 0;
-  let maxActive = 0;
+  let concurrencyActive = 0;
+  let concurrencyMax = 0;
   const server = http.createServer((req, res) => {
-    active += 1;
-    maxActive = Math.max(maxActive, active);
-    const done = () => { active -= 1; };
-    res.once('finish', done);
-    res.once('close', done);
-
     if (req.url === '/ok') {
       res.writeHead(200, { 'content-type': 'application/octet-stream' });
       res.end('ok');
@@ -89,6 +70,20 @@ async function main() {
     }
     if (req.url === '/slow') {
       setTimeout(() => { if (!res.destroyed) { res.writeHead(200); res.end('slow'); } }, 180);
+      return;
+    }
+    if (req.url === '/concurrency') {
+      concurrencyActive += 1;
+      concurrencyMax = Math.max(concurrencyMax, concurrencyActive);
+      let decremented = false;
+      const done = () => {
+        if (decremented) return;
+        decremented = true;
+        concurrencyActive -= 1;
+      };
+      res.once('finish', done);
+      res.once('close', done);
+      setTimeout(() => { if (!res.destroyed) { res.writeHead(200); res.end('bounded'); } }, 60);
       return;
     }
     if (req.url === '/retry') {
@@ -178,19 +173,19 @@ async function main() {
     assert.ok(!String(signedError.requestUrl).includes('super-secret'));
     assert.ok(!String(signedError.message).includes('super-secret'));
 
-    maxActive = 0;
-    await Promise.all(Array.from({ length: 5 }, () => media.fetchRemoteMedia(`${base}/slow`, { kind: 'image', timeoutMs: 500, attempts: 1 })));
-    assert.ok(maxActive <= 2, `remote concurrency exceeded configured maximum: ${maxActive}`);
+    await Promise.all(Array.from({ length: 5 }, () => media.fetchRemoteMedia(`${base}/concurrency`, { kind: 'image', timeoutMs: 500, attempts: 1 })));
+    assert.ok(concurrencyMax <= 2, `remote concurrency exceeded configured maximum: ${concurrencyMax}`);
+    assert.equal(media.getRemoteConcurrencyStats().active, 0);
+    assert.equal(media.getRemoteConcurrencyStats().queued, 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
 
-  // LRU, TTL, failure eviction, clear, disable, and diagnostics counters.
   let now = 1000;
   const cache = new media.BoundedCache({ ttlMs: 10, maxEntries: 2, maxBytes: 4, sizeOf: (v) => v.length, now: () => now });
   cache.set('a', 'aa');
   cache.set('b', 'bb');
-  assert.equal(cache.get('a'), 'aa'); // a becomes MRU
+  assert.equal(cache.get('a'), 'aa');
   cache.set('c', 'cc');
   assert.equal(cache.get('b'), undefined, 'LRU entry must be evicted');
   assert.equal(cache.get('a'), 'aa');
