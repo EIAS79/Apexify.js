@@ -110,8 +110,9 @@ export function assertGradient(value: unknown, name: string): void {
   const colors = (value as { colors?: unknown }).colors;
   if (colors !== undefined) {
     assertCollection(colors, `${name}.colors`, { min: 1, limit: "maxCollectionItems" });
-    for (let i = 0; i < colors.length; i++) {
-      const stop = colors[i];
+    const stops: unknown[] = colors as unknown[];
+    for (let i = 0; i < stops.length; i++) {
+      const stop: unknown = stops[i];
       assertRecord(stop, `${name}.colors[${i}]`);
       assertFiniteNumber(stop.stop, `${name}.colors[${i}].stop`, { min: 0, max: 1 });
       assertNonEmptyString(stop.color, `${name}.colors[${i}].color`, 256);
