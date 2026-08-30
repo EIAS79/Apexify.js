@@ -1,5 +1,5 @@
 import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
-import GIFEncoder from "gifencoder";
+import { GifEncoder } from "@skyra/gifenc";
 import { PassThrough } from "stream";
 import fs from "fs";
 import axios from "axios";
@@ -130,7 +130,7 @@ export class GIFCreator {
   }
 
   /**
-   * Hex / `#rgb` → `gifencoder.setTransparent` integer (`null` = none).
+   * Hex / `#rgb` → GIF encoder transparency integer (`null` = none).
    * @private
    */
   private parseTransparentForEncoder(color: number | string | null): number | null {
@@ -215,28 +215,22 @@ export class GIFCreator {
   }
 
   /**
-   * Sets gifencoder transparency & disposal for the **next** `addFrame` call.
+   * Sets GIF transparency & disposal for the **next** `addFrame` call.
    * @private
    */
   private applyGifEncoderFrameOptions(
-    encoder: InstanceType<typeof GIFEncoder>,
+    encoder: GifEncoder,
     frame: GIFCanonicalFrame,
     options: GIFOptions
   ): void {
-    /** gifencoder has these methods — typings may be incomplete */
-    const enc = encoder as InstanceType<typeof GIFEncoder> & {
-      setDispose(code: number): void;
-      setTransparent(color: number | null): void;
-    };
-
     const disp = frame.dispose ?? options.defaultDispose;
     if (disp !== undefined) {
-      enc.setDispose(disp);
+      encoder.setDispose(disp);
     }
 
     const resolvedTransparent =
       frame.transparentColor !== undefined ? frame.transparentColor : options.transparentColor;
-    enc.setTransparent(
+    encoder.setTransparent(
       resolvedTransparent !== undefined
         ? this.parseTransparentForEncoder(resolvedTransparent)
         : null
@@ -331,7 +325,7 @@ export class GIFCreator {
 
       const skipResizeWhenDimensionsMatch = options.skipResizeWhenDimensionsMatch !== false;
 
-      const encoder = new GIFEncoder(canvasWidth, canvasHeight);
+      const encoder = new GifEncoder(canvasWidth, canvasHeight);
       const useBufferStream = options.outputFormat !== "file";
       const outputStream = useBufferStream
         ? this.createBufferStream()
@@ -372,7 +366,7 @@ export class GIFCreator {
         this.applyGifEncoderFrameOptions(encoder, frame, options);
 
         encoder.setDelay(frame.duration);
-        encoder.addFrame(ctx as unknown as CanvasRenderingContext2D);
+        encoder.addFrame(ctx as unknown as Pick<CanvasRenderingContext2D, "getImageData">);
 
         if (i === finalFrames.length - 1) {
           finalFrameBuffer = canvas.toBuffer("image/png");
