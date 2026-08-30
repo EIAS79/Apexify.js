@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-30T00:04:24.917Z",
+  "baselineSubjectSha": "5bb74cb3ab385cd161d98c783aa2fa08ee89acd1",
+  "controlSha": "679da1ae0210b1ed9d52bdd89db41f73f5ec46bd",
+  "node": "v20.20.2",
+  "platform": "linux-x64",
+  "ffmpegAvailable": false,
+  "measurements": [
+    {
+      "name": "cold-cjs-import",
+      "status": "pass",
+      "wallMs": 361.807,
+      "exitCode": 0,
+      "signal": null
+    },
+    {
+      "name": "canvas-1200x630",
+      "status": "pass",
+      "wallMs": 26.981,
+      "startRssBytes": 124035072,
+      "peakRssBytes": 126730240,
+      "rssDeltaBytes": 2695168,
+      "outputBytes": 4530
+    },
+    {
+      "name": "text-render",
+      "status": "pass",
+      "wallMs": 34.065,
+      "startRssBytes": 126861312,
+      "peakRssBytes": 131076096,
+      "rssDeltaBytes": 4214784,
+      "outputBytes": 19935
+    },
+    {
+      "name": "single-image-composition",
+      "status": "pass",
+      "wallMs": 34.305,
+      "startRssBytes": 131076096,
+      "peakRssBytes": 135966720,
+      "rssDeltaBytes": 4890624,
+      "outputBytes": 5521
+    },
+    {
+      "name": "medium-scene",
+      "status": "pass",
+      "wallMs": 34.157,
+      "startRssBytes": 135966720,
+      "peakRssBytes": 138981376,
+      "rssDeltaBytes": 3014656,
+      "outputBytes": 27338
+    },
+    {
+      "name": "chart-render",
+      "status": "pass",
+      "wallMs": 18.402,
+      "startRssBytes": 138981376,
+      "peakRssBytes": 138981376,
+      "rssDeltaBytes": 0,
+      "outputBytes": 16299
+    },
+    {
+      "name": "gif-30-frame",
+      "status": "pass",
+      "wallMs": 546.915,
+      "startRssBytes": 138166272,
+      "peakRssBytes": 161935360,
+      "rssDeltaBytes": 23769088,
+      "outputBytes": 78693
+    },
+    {
+      "name": "audio-10-second",
+      "status": "pass",
+      "wallMs": 109.795,
+      "startRssBytes": 161935360,
+      "peakRssBytes": 163508224,
+      "rssDeltaBytes": 1572864,
+      "outputBytes": 1764044
+    },
+    {
+      "name": "video-from-frames",
+      "status": "skipped",
+      "reason": "ffmpeg executable unavailable on GitHub-hosted runner"
+    }
+  ]
+}
