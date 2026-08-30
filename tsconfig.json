@@ -1,26 +1,16 @@
 {
   "compilerOptions": {
-    "module": "NodeNext",
+    "module": "ESNext",
     "target": "ES2022",
-    "moduleResolution": "nodenext",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    "moduleResolution": "Bundler",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "typeRoots": ["./node_modules/@types"],
-    "types": []
-  },
-  "ts-node": {
-    "files": true,
-    "compilerOptions": {
-      "module": "CommonJS",
-      "moduleResolution": "node"
-    }
+    "types": ["node"],
+    "noEmit": true
   },
   "include": ["lib-next/**/*.ts"],
   "exclude": ["node_modules", "dist"]

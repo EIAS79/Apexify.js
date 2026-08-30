@@ -1,0 +1,73 @@
+name: Phase 2 Runtime and Package Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - reengineering/phase-2-runtime-package-release
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Node ${{ matrix.node }} / dual package
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Pin npm toolchain
+        run: npm install --global npm@11.19.1
+
+      - name: Runtime snapshot
+        run: |
+          node --version
+          npm --version
+
+      - name: Install FFmpeg integration dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Bootstrap deterministic dependency graph
+        run: npm install
+
+      - name: Build and verify emitted module formats
+        run: npm run build
+
+      - name: Run security regression suite
+        run: npm test
+
+      - name: Install packed package into clean ESM/CJS fixtures
+        run: node scripts/verify-packed-package.cjs
+
+      - name: Inspect npm pack contents
+        run: npm pack --dry-run --ignore-scripts --json > phase2-pack-node-${{ matrix.node }}.json
+
+      - name: Dependency audit
+        run: npm audit --omit=dev --json > phase2-audit-node-${{ matrix.node }}.json || true
+
+      - name: Upload Phase 2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-package-node-${{ matrix.node }}
+          path: |
+            package-lock.json
+            phase2-pack-node-${{ matrix.node }}.json
+            phase2-audit-node-${{ matrix.node }}.json
+          if-no-files-found: warn

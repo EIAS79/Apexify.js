@@ -6,8 +6,9 @@ const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.md', 
 const SELF = path.normalize('scripts/phase1-security-scan.cjs');
 const ALLOWED_CHILD_PROCESS = new Set([
   path.normalize('lib-next/video/process-runner.ts'),
-  path.normalize('dist/cjs/video/process-runner.js'),
-  path.normalize('dist/esm/video/process-runner.js'),
+  // Phase 2 bundles internal source modules into one verified entry per module format.
+  path.normalize('dist/esm/index.js'),
+  path.normalize('dist/cjs/index.cjs'),
 ]);
 
 function walk(dir, out = []) {
