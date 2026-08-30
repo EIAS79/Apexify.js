@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyDecodeError, ApexifyInputError, ApexifyResourceLimitError } from "../runtime/errors";
 import { BoundedCache } from "./cache";
+import { validateRemoteTarget } from "./network-policy";
 import { fetchRemoteMedia, type RemoteFetchOptions } from "./remote-fetch";
 
 export type MediaSource = string | Buffer;
@@ -32,6 +34,31 @@ function cacheForRuntime(): BoundedCache<string, Buffer> {
   return remoteByteCache;
 }
 
+function effectiveMediaMaxBytes(options: ResolveMediaOptions): number {
+  if (options.maxBytes !== undefined) return options.maxBytes;
+  const limits = getDefaultApexifyRuntimeConfig().limits;
+  if (options.kind === "image") return limits.maxRemoteImageBytes;
+  if (options.kind === "video") return limits.maxRemoteVideoBytes;
+  return Math.max(limits.maxRemoteImageBytes, limits.maxRemoteVideoBytes);
+}
+
+function mediaLimitName(options: ResolveMediaOptions): "maxRemoteImageBytes" | "maxRemoteVideoBytes" {
+  return options.kind === "image" ? "maxRemoteImageBytes" : "maxRemoteVideoBytes";
+}
+
+function assertMediaBytes(buffer: Buffer, options: ResolveMediaOptions): void {
+  const maximum = effectiveMediaMaxBytes(options);
+  if (buffer.byteLength > maximum) {
+    throw new ApexifyResourceLimitError(mediaLimitName(options), maximum, buffer.byteLength);
+  }
+}
+
+function remoteCacheKey(source: string, options: ResolveMediaOptions): string {
+  const maximum = effectiveMediaMaxBytes(options);
+  const kind = options.kind ?? "generic";
+  return createHash("sha256").update(`${source}\0${kind}\0${maximum}`).digest("hex");
+}
+
 export function clearMediaCache(): void {
   remoteByteCache?.clear();
 }
@@ -59,17 +86,36 @@ export function resolveLocalMediaPath(source: string): string {
 }
 
 async function fetchRemoteBuffer(source: string, options: ResolveMediaOptions): Promise<Buffer> {
-  const useCache = options.cache !== false && getDefaultApexifyRuntimeConfig().cache.enabled;
-  if (!useCache) return (await fetchRemoteMedia(source, { ...options, kind: options.kind ?? "generic" })).buffer;
+  const runtime = getDefaultApexifyRuntimeConfig();
+  // Revalidate the target on every call, including cache hits. This prevents a
+  // buffer fetched under a temporary trusted allowlist from bypassing a later,
+  // stricter SSRF policy.
+  await validateRemoteTarget(source, runtime.network);
+
+  // Authenticated/header-dependent responses are deliberately not shared in the
+  // global cache because the representation may vary by credentials or headers.
+  const useCache = options.cache !== false && runtime.cache.enabled && !options.headers;
+  if (!useCache) {
+    const buffer = (await fetchRemoteMedia(source, { ...options, kind: options.kind ?? "generic" })).buffer;
+    assertMediaBytes(buffer, options);
+    return buffer;
+  }
+
   const cache = cacheForRuntime();
-  const existing = cache.get(source);
-  if (existing) return existing;
+  const key = remoteCacheKey(source, options);
+  const existing = cache.get(key);
+  if (existing) {
+    assertMediaBytes(existing, options);
+    return existing;
+  }
+
   try {
     const buffer = (await fetchRemoteMedia(source, { ...options, kind: options.kind ?? "generic" })).buffer;
-    cache.set(source, buffer);
+    assertMediaBytes(buffer, options);
+    cache.set(key, buffer);
     return buffer;
   } catch (error) {
-    cache.delete(source);
+    cache.delete(key);
     throw error;
   }
 }
@@ -77,9 +123,7 @@ async function fetchRemoteBuffer(source: string, options: ResolveMediaOptions): 
 export async function resolveMediaInput(source: MediaSource, options: ResolveMediaOptions = {}): Promise<string | Buffer> {
   if (Buffer.isBuffer(source)) {
     if (source.length === 0) throw new ApexifyInputError("Media buffer is empty.");
-    const limits = getDefaultApexifyRuntimeConfig().limits;
-    const max = options.maxBytes ?? (options.kind === "video" ? limits.maxRemoteVideoBytes : limits.maxRemoteImageBytes);
-    if (source.length > max) throw new ApexifyResourceLimitError(options.kind === "video" ? "maxRemoteVideoBytes" : "maxRemoteImageBytes", max, source.length);
+    assertMediaBytes(source, options);
     return source;
   }
   if (typeof source !== "string" || !source.trim()) throw new ApexifyInputError("Media source must be a non-empty string path/URL or Buffer.");
@@ -88,6 +132,7 @@ export async function resolveMediaInput(source: MediaSource, options: ResolveMed
   if (/^data:/i.test(trimmed)) {
     const data = decodeImageDataUrl(trimmed);
     if (!data) throw new ApexifyDecodeError("Only base64 data:image URLs are supported as data media sources.");
+    assertMediaBytes(data, options);
     return data;
   }
   return resolveLocalMediaPath(trimmed);
@@ -99,9 +144,10 @@ export async function resolveMediaBuffer(source: MediaSource, options: ResolveMe
   try {
     const buffer = await fs.readFile(resolved);
     if (buffer.length === 0) throw new ApexifyInputError("Media file is empty.", { details: { path: resolved } });
+    assertMediaBytes(buffer, options);
     return buffer;
   } catch (cause) {
-    if (cause instanceof ApexifyInputError) throw cause;
+    if (cause instanceof ApexifyInputError || cause instanceof ApexifyResourceLimitError) throw cause;
     throw new ApexifyInputError("Media file could not be read.", { cause, details: { path: resolved } });
   }
 }
