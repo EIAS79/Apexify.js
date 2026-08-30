@@ -1,13 +1,14 @@
 import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
-import path from 'path';
-import fs from 'fs';
 import { getCanvasContext } from "../core/errors";
+import { resolveMediaBuffer } from "../media/source";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
 /**
  * Applies a mask to an image
  * @param ctx - Canvas 2D context
  * @param image - Source image
- * @param maskSource - Mask image source (path, URL, or Buffer)
+ * @param maskSource - Mask image source (path, URL, data URL, or Buffer)
  * @param mode - Mask mode: 'alpha', 'luminance', or 'inverse'
  * @param x - X position
  * @param y - Y position
@@ -25,16 +26,8 @@ export async function applyImageMask(
   height: number
 ): Promise<void> {
   try {
-
-    let maskImage: Image;
-    if (Buffer.isBuffer(maskSource)) {
-      maskImage = await loadImage(maskSource);
-    } else if (maskSource.startsWith('http')) {
-      maskImage = await loadImage(maskSource);
-    } else {
-      const maskPath = path.join(process.cwd(), maskSource);
-      maskImage = await loadImage(fs.readFileSync(maskPath));
-    }
+    assertCanvasResourceLimits(width, height);
+    const maskImage = await loadImage(await resolveMediaBuffer(maskSource, { kind: 'image' }));
 
     const maskCanvas = createCanvas(width, height);
     const maskCtx = getCanvasContext(maskCanvas);
@@ -59,11 +52,9 @@ export async function applyImageMask(
       let alpha = maskA / 255;
 
       if (mode === 'luminance') {
-
         const luminance = (maskR * 0.299 + maskG * 0.587 + maskB * 0.114) / 255;
         alpha = luminance;
       } else if (mode === 'inverse') {
-
         alpha = 1 - (maskA / 255);
       }
 
@@ -73,8 +64,8 @@ export async function applyImageMask(
     sourceCtx.putImageData(sourceData, 0, 0);
     ctx.drawImage(sourceCanvas, x, y);
   } catch (error) {
-    console.error('Error applying image mask:', error);
-    throw error;
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError('Failed to apply image mask.', { cause: error });
   }
 }
 
@@ -85,7 +76,7 @@ export async function applyImageMask(
  */
 export function applyClipPath(ctx: SKRSContext2D, clipPath: Array<{ x: number; y: number }>): void {
   if (!clipPath || clipPath.length < 3) {
-    throw new Error('Clip path must have at least 3 points');
+    throw new ApexifyInputError('Clip path must have at least 3 points');
   }
 
   ctx.beginPath();
@@ -117,19 +108,17 @@ export function applyPerspectiveDistortion(
   height: number
 ): void {
   if (points.length !== 4) {
-    throw new Error('Perspective distortion requires exactly 4 points');
+    throw new ApexifyInputError('Perspective distortion requires exactly 4 points');
   }
+  assertCanvasResourceLimits(width, height);
 
-  // Create a temporary canvas for the source image
   const tempCanvas = createCanvas(width, height);
   const tempCtx = getCanvasContext(tempCanvas);
   tempCtx.drawImage(image, 0, 0, width, height);
 
-  // Get image data
   const sourceData = tempCtx.getImageData(0, 0, width, height);
   const sourcePixels = sourceData.data;
 
-  // Calculate bounding box of destination points
   const minX = Math.min(points[0].x, points[1].x, points[2].x, points[3].x);
   const maxX = Math.max(points[0].x, points[1].x, points[2].x, points[3].x);
   const minY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y);
@@ -137,14 +126,13 @@ export function applyPerspectiveDistortion(
 
   const destWidth = Math.ceil(maxX - minX);
   const destHeight = Math.ceil(maxY - minY);
+  assertCanvasResourceLimits(destWidth, destHeight);
 
-  // Create destination canvas
   const destCanvas = createCanvas(destWidth, destHeight);
   const destCtx = getCanvasContext(destCanvas);
   const destData = destCtx.createImageData(destWidth, destHeight);
   const destPixels = destData.data;
 
-  // Calculate inverse perspective transform matrix (from destination to source)
   const srcCorners = [
     { x: 0, y: 0 },
     { x: width, y: 0 },
@@ -154,21 +142,17 @@ export function applyPerspectiveDistortion(
 
   const dstCorners = points.map(p => ({ x: p.x - minX, y: p.y - minY }));
 
-  // Calculate homography matrix (perspective transform)
   const H = calculateHomographyMatrix(srcCorners, dstCorners);
   const Hinv = invertHomographyMatrix(H);
 
-  // Warp pixels
   for (let dy = 0; dy < destHeight; dy++) {
     for (let dx = 0; dx < destWidth; dx++) {
-      // Transform destination pixel to source coordinates
       const denom = Hinv[6] * dx + Hinv[7] * dy + Hinv[8];
       if (Math.abs(denom) < 0.0001) continue;
 
       const sx = (Hinv[0] * dx + Hinv[1] * dy + Hinv[2]) / denom;
       const sy = (Hinv[3] * dx + Hinv[4] * dy + Hinv[5]) / denom;
 
-      // Bilinear interpolation
       const x1 = Math.floor(sx);
       const y1 = Math.floor(sy);
       const x2 = x1 + 1;
@@ -193,8 +177,8 @@ export function applyPerspectiveDistortion(
         const p12 = getPixel(x1, y2);
         const p22 = getPixel(x2, y2);
 
-        const interpolate = (a: number, b: number, c: number, d: number, fx: number, fy: number) => {
-          return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+        const interpolate = (a: number, b: number, c: number, d: number, fxValue: number, fyValue: number) => {
+          return a * (1 - fxValue) * (1 - fyValue) + b * fxValue * (1 - fyValue) + c * (1 - fxValue) * fyValue + d * fxValue * fyValue;
         };
 
         const destIdx = (dy * destWidth + dx) * 4;
@@ -210,16 +194,13 @@ export function applyPerspectiveDistortion(
   ctx.drawImage(destCanvas, minX, minY);
 }
 
-/**
- * Calculates 3x3 homography matrix for perspective transform
- */
+/** Calculates 3x3 homography matrix for perspective transform. */
 function calculateHomographyMatrix(
   src: Array<{ x: number; y: number }>,
   dst: Array<{ x: number; y: number }>
 ): number[] {
-  // Build system of equations: Ah = 0
   const A: number[][] = [];
-  
+
   for (let i = 0; i < 4; i++) {
     const x = src[i].x;
     const y = src[i].y;
@@ -230,36 +211,24 @@ function calculateHomographyMatrix(
     A.push([0, 0, 0, x, y, 1, -v * x, -v * y, -v]);
   }
 
-  // Solve using SVD (simplified - find null space)
-  // For 8 equations with 9 unknowns, we can set h[8] = 1 and solve
-  // Or use a simpler approach: solve the 8x8 system
-  
-  // Extract the 8x8 matrix (excluding last column for h[8]=1 normalization)
   const M: number[][] = [];
   const b: number[] = [];
-  
+
   for (let i = 0; i < 8; i++) {
     M.push(A[i].slice(0, 8));
     b.push(-A[i][8]);
   }
 
-  // Solve M * h = b using Gaussian elimination
   const h = solveLinearSystem(M, b);
-  
-  // Normalize so h[8] = 1
   return [...h, 1];
 }
 
-/**
- * Solves a linear system using Gaussian elimination
- */
+/** Solves a linear system using Gaussian elimination. */
 function solveLinearSystem(M: number[][], b: number[]): number[] {
   const n = M.length;
   const augmented = M.map((row, i) => [...row, b[i]]);
 
-  // Forward elimination
   for (let i = 0; i < n; i++) {
-    // Find pivot
     let maxRow = i;
     for (let k = i + 1; k < n; k++) {
       if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
@@ -268,7 +237,6 @@ function solveLinearSystem(M: number[][], b: number[]): number[] {
     }
     [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
 
-    // Make all rows below this one 0 in current column
     for (let k = i + 1; k < n; k++) {
       const factor = augmented[k][i] / augmented[i][i];
       for (let j = i; j < n + 1; j++) {
@@ -277,7 +245,6 @@ function solveLinearSystem(M: number[][], b: number[]): number[] {
     }
   }
 
-  // Back substitution
   const x = new Array(n).fill(0);
   for (let i = n - 1; i >= 0; i--) {
     x[i] = augmented[i][n];
@@ -290,23 +257,20 @@ function solveLinearSystem(M: number[][], b: number[]): number[] {
   return x;
 }
 
-/**
- * Inverts a 3x3 homography matrix
- */
+/** Inverts a 3x3 homography matrix. */
 function invertHomographyMatrix(H: number[]): number[] {
   const a = H[0], b = H[1], c = H[2];
   const d = H[3], e = H[4], f = H[5];
   const g = H[6], h = H[7], i = H[8];
 
   const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-  
+
   if (Math.abs(det) < 0.0001) {
-    // Return identity if singular
     return [1, 0, 0, 0, 1, 0, 0, 0, 1];
   }
 
   const invDet = 1 / det;
-  
+
   return [
     (e * i - f * h) * invDet,
     (c * h - b * i) * invDet,
@@ -321,17 +285,7 @@ function invertHomographyMatrix(H: number[]): number[] {
 }
 
 /**
- * Applies bulge distortion to an image
- * @param ctx - Canvas 2D context
- * @param image - Source image
- * @param centerX - Center X of bulge
- * @param centerY - Center Y of bulge
- * @param radius - Radius of effect
- * @param intensity - Bulge intensity (-1 to 1, positive = bulge, negative = pinch)
- * @param x - X position
- * @param y - Y position
- * @param width - Image width
- * @param height - Image height
+ * Applies bulge distortion to an image.
  */
 export function applyBulgeDistortion(
   ctx: SKRSContext2D,
@@ -345,7 +299,7 @@ export function applyBulgeDistortion(
   width: number,
   height: number
 ): void {
-
+  assertCanvasResourceLimits(width, height);
   const tempCanvas = createCanvas(width, height);
   const tempCtx = getCanvasContext(tempCanvas);
 
@@ -396,16 +350,7 @@ export function applyBulgeDistortion(
 }
 
 /**
- * Applies mesh warp to an image
- * @param ctx - Canvas 2D context
- * @param image - Source image
- * @param gridX - Number of grid divisions X
- * @param gridY - Number of grid divisions Y
- * @param controlPoints - Control point grid [y][x]
- * @param x - X position
- * @param y - Y position
- * @param width - Image width
- * @param height - Image height
+ * Applies mesh warp to an image.
  */
 export function applyMeshWarp(
   ctx: SKRSContext2D,
@@ -418,7 +363,7 @@ export function applyMeshWarp(
   width: number,
   height: number
 ): void {
-
+  assertCanvasResourceLimits(width, height);
   const tempCanvas = createCanvas(width, height);
   const tempCtx = getCanvasContext(tempCanvas);
 
@@ -468,4 +413,3 @@ export function applyMeshWarp(
   tempCtx.putImageData(newImageData, 0, 0);
   ctx.drawImage(tempCanvas, x, y);
 }
-
