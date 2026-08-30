@@ -31,14 +31,24 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: obsolete remote image resolver`);
   }
 
-  if (/\b(?:imageCache|remoteByteCache|sourceCache)\s*=\s*new Map\b/.test(text)) {
-    failures.push(`${rel}: unmanaged cache Map`);
+  if (/\b\w*cache\w*\s*=\s*new Map\b/i.test(text) && rel !== 'lib-next/media/cache.ts') {
+    failures.push(`${rel}: unmanaged cache Map outside central cache abstraction`);
   }
 
   // URL redaction is a security boundary. Keep the implementation authoritative
   // in media/network-policy.ts instead of allowing independent sanitizers to drift.
   if (rel !== 'lib-next/media/network-policy.ts' && /function\s+(?:redactUrl|sanitizeUrl)\s*\(/i.test(text)) {
     failures.push(`${rel}: duplicate URL redaction helper outside central network policy`);
+  }
+
+  // Retry/Retry-After policy belongs exclusively to the central transport.
+  if (rel !== 'lib-next/media/remote-fetch.ts' && /function\s+(?:retryDelay|parseRetryAfter)\s*\(/.test(text)) {
+    failures.push(`${rel}: duplicate remote retry helper outside central transport`);
+  }
+
+  // IP/host classification must not diverge from the authoritative network policy.
+  if (rel !== 'lib-next/media/network-policy.ts' && /function\s+(?:classifyIpAddress|isPrivateIp|isPrivateAddress|isLocalAddress)\s*\(/i.test(text)) {
+    failures.push(`${rel}: duplicate IP/network classification helper outside central network policy`);
   }
 
   // Arbitrary caller-provided media must not be handed directly to the native
