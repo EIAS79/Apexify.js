@@ -1,7 +1,7 @@
-import axios from "axios";
-import { promises as fs } from "fs";
-import path from "path";
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import type { TempWorkspace } from "./temp-workspace";
+import { resolveMediaInput } from "../media/source";
 
 export interface ResolvedVideoInput {
   videoPath: string;
@@ -10,9 +10,7 @@ export interface ResolvedVideoInput {
 }
 
 export function inferMediaExtensionFromBuffer(buf: Buffer): string {
-  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WAVE") {
-    return "wav";
-  }
+  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WAVE") return "wav";
   if (buf.length >= 8 && buf.toString("ascii", 4, 8) === "ftyp") return "mp4";
   if (buf.length >= 3 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return "mp3";
   if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
@@ -35,46 +33,21 @@ function extensionFromUrl(source: string): string | undefined {
   }
 }
 
-/**
- * Resolve Buffer / http(s) URL / local path to a concrete media path.
- * Any materialized bytes are written only inside the caller's isolated TempWorkspace.
- * Network security/size policy is centralized later in Phase 3; this function intentionally
- * preserves Phase 1 behavior while eliminating shared temp paths and duplicate resolvers.
- */
+/** Resolve Buffer / HTTP(S) URL / local path through the authoritative media-source layer. */
 export async function resolveVideoInputToPath(
   videoSource: string | Buffer,
   workspace: TempWorkspace,
   basename = "input"
 ): Promise<ResolvedVideoInput> {
   const name = safeBasename(basename);
+  const resolved = await resolveMediaInput(videoSource, { kind: "video" });
 
-  if (Buffer.isBuffer(videoSource)) {
-    if (videoSource.length === 0) throw new Error("Media buffer is empty.");
-    const ext = inferMediaExtensionFromBuffer(videoSource);
-    const videoPath = await workspace.writeFile(`${name}.${ext}`, videoSource);
+  if (Buffer.isBuffer(resolved)) {
+    const ext = typeof videoSource === "string" ? (extensionFromUrl(videoSource) ?? inferMediaExtensionFromBuffer(resolved)) : inferMediaExtensionFromBuffer(resolved);
+    const videoPath = await workspace.writeFile(`${name}.${ext}`, resolved);
     return { videoPath, temporary: true };
   }
 
-  if (typeof videoSource !== "string" || !videoSource.trim()) {
-    throw new Error("Media source must be a non-empty string path/URL or Buffer.");
-  }
-
-  const source = videoSource.trim();
-  if (/^https?:\/\//i.test(source)) {
-    const response = await axios.get<ArrayBuffer>(source, {
-      responseType: "arraybuffer",
-      timeout: 30_000,
-      maxRedirects: 5,
-      validateStatus: (status) => status >= 200 && status < 300,
-    });
-    const bytes = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
-    if (bytes.length === 0) throw new Error("Remote media response was empty.");
-    const ext = extensionFromUrl(source) || inferMediaExtensionFromBuffer(bytes);
-    const videoPath = await workspace.writeFile(`${name}.${ext}`, bytes);
-    return { videoPath, temporary: true };
-  }
-
-  const resolvedPath = path.isAbsolute(source) ? source : path.resolve(process.cwd(), source);
-  await fs.access(resolvedPath);
-  return { videoPath: resolvedPath, temporary: false };
+  await fs.access(resolved);
+  return { videoPath: resolved, temporary: false };
 }
