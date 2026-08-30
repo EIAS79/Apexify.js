@@ -1,0 +1,159 @@
+name: Phase 3 Process Policy Cleanup
+
+on:
+  push:
+    branches:
+      - reengineering/phase-3-core-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-3-core-architecture
+          fetch-depth: 0
+      - name: Migrate remaining process defaults
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'target not found in {path}: {old[:80]!r}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          p = Path('lib-next/video/video-helpers.ts')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace('const DEFAULT_PROCESS_TIMEOUT = 300_000;\n', '')
+          old = '''  private runFfmpeg(
+            args: readonly string[],
+            timeoutMs = DEFAULT_PROCESS_TIMEOUT,
+            onProgress?: (progress: { percent: number; time: number; speed: number }) => void,
+            cwd?: string
+          ) {
+            return this.session.runFfmpeg(args, {
+              timeoutMs,
+              maxStdoutBytes: 10 * 1024 * 1024,
+              maxStderrBytes: 30 * 1024 * 1024,
+              cwd,
+              onStderr: createFfmpegProgressParser(onProgress),
+            });
+          }
+          '''
+          if old not in text:
+              old = '''  private runFfmpeg(
+    args: readonly string[],
+    timeoutMs = DEFAULT_PROCESS_TIMEOUT,
+    onProgress?: (progress: { percent: number; time: number; speed: number }) => void,
+    cwd?: string
+  ) {
+    return this.session.runFfmpeg(args, {
+      timeoutMs,
+      maxStdoutBytes: 10 * 1024 * 1024,
+      maxStderrBytes: 30 * 1024 * 1024,
+      cwd,
+      onStderr: createFfmpegProgressParser(onProgress),
+    });
+  }
+'''
+          new = '''  private runFfmpeg(
+    args: readonly string[],
+    timeoutMs?: number,
+    onProgress?: (progress: { percent: number; time: number; speed: number }) => void,
+    cwd?: string
+  ) {
+    return this.session.runFfmpeg(args, {
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      cwd,
+      onStderr: createFfmpegProgressParser(onProgress),
+    });
+  }
+'''
+          if old not in text:
+              raise SystemExit('video-helpers runFfmpeg target not found')
+          text = text.replace(old, new)
+          p.write_text(text, encoding='utf-8')
+
+          replace(
+              'lib-next/video/extract-frame.ts',
+              '''        await session.runFfmpeg(args, {
+          timeoutMs: 30_000,
+          maxStdoutBytes: 2 * 1024 * 1024,
+          maxStderrBytes: 10 * 1024 * 1024,
+        });''',
+              '''        await session.runFfmpeg(args);'''
+          )
+          replace(
+              'lib-next/video/extract-all-frames.ts',
+              '''        await session.runFfmpeg(args, {
+          timeoutMs: 300_000,
+          maxStdoutBytes: 2 * 1024 * 1024,
+          maxStderrBytes: 10 * 1024 * 1024,
+        });''',
+              '''        await session.runFfmpeg(args);'''
+          )
+          replace(
+              'lib-next/video/extract-interval-frames.ts',
+              '''        await session.runFfmpeg(args, {
+          timeoutMs: 60_000,
+          maxStdoutBytes: 2 * 1024 * 1024,
+          maxStderrBytes: 10 * 1024 * 1024,
+        });''',
+              '''        await session.runFfmpeg(args);'''
+          )
+
+          p = Path('lib-next/video/ffprobe-metadata.ts')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace(
+              'import { getErrorMessage } from "../core/errors";\n',
+              'import { getErrorMessage } from "../core/errors";\nimport { getDefaultApexifyRuntimeConfig } from "../runtime/config";\n'
+          )
+          old_probe = '''function probeOptions(timeoutMs = 30_000) {
+  return {
+    timeoutMs,
+    maxStdoutBytes: 10 * 1024 * 1024,
+    maxStderrBytes: 2 * 1024 * 1024,
+  } as const;
+}
+'''
+          new_probe = '''function probeOptions() {
+  const ffmpeg = getDefaultApexifyRuntimeConfig().ffmpeg;
+  return {
+    timeoutMs: ffmpeg.probeTimeoutMs,
+    maxStdoutBytes: ffmpeg.maxStdoutBytes,
+    maxStderrBytes: ffmpeg.maxStderrBytes,
+  } as const;
+}
+'''
+          if old_probe not in text:
+              raise SystemExit('ffprobe probeOptions target not found')
+          text = text.replace(old_probe, new_probe)
+          for legacy in ('probeOptions(20_000)', 'probeOptions(15_000)'):
+              text = text.replace(legacy, 'probeOptions()')
+          p.write_text(text, encoding='utf-8')
+
+          p = Path('scripts/phase3-bypass-scan.cjs')
+          text = p.read_text(encoding='utf-8')
+          marker = '''  if (/\\bfetch\\s*\\(/.test(text)) failures.push(`${rel}: unmanaged fetch()`);\n'''
+          addition = '''  if (/\\bfetch\\s*\\(/.test(text)) failures.push(`${rel}: unmanaged fetch()`);\n\n  if (rel.startsWith('lib-next/video/') && !['lib-next/video/ffmpeg-session.ts', 'lib-next/video/process-runner.ts'].includes(rel)) {\n    if (/\\bmaxStdoutBytes\\s*:|\\bmaxStderrBytes\\s*:|DEFAULT_PROCESS_TIMEOUT/.test(text)) {\n      failures.push(`${rel}: hard-coded FFmpeg/process bounds outside central runtime policy`);\n    }\n  }\n'''
+          if marker not in text:
+              raise SystemExit('bypass scanner insertion target not found')
+          p.write_text(text.replace(marker, addition), encoding='utf-8')
+          PY
+      - name: Commit migration
+        shell: bash
+        run: |
+          git rm .github/workflows/phase3-process-policy-cleanup.yml
+          git add lib-next/video/video-helpers.ts lib-next/video/extract-frame.ts lib-next/video/extract-all-frames.ts lib-next/video/extract-interval-frames.ts lib-next/video/ffprobe-metadata.ts scripts/phase3-bypass-scan.cjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(phase3): centralize remaining process bounds"
+          git push origin HEAD:reengineering/phase-3-core-architecture
