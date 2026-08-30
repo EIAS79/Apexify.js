@@ -9,8 +9,8 @@ export interface SaveCounterSession {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional sharp like legacy ApexPainter
-function requireSharp(): typeof import("sharp") {
-  return require("sharp");
+function requireSharp(): typeof import("sharp")["default"] {
+  return require("sharp") as typeof import("sharp")["default"];
 }
 
 /**
