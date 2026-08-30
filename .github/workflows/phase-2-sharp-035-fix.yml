@@ -1,0 +1,77 @@
+name: Temporary Sharp 0.35 API Fix
+
+on:
+  push:
+    branches:
+      - reengineering/phase-2-runtime-package-release
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-2-runtime-package-release
+      - name: Apply asserted Sharp 0.35 API fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('lib-next/core/general-functions.ts')
+          s = p.read_text()
+          old_import = 'import type { Sharp, ResizeOptions as SharpResizeOptions, FormatEnum } from "sharp";'
+          new_import = 'import type { Sharp, ResizeOptions as SharpResizeOptions } from "sharp";'
+          assert s.count(old_import) == 1
+          s = s.replace(old_import, new_import)
+          old_block = '''      const validExtensions: (keyof FormatEnum)[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw', 'pdf', 'svg'];
+
+      const newExt = newExtension.toLowerCase();
+      if (!validExtensions.includes(newExt as keyof FormatEnum)) {
+          throw new Error(`Invalid image format: ${newExt}`);
+      }
+
+      const image = await sharpFromResolvableInput(imageSource);
+
+      const convertedBuffer = await image.toFormat(newExt as keyof FormatEnum).toBuffer();
+      return convertedBuffer;'''
+          new_block = '''      type SharpOutputFormat = 'jpeg' | 'png' | 'webp' | 'tiff' | 'gif' | 'avif' | 'heif' | 'raw';
+      const validExtensions: readonly SharpOutputFormat[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw'];
+
+      const newExt = newExtension.toLowerCase();
+      if (!validExtensions.includes(newExt as SharpOutputFormat)) {
+          throw new Error(`Invalid image output format: ${newExt}`);
+      }
+
+      const image = await sharpFromResolvableInput(imageSource);
+
+      const convertedBuffer = await image.toFormat(newExt as SharpOutputFormat).toBuffer();
+      return convertedBuffer;'''
+          assert s.count(old_block) == 1
+          s = s.replace(old_block, new_block)
+          p.write_text(s)
+
+          p = Path('lib-next/render/context-image-filters.ts')
+          s = p.read_text()
+          old = '''  // Intensity: sharpening strength (0-100+)
+  // Sharp's sharpen: (sigma, flat, jagged)
+  const sigma = Math.max(0.3, Math.min(1000, intensity));
+  return image.sharpen(sigma, 1, 2);'''
+          new = '''  // Sharp 0.35 accepts an options object and limits sigma to 10.
+  const sigma = Math.max(0.000001, Math.min(10, intensity));
+  return image.sharpen({ sigma, m1: 1, m2: 2 });'''
+          assert s.count(old) == 1
+          s = s.replace(old, new)
+          p.write_text(s)
+          PY
+      - name: Commit fixes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib-next/core/general-functions.ts lib-next/render/context-image-filters.ts
+          git diff --cached --check
+          git commit -m "fix(sharp): adopt 0.35 output and sharpen APIs"
+          git push origin HEAD:reengineering/phase-2-runtime-package-release
