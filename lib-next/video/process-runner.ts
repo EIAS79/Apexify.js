@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
 import { ApexifyProcessError } from "../runtime/errors";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
-import { redactUrl } from "../media/network-policy";
+import { redactUrlsInText } from "../media/network-policy";
 
 export interface MediaProcessPaths {
   ffmpegPath?: string;
@@ -75,16 +75,10 @@ export class MediaProcessError extends ApexifyProcessError {
   }
 }
 
-
 function validateProcessToken(value: string, label: string): void {
   if (!value || value.includes("\0")) {
     throw new ApexifyProcessError(`${label} must be a non-empty string without NUL bytes.`);
   }
-}
-
-/** Sanitize every URL-like token using the authoritative network redactor. */
-function redactProcessText(value: string): string {
-  return value.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => redactUrl(raw));
 }
 
 /**
@@ -207,7 +201,7 @@ export class MediaProcessRunner {
         options.signal?.removeEventListener("abort", onAbort);
 
         const stdout = Buffer.concat(stdoutChunks).toString("utf8");
-        const stderr = redactProcessText(Buffer.concat(stderrChunks).toString("utf8"));
+        const stderr = redactUrlsInText(Buffer.concat(stderrChunks).toString("utf8"));
 
         if (
           spawnError !== undefined ||

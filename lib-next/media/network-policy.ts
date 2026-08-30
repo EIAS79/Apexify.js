@@ -133,6 +133,15 @@ export function redactUrl(value: string | URL): string {
   }
 }
 
+/**
+ * Redact every HTTP(S) URL embedded in arbitrary diagnostic/process text while
+ * preserving the surrounding text. This is the authoritative text-level URL
+ * sanitizer for library diagnostics and process output.
+ */
+export function redactUrlsInText(value: string): string {
+  return value.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => redactUrl(raw));
+}
+
 function hostMatchesAllowlist(hostname: string, allowedHosts: readonly string[]): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, "");
   return allowedHosts.some((entry) => {
