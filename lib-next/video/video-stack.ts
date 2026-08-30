@@ -2,26 +2,20 @@ import { VideoCreator } from "./video-creator";
 import { VideoHelpers } from "./video-helpers";
 import { VideoPipeline } from "./video-pipeline-builder";
 import type { ExtractFramesOptions, VideoPipelineLayer } from "../types";
-import { createFfmpegSession, type FfmpegSession } from "./ffmpeg-session";
-import { probeVideoMetadata } from "./ffprobe-metadata";
+import { createFfmpegSession, type FfmpegSession, type FfmpegSessionOptions } from "./ffmpeg-session";
+import { probeVideoCodec, probeVideoMetadata } from "./ffprobe-metadata";
 import { extractVideoFrameBuffer } from "./extract-frame";
 import { extractFramesAtInterval } from "./extract-interval-frames";
 import { extractAllVideoFrames } from "./extract-all-frames";
 
-/**
- * Single entry for all video work (used as `painter.video`).
- *
- * - **`creator`** — {@link VideoCreator.createVideo} and every `VideoCreationOptions` branch (convert, trim, merge, …).
- * - **Helpers on this object** — low-level probes/extracts wired for `VideoCreator`: `getVideoInfo`, `extractFrames`,
- *   `extractAllFrames`, `extractFrameAtTime`, `extractFrameByNumber`, `extractMultipleFrames`.
- */
+/** Single entry for all video work (used as `painter.video`). */
 export class VideoStack {
   readonly creator: VideoCreator;
   private readonly helpers: VideoHelpers;
   private readonly session: FfmpegSession;
 
-  constructor() {
-    this.session = createFfmpegSession();
+  constructor(options: FfmpegSessionOptions = {}) {
+    this.session = createFfmpegSession(options);
     this.creator = new VideoCreator();
 
     const session = this.session;
@@ -32,19 +26,15 @@ export class VideoStack {
       timeSeconds?: number,
       outputFormat?: "jpg" | "png",
       quality?: number
-    ) =>
-      extractVideoFrameBuffer(session, src, frameNumber ?? 0, timeSeconds, outputFormat ?? "jpg", quality ?? 2);
-
-    const extractFrames = (src: string | Buffer, opts: ExtractFramesOptions) =>
-      extractFramesAtInterval(src, opts, session);
-
-    const extractAllFrames = (src: string | Buffer, opts?: Parameters<typeof extractAllVideoFrames>[1]) =>
-      extractAllVideoFrames(src, opts, session);
+    ) => extractVideoFrameBuffer(session, src, frameNumber ?? 0, timeSeconds, outputFormat ?? "jpg", quality ?? 2);
+    const extractFrames = (src: string | Buffer, opts: ExtractFramesOptions) => extractFramesAtInterval(src, opts, session);
+    const extractAllFrames = (src: string | Buffer, opts?: Parameters<typeof extractAllVideoFrames>[1]) => extractAllVideoFrames(src, opts, session);
 
     this.creator.setDependencies({
       checkFFmpegAvailable: () => session.checkAvailable(),
       getFFmpegInstallInstructions: () => session.getInstallInstructions(),
       getVideoInfo,
+      getVideoCodec: async (sourcePath: string) => probeVideoCodec(sourcePath, session),
       extractVideoFrame,
       extractFrames,
       extractAllFrames,
@@ -56,7 +46,7 @@ export class VideoStack {
       getVideoInfo,
       extractVideoFrame,
       createVideo: (opts) => this.creator.createVideo(opts),
-    });
+    }, session);
 
     const h = this.helpers;
     this.creator.setHelperMethods({
@@ -98,7 +88,7 @@ export class VideoStack {
     });
   }
 
-  getVideoInfo(source: string | Buffer, skipFfmpegCheck: boolean = false) {
+  getVideoInfo(source: string | Buffer, skipFfmpegCheck = false) {
     return probeVideoMetadata(source, this.session, skipFfmpegCheck);
   }
 
@@ -111,49 +101,22 @@ export class VideoStack {
     return extractFramesAtInterval(videoSource, options, this.session);
   }
 
-  extractAllFrames(
-    videoSource: string | Buffer,
-    options?: Parameters<typeof extractAllVideoFrames>[1]
-  ) {
+  extractAllFrames(videoSource: string | Buffer, options?: Parameters<typeof extractAllVideoFrames>[1]) {
     return extractAllVideoFrames(videoSource, options, this.session);
   }
 
-  extractFrameAtTime(
-    videoSource: string | Buffer,
-    timeSeconds: number,
-    outputFormat: "jpg" | "png" = "jpg",
-    quality: number = 2
-  ) {
+  extractFrameAtTime(videoSource: string | Buffer, timeSeconds: number, outputFormat: "jpg" | "png" = "jpg", quality = 2) {
     return extractVideoFrameBuffer(this.session, videoSource, 0, timeSeconds, outputFormat, quality);
   }
 
-  async extractFrameByNumber(
-    videoSource: string | Buffer,
-    frameNumber: number,
-    outputFormat: "jpg" | "png" = "jpg",
-    quality: number = 2
-  ) {
+  async extractFrameByNumber(videoSource: string | Buffer, frameNumber: number, outputFormat: "jpg" | "png" = "jpg", quality = 2) {
     const videoInfo = await this.getVideoInfo(videoSource, true);
-    if (!videoInfo || videoInfo.fps <= 0) {
-      throw new Error("Could not get video FPS to convert frame number to time");
-    }
+    if (!videoInfo || videoInfo.fps <= 0) throw new Error("Could not get video FPS to convert frame number to time");
     const timeSeconds = (frameNumber - 1) / videoInfo.fps;
-    return extractVideoFrameBuffer(
-      this.session,
-      videoSource,
-      frameNumber - 1,
-      timeSeconds,
-      outputFormat,
-      quality
-    );
+    return extractVideoFrameBuffer(this.session, videoSource, frameNumber - 1, timeSeconds, outputFormat, quality);
   }
 
-  async extractMultipleFrames(
-    videoSource: string | Buffer,
-    times: number[],
-    outputFormat: "jpg" | "png" = "jpg",
-    quality: number = 2
-  ): Promise<Buffer[]> {
+  async extractMultipleFrames(videoSource: string | Buffer, times: number[], outputFormat: "jpg" | "png" = "jpg", quality = 2): Promise<Buffer[]> {
     const frames: Buffer[] = [];
     for (const time of times) {
       const frame = await this.extractFrameAtTime(videoSource, time, outputFormat, quality);
@@ -164,3 +127,4 @@ export class VideoStack {
 }
 
 export type { VideoCreationOptions } from "./video-creator";
+export type { FfmpegSessionOptions } from "./ffmpeg-session";
