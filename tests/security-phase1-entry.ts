@@ -1,8 +1,8 @@
 export {
   MediaProcessRunner,
   MediaProcessError,
-  redactUrlSecrets,
 } from "../lib-next/video/process-runner";
+export { redactUrl as redactUrlSecrets } from "../lib-next/media/network-policy";
 export {
   createTempWorkspace,
   withTempWorkspace,
