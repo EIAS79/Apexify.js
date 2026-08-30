@@ -1,124 +1,135 @@
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { MediaProcessRunner, type MediaProcessRunOptions } from "./process-runner";
+import type { TempWorkspaceOptions } from "./temp-workspace";
 
 function buildFfmpegInstallGuide(): string {
   const os = process.platform;
-  let instructions = "\n\n📹 FFMPEG INSTALLATION GUIDE\n";
-  instructions += "═".repeat(50) + "\n\n";
+  let instructions = "\n\nFFMPEG INSTALLATION GUIDE\n";
+  instructions += "=".repeat(50) + "\n\n";
 
   if (os === "win32") {
-    instructions += "🪟 WINDOWS INSTALLATION:\n\n";
-    instructions += "OPTION 1 - Using Chocolatey (Recommended):\n";
-    instructions += "  1. Open PowerShell as Administrator\n";
-    instructions += "  2. Run: choco install ffmpeg\n";
-    instructions += "  3. Restart your terminal\n\n";
-    instructions += "OPTION 2 - Using Winget:\n";
-    instructions += "  1. Open PowerShell\n";
-    instructions += "  2. Run: winget install ffmpeg\n";
-    instructions += "  3. Restart your terminal\n\n";
-    instructions += "OPTION 3 - Manual Installation:\n";
-    instructions += "  1. Visit: https://www.gyan.dev/ffmpeg/builds/\n";
-    instructions += "  2. Download \"ffmpeg-release-essentials.zip\"\n";
-    instructions += "  3. Extract to C:\\ffmpeg\n";
-    instructions += "  4. Add C:\\ffmpeg\\bin to System PATH:\n";
-    instructions += "     - Press Win + X → System → Advanced → Environment Variables\n";
-    instructions += "     - Edit \"Path\" → Add \"C:\\ffmpeg\\bin\"\n";
-    instructions += "  5. Restart terminal and verify: ffmpeg -version\n\n";
-    instructions += "🔍 Search Terms: \"install ffmpeg windows\", \"ffmpeg windows tutorial\"\n";
-    instructions += "📺 YouTube: Search \"How to install FFmpeg on Windows 2024\"\n";
-    instructions += "🌐 Official: https://ffmpeg.org/download.html\n";
+    instructions += "WINDOWS:\n";
+    instructions += "  choco install ffmpeg\n";
+    instructions += "  or: winget install ffmpeg\n";
+    instructions += "  Official downloads: https://ffmpeg.org/download.html\n";
   } else if (os === "darwin") {
-    instructions += "🍎 macOS INSTALLATION:\n\n";
-    instructions += "OPTION 1 - Using Homebrew (Recommended):\n";
-    instructions += "  1. Install Homebrew if not installed:\n";
-    instructions +=
-      "     /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n";
-    instructions += "  2. Run: brew install ffmpeg\n";
-    instructions += "  3. Verify: ffmpeg -version\n\n";
-    instructions += "OPTION 2 - Using MacPorts:\n";
-    instructions += "  1. Install MacPorts from: https://www.macports.org/\n";
-    instructions += "  2. Run: sudo port install ffmpeg\n\n";
-    instructions += "🔍 Search Terms: \"install ffmpeg mac\", \"ffmpeg macos homebrew\"\n";
-    instructions += "📺 YouTube: Search \"Install FFmpeg on Mac using Homebrew\"\n";
-    instructions += "🌐 Official: https://ffmpeg.org/download.html\n";
+    instructions += "macOS:\n";
+    instructions += "  brew install ffmpeg\n";
+    instructions += "  Official downloads: https://ffmpeg.org/download.html\n";
   } else {
-    instructions += "🐧 LINUX INSTALLATION:\n\n";
-    instructions += "Ubuntu/Debian:\n";
-    instructions += "  sudo apt-get update\n";
-    instructions += "  sudo apt-get install ffmpeg\n\n";
-    instructions += "RHEL/CentOS/Fedora:\n";
-    instructions += "  sudo yum install ffmpeg\n";
-    instructions += "  # OR for newer versions:\n";
-    instructions += "  sudo dnf install ffmpeg\n\n";
-    instructions += "Arch Linux:\n";
-    instructions += "  sudo pacman -S ffmpeg\n\n";
-    instructions += "🔍 Search Terms: \"install ffmpeg [your-distro]\", \"ffmpeg linux tutorial\"\n";
-    instructions += "📺 YouTube: Search \"Install FFmpeg on Linux\"\n";
-    instructions += "🌐 Official: https://ffmpeg.org/download.html\n";
+    instructions += "LINUX:\n";
+    instructions += "  Debian/Ubuntu: sudo apt-get install ffmpeg\n";
+    instructions += "  Fedora: sudo dnf install ffmpeg\n";
+    instructions += "  Arch: sudo pacman -S ffmpeg\n";
+    instructions += "  Official downloads: https://ffmpeg.org/download.html\n";
   }
 
-  instructions += "\n" + "═".repeat(50) + "\n";
-  instructions += "✅ After installation, restart your terminal and verify with: ffmpeg -version\n";
-  instructions += "💡 If still not working, ensure FFmpeg is in your system PATH\n";
+  instructions += "\nConfigure custom binaries with APEXIFY_FFMPEG_PATH and APEXIFY_FFPROBE_PATH.\n";
   return instructions;
 }
 
+export interface FfmpegSessionOptions {
+  ffmpegPath?: string;
+  ffprobePath?: string;
+  tempDirectory?: string;
+  retainTempFiles?: boolean;
+}
+
 export interface FfmpegSession {
+  readonly runner: MediaProcessRunner;
+  readonly workspaceOptions: TempWorkspaceOptions;
   getInstallInstructions(): string;
   checkAvailable(): Promise<boolean>;
+  runFfmpeg(args: readonly string[], options?: MediaProcessRunOptions): ReturnType<MediaProcessRunner["runFfmpeg"]>;
+  runFfprobe(args: readonly string[], options?: MediaProcessRunOptions): ReturnType<MediaProcessRunner["runFfprobe"]>;
+}
+
+function commonFfmpegPaths(): string[] {
+  return process.platform === "win32"
+    ? [
+        "C:\\ffmpeg\\bin\\ffmpeg.exe",
+        "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
+        "C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
+      ]
+    : ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg", "/opt/local/bin/ffmpeg"];
+}
+
+function pairedFfprobePath(ffmpegPath: string): string {
+  if (process.platform === "win32") {
+    return ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+  }
+  return ffmpegPath.replace(/ffmpeg$/i, "ffprobe");
 }
 
 /**
- * Cached FFmpeg presence check + OS-specific install copy (moved out of ApexPainter).
+ * Shared FFmpeg/ffprobe session. All child processes flow through MediaProcessRunner,
+ * which only accepts argv arrays and always uses shell:false.
  */
-export function createFfmpegSession(): FfmpegSession {
+export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegSession {
+  const explicitFfmpeg = options.ffmpegPath ?? process.env.APEXIFY_FFMPEG_PATH;
+  const explicitFfprobe = options.ffprobePath ?? process.env.APEXIFY_FFPROBE_PATH;
+  const runner = new MediaProcessRunner({
+    ffmpegPath: explicitFfmpeg || "ffmpeg",
+    ffprobePath: explicitFfprobe || "ffprobe",
+  });
+  const workspaceOptions: TempWorkspaceOptions = {
+    rootDirectory: options.tempDirectory ?? process.env.APEXIFY_TEMP_DIR,
+    retain: options.retainTempFiles,
+  };
+
   let checked = false;
-  let available: boolean | null = null;
+  let available = false;
+
+  async function probePair(): Promise<boolean> {
+    try {
+      await runner.runFfmpeg(["-version"], {
+        timeoutMs: 5_000,
+        maxStdoutBytes: 1024 * 1024,
+        maxStderrBytes: 1024 * 1024,
+      });
+      await runner.runFfprobe(["-version"], {
+        timeoutMs: 5_000,
+        maxStdoutBytes: 1024 * 1024,
+        maxStderrBytes: 1024 * 1024,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   return {
+    runner,
+    workspaceOptions,
     getInstallInstructions: () => buildFfmpegInstallGuide(),
+    runFfmpeg: (args, runOptions) => runner.runFfmpeg(args, runOptions),
+    runFfprobe: (args, runOptions) => runner.runFfprobe(args, runOptions),
 
     async checkAvailable(): Promise<boolean> {
-      if (checked) {
-        return available ?? false;
-      }
-      try {
-        await execAsync("ffmpeg -version", {
-          timeout: 5000,
-          maxBuffer: 1024 * 1024,
-        });
+      if (checked) return available;
+
+      if (await probePair()) {
         available = true;
         checked = true;
         return true;
-      } catch {
-        const commonPaths =
-          process.platform === "win32"
-            ? [
-                "C:\\ffmpeg\\bin\\ffmpeg.exe",
-                "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
-                "C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
-              ]
-            : ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg", "/opt/local/bin/ffmpeg"];
+      }
 
-        for (const ffmpegPath of commonPaths) {
-          try {
-            await execAsync(`"${ffmpegPath}" -version`, {
-              timeout: 3000,
-              maxBuffer: 1024 * 1024,
-            });
+      // Only auto-discover when the caller did not explicitly configure executables.
+      if (!explicitFfmpeg && !explicitFfprobe) {
+        for (const ffmpegPath of commonFfmpegPaths()) {
+          const ffprobePath = pairedFfprobePath(ffmpegPath);
+          runner.setExecutablePaths({ ffmpegPath, ffprobePath });
+          if (await probePair()) {
             available = true;
             checked = true;
             return true;
-          } catch {
-            continue;
           }
         }
-        available = false;
-        checked = true;
-        return false;
+        runner.setExecutablePaths({ ffmpegPath: "ffmpeg", ffprobePath: "ffprobe" });
       }
+
+      available = false;
+      checked = true;
+      return false;
     },
   };
 }
