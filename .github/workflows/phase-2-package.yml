@@ -1,4 +1,4 @@
-name: Phase 2 Runtime and Package Gate
+name: Runtime, Package, and Release Gate
 
 on:
   workflow_dispatch:
@@ -22,11 +22,11 @@ jobs:
       matrix:
         node: [22, 24, 26]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Pin npm toolchain
         run: npm install --global npm@11.19.1
@@ -43,8 +43,8 @@ jobs:
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
-      - name: Bootstrap deterministic dependency graph
-        run: npm install
+      - name: Install locked dependency graph
+        run: npm ci
 
       - name: Build and verify emitted module formats
         run: npm run build
@@ -55,25 +55,38 @@ jobs:
       - name: Install packed package into clean ESM/CJS fixtures
         run: node scripts/verify-packed-package.cjs
 
+      - name: Prove prepack rebuilds clean dist
+        shell: bash
+        run: |
+          npm run clean
+          npm pack --json > phase2-prepack-node-${{ matrix.node }}.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const info = JSON.parse(fs.readFileSync('phase2-prepack-node-${{ matrix.node }}.json', 'utf8'))[0];
+          const required = ['dist/esm/index.js', 'dist/cjs/index.cjs', 'dist/declarations/index.d.ts'];
+          const paths = new Set(info.files.map((entry) => entry.path));
+          for (const file of required) {
+            if (!paths.has(file)) throw new Error(`prepack output missing ${file}`);
+          }
+          if (!fs.existsSync(info.filename)) throw new Error(`prepack tarball missing: ${info.filename}`);
+          fs.rmSync(info.filename, { force: true });
+          console.log('prepack lifecycle rebuilt dist and produced the required package artifacts.');
+          NODE
+
       - name: Inspect npm pack contents
         run: npm pack --dry-run --ignore-scripts --json > phase2-pack-node-${{ matrix.node }}.json
 
-      - name: Dependency audit
-        run: npm audit --omit=dev --json > phase2-audit-node-${{ matrix.node }}.json || true
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high --json > phase2-audit-node-${{ matrix.node }}.json
 
-      - name: Upload Phase 2 evidence
+      - name: Upload package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: phase2-package-node-${{ matrix.node }}
           path: |
             package-lock.json
+            phase2-prepack-node-${{ matrix.node }}.json
             phase2-pack-node-${{ matrix.node }}.json
             phase2-audit-node-${{ matrix.node }}.json
-            lib-next/core/general-functions.ts
-            lib-next/gif/animate-frames.ts
-            lib-next/image/painter-image-utils.ts
-            lib-next/output/compression.ts
-            lib-next/output/save-buffer.ts
-            lib-next/render/context-image-filters.ts
           if-no-files-found: warn
