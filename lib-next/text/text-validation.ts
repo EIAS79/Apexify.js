@@ -3,7 +3,7 @@ import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
 import {
-  assertCollection, assertFiniteNumber, assertFiniteNumericLeaves, assertGradient, assertOpacity,
+  assertFiniteNumber, assertFiniteNumericLeaves, assertGradient, assertOpacity,
   assertOptionalEnum, assertOptionalFiniteNumber, assertRecord,
 } from "../runtime/validation";
 
