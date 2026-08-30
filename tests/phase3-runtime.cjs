@@ -14,8 +14,9 @@ async function expectReject(promise, predicate, label) {
 }
 
 async function main() {
-  const runtime = await import('../dist/esm/runtime/index.js');
-  const media = await import('../dist/esm/media/index.js');
+  const phase3 = require('../node_modules/.cache/apexify-phase3/phase3-entry.cjs');
+  const runtime = phase3;
+  const media = phase3;
 
   runtime.resetApexifyRuntimeConfig();
 
@@ -55,6 +56,7 @@ async function main() {
   });
 
   let retryCount = 0;
+  let bigCount = 0;
   let concurrencyActive = 0;
   let concurrencyMax = 0;
   const server = http.createServer((req, res) => {
@@ -64,6 +66,7 @@ async function main() {
       return;
     }
     if (req.url === '/big') {
+      bigCount += 1;
       res.writeHead(200);
       res.end(Buffer.alloc(128));
       return;
@@ -177,6 +180,30 @@ async function main() {
     assert.ok(concurrencyMax <= 2, `remote concurrency exceeded configured maximum: ${concurrencyMax}`);
     assert.equal(media.getRemoteConcurrencyStats().active, 0);
     assert.equal(media.getRemoteConcurrencyStats().queued, 0);
+
+    // A permissive first fetch must not let a later stricter byte policy reuse it.
+    media.clearMediaCache();
+    const wide = await media.resolveMediaBuffer(`${base}/big`, { kind: 'video', maxBytes: 256 });
+    assert.equal(wide.byteLength, 128);
+    assert.ok(media.getMediaCacheStats().bytes >= 128, 'remote cache must account for actual Buffer bytes');
+    const countAfterWideFetch = bigCount;
+    await expectReject(
+      media.resolveMediaBuffer(`${base}/big`, { kind: 'image', maxBytes: 32 }),
+      (e) => e instanceof runtime.ApexifyResourceLimitError,
+      'cache byte-policy isolation'
+    );
+    assert.ok(bigCount > countAfterWideFetch, 'stricter policy must not reuse a wider cached representation');
+
+    // Cached trusted content must not survive a later tightening of SSRF policy.
+    media.clearMediaCache();
+    await media.resolveMediaBuffer(`${base}/ok`, { kind: 'image' });
+    runtime.configureApexifyRuntime({ network: { trustedNetworkAccess: false, allowedHosts: [] } });
+    await expectReject(
+      media.resolveMediaBuffer(`${base}/ok`, { kind: 'image' }),
+      (e) => e instanceof runtime.ApexifyRemoteFetchError,
+      'cache SSRF policy revalidation'
+    );
+    runtime.configureApexifyRuntime({ network: { trustedNetworkAccess: true, allowedHosts: ['127.0.0.1'] } });
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
