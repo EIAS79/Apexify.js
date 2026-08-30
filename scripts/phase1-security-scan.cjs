@@ -4,7 +4,8 @@ const path = require('node:path');
 const ROOTS = ['lib-next', 'tests', 'scripts', 'dist'];
 const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.md', '.yml', '.yaml']);
 const SELF = path.normalize('scripts/phase1-security-scan.cjs');
-const ALLOWED_CHILD_PROCESS = new Set([
+const RUNTIME_ROOTS = [path.normalize(`lib-next${path.sep}`), path.normalize(`dist${path.sep}`)];
+const ALLOWED_RUNTIME_CHILD_PROCESS = new Set([
   path.normalize('lib-next/video/process-runner.ts'),
   // Phase 2 bundles internal source modules into one verified entry per module format.
   path.normalize('dist/esm/index.js'),
@@ -30,9 +31,16 @@ for (const file of ROOTS.flatMap((root) => walk(root))) {
   const normalized = path.normalize(file);
   if (normalized === SELF) continue;
   const text = fs.readFileSync(file, 'utf8');
+  const isRuntimeArtifact = RUNTIME_ROOTS.some((root) => normalized.startsWith(root));
 
-  if (/from\s+["'](?:node:)?child_process["']|require\(["'](?:node:)?child_process["']\)/.test(text) && !ALLOWED_CHILD_PROCESS.has(normalized)) {
-    add(file, 'central-process-runner', 'child_process may only be imported by video/process-runner');
+  // Runtime library code must centralize process spawning through video/process-runner.
+  // Test and release-verification tooling may legitimately spawn npm/node/tsc in isolated fixtures.
+  if (
+    isRuntimeArtifact &&
+    /from\s+["'](?:node:)?child_process["']|require\(["'](?:node:)?child_process["']\)/.test(text) &&
+    !ALLOWED_RUNTIME_CHILD_PROCESS.has(normalized)
+  ) {
+    add(file, 'central-process-runner', 'runtime child_process imports must be centralized in video/process-runner');
   }
   if (/\.temp-frames|video-bg-temp-\$\{Date\.now|temp-video-\$\{Date\.now/.test(text)) {
     add(file, 'isolated-temp-workspace', 'legacy shared/timestamp temporary path found');
