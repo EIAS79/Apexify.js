@@ -1,0 +1,51 @@
+name: Phase 3 Process Defaults Migration
+
+on:
+  push:
+    branches:
+      - reengineering/phase-3-core-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-3-core-architecture
+      - name: Use central runtime defaults in process runner
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'lib-next/video/process-runner.ts';
+          let text = fs.readFileSync(file, 'utf8');
+          const importNeedle = 'import { ApexifyProcessError } from "../runtime/errors";';
+          if (!text.includes('getDefaultApexifyRuntimeConfig')) {
+            text = text.replace(importNeedle, importNeedle + '\nimport { getDefaultApexifyRuntimeConfig } from "../runtime/config";');
+          }
+          text = text.replace(/\nconst DEFAULT_TIMEOUT_MS = 5 \* 60_000;\nconst DEFAULT_MAX_OUTPUT_BYTES = 10 \* 1024 \* 1024;\n/, '\n');
+          const defaults = [
+            '    const runtime = getDefaultApexifyRuntimeConfig().ffmpeg;',
+            '    const timeoutMs = Math.max(1, options.timeoutMs ?? runtime.processTimeoutMs);',
+            '    const maxStdoutBytes = Math.max(1, options.maxStdoutBytes ?? runtime.maxStdoutBytes);',
+            '    const maxStderrBytes = Math.max(1, options.maxStderrBytes ?? runtime.maxStderrBytes);',
+          ].join('\n');
+          const old = [
+            '    const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);',
+            '    const maxStdoutBytes = Math.max(1, options.maxStdoutBytes ?? DEFAULT_MAX_OUTPUT_BYTES);',
+            '    const maxStderrBytes = Math.max(1, options.maxStderrBytes ?? DEFAULT_MAX_OUTPUT_BYTES);',
+          ].join('\n');
+          if (!text.includes(old)) throw new Error('expected process defaults not found');
+          text = text.replace(old, defaults);
+          fs.writeFileSync(file, text);
+          NODE
+          rm .github/workflows/phase3-process-defaults.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib-next/video/process-runner.ts .github/workflows/phase3-process-defaults.yml
+          git commit -m 'refactor(process): use central runtime defaults'
+          git push origin HEAD:reengineering/phase-3-core-architecture
