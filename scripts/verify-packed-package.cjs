@@ -29,14 +29,26 @@ const packInfo = JSON.parse(pack.stdout)[0];
 if (!packInfo?.filename || !Array.isArray(packInfo.files)) throw new Error('npm pack did not return expected JSON metadata.');
 
 const allowed = /^(package\.json|README\.md|CHANGELOG\.md|LICENSE|Apex-Banner\.png|dist\/)/;
-const forbidden = [];
-for (const file of packInfo.files.map((entry) => entry.path)) {
-  if (!allowed.test(file)) forbidden.push(file);
-}
+const packedPaths = packInfo.files.map((entry) => entry.path);
+const forbidden = packedPaths.filter((file) => !allowed.test(file));
 if (forbidden.length) throw new Error(`Packed artifact contains unexpected files: ${forbidden.join(', ')}`);
 
-for (const expected of ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'dist/esm/index.js', 'dist/cjs/index.cjs', 'dist/declarations/index.d.ts']) {
-  if (!packInfo.files.some((entry) => entry.path === expected)) throw new Error(`Packed artifact is missing ${expected}.`);
+for (const expected of [
+  'package.json',
+  'README.md',
+  'CHANGELOG.md',
+  'LICENSE',
+  'dist/esm/index.js',
+  'dist/cjs/index.cjs',
+  'dist/declarations/index.d.ts',
+  'dist/declarations/types/index.d.ts',
+  'dist/declarations-cjs/index.d.cts',
+  'dist/declarations-cjs/types/index.d.cts',
+]) {
+  if (!packedPaths.includes(expected)) throw new Error(`Packed artifact is missing ${expected}.`);
+}
+for (const stale of ['dist/esm/types/index.js', 'dist/cjs/types/index.cjs']) {
+  if (packedPaths.includes(stale)) throw new Error(`Packed artifact contains stale runtime type entry: ${stale}`);
 }
 
 const tarball = path.join(root, packInfo.filename);
@@ -56,35 +68,36 @@ try {
 
   fs.writeFileSync(
     path.join(fixtureEsm, 'index.mjs'),
-    `import { ApexPainter } from 'apexify.js';\nconst ns = await import('apexify.js');\nif (typeof ApexPainter !== 'function') throw new Error('ESM ApexPainter export missing');\nconst keys = Object.keys(ns).filter((key) => key !== 'default').sort();\nif (keys.join(',') !== 'ApexPainter') throw new Error('Unexpected ESM exports: ' + keys.join(','));\nconsole.log('fixture-esm: ok');\n`
+    `import { ApexPainter } from 'apexify.js';\nconst ns = await import('apexify.js');\nif (typeof ApexPainter !== 'function') throw new Error('ESM ApexPainter export missing');\nconst keys = Object.keys(ns).filter((key) => key !== 'default').sort();\nif (keys.join(',') !== 'ApexPainter') throw new Error('Unexpected ESM exports: ' + keys.join(','));\ntry { await import('apexify.js/types'); throw new Error('types subpath unexpectedly has an ESM runtime target'); } catch (error) { if (error?.message?.includes('unexpectedly')) throw error; }\nconsole.log('fixture-esm: ok');\n`
   );
   fs.writeFileSync(
     path.join(fixtureCjs, 'index.cjs'),
-    `const ns = require('apexify.js');\nif (typeof ns.ApexPainter !== 'function') throw new Error('CJS ApexPainter export missing');\nconst keys = Object.keys(ns).filter((key) => key !== 'default').sort();\nif (keys.join(',') !== 'ApexPainter') throw new Error('Unexpected CJS exports: ' + keys.join(','));\nconsole.log('fixture-cjs: ok');\n`
+    `const ns = require('apexify.js');\nif (typeof ns.ApexPainter !== 'function') throw new Error('CJS ApexPainter export missing');\nconst keys = Object.keys(ns).filter((key) => key !== 'default').sort();\nif (keys.join(',') !== 'ApexPainter') throw new Error('Unexpected CJS exports: ' + keys.join(','));\ntry { require('apexify.js/types'); throw new Error('types subpath unexpectedly has a CJS runtime target'); } catch (error) { if (error?.message?.includes('unexpectedly')) throw error; }\nconsole.log('fixture-cjs: ok');\n`
   );
 
   run(process.execPath, ['index.mjs'], { cwd: fixtureEsm });
   run(process.execPath, ['index.cjs'], { cwd: fixtureCjs });
 
-  fs.writeFileSync(
-    path.join(fixtureEsm, 'typecheck.mts'),
-    `import { ApexPainter } from 'apexify.js';\nimport type { CanvasConfig, SceneRenderInput } from 'apexify.js';\nimport type { VideoPipelineLayer } from 'apexify.js/types';\nconst painter: ApexPainter = new ApexPainter({ type: 'buffer' });\nconst canvas: CanvasConfig = { width: 1, height: 1 };\nlet scene!: SceneRenderInput;\nlet layer!: VideoPipelineLayer;\nvoid painter; void canvas; void scene; void layer;\n`
-  );
-  writeJson(path.join(fixtureEsm, 'tsconfig.json'), {
-    compilerOptions: {
-      noEmit: true,
-      strict: true,
-      skipLibCheck: true,
-      target: 'ES2022',
-      module: 'NodeNext',
-      moduleResolution: 'NodeNext',
-    },
-    files: ['./typecheck.mts'],
-  });
+  const typeSource = `import { ApexPainter } from 'apexify.js';\nimport type { CanvasConfig, SceneRenderInput } from 'apexify.js';\nimport type { VideoPipelineLayer } from 'apexify.js/types';\nconst painter: ApexPainter = new ApexPainter({ type: 'buffer' });\nconst canvas: CanvasConfig = { width: 1, height: 1 };\nlet scene!: SceneRenderInput;\nlet layer!: VideoPipelineLayer;\nvoid painter; void canvas; void scene; void layer;\n`;
+  fs.writeFileSync(path.join(fixtureEsm, 'typecheck.mts'), typeSource);
+  fs.writeFileSync(path.join(fixtureCjs, 'typecheck.cts'), typeSource);
+
+  const compilerOptions = {
+    noEmit: true,
+    strict: true,
+    skipLibCheck: false,
+    target: 'ES2022',
+    module: 'NodeNext',
+    moduleResolution: 'NodeNext',
+  };
+  writeJson(path.join(fixtureEsm, 'tsconfig.json'), { compilerOptions, files: ['./typecheck.mts'] });
+  writeJson(path.join(fixtureCjs, 'tsconfig.json'), { compilerOptions, files: ['./typecheck.cts'] });
+
   const tsc = path.join(path.dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
   run(process.execPath, [tsc, '-p', 'tsconfig.json'], { cwd: fixtureEsm });
+  run(process.execPath, [tsc, '-p', 'tsconfig.json'], { cwd: fixtureCjs });
 
-  console.log(`verify-packed-package: ${packInfo.filename} installed and passed ESM, CJS, types, and contents checks.`);
+  console.log(`verify-packed-package: ${packInfo.filename} installed and passed ESM, CJS, dual types, and contents checks.`);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
   fs.rmSync(tarball, { force: true });
