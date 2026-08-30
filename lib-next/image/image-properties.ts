@@ -4,7 +4,7 @@ import sharp from "sharp";
 import type { AlignMode, FitMode, BoxBackground } from "../types";
 import { buildPath } from "../render/clip-path";
 import { createGradientFill } from "../render/gradient-fill";
-import { resolveMediaInput } from "../media/source";
+import { resolveMediaInput, type MediaSource } from "../media/source";
 import { BoundedCache } from "../media/cache";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyDecodeError, ApexifyResourceLimitError } from "../runtime/errors";
@@ -79,7 +79,7 @@ export function fitInto(
   return { dx, dy, dw, dh, sx, sy, sw, sh };
 }
 
-async function resolveToCanvasImage(src: string | Buffer): Promise<Image> {
+async function resolveToCanvasImage(src: MediaSource): Promise<Image> {
   try {
     const resolved = await resolveMediaInput(src, { kind: "image" });
     const metadata = await sharp(resolved).metadata();
@@ -96,8 +96,8 @@ async function resolveToCanvasImage(src: string | Buffer): Promise<Image> {
   }
 }
 
-export async function loadImageCached(src: string | Buffer): Promise<Image> {
-  if (Buffer.isBuffer(src)) return resolveToCanvasImage(src);
+export async function loadImageCached(src: MediaSource): Promise<Image> {
+  if (typeof src !== "string") return resolveToCanvasImage(src);
   const key = /^https?:\/\//i.test(src) ? src : path.resolve(process.cwd(), src);
   const cache = getImageCache();
   const cached = cache.get(key);
