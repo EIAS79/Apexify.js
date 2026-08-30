@@ -1,4 +1,6 @@
 import { spawn } from "child_process";
+import { ApexifyProcessError } from "../runtime/errors";
+import { redactUrl } from "../media/network-policy";
 
 export interface MediaProcessPaths {
   ffmpegPath?: string;
@@ -22,7 +24,8 @@ export interface MediaProcessResult {
   exitCode: number;
 }
 
-export class MediaProcessError extends Error {
+/** Compatibility subtype backed by the authoritative Apexify process error hierarchy. */
+export class MediaProcessError extends ApexifyProcessError {
   readonly executable: string;
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
@@ -50,8 +53,17 @@ export class MediaProcessError extends Error {
           : options.exitCode === null
             ? "failed to start"
             : `exited with code ${options.exitCode}`;
-    super(`Media process ${reason}.`, { cause: options.cause });
-    this.name = "MediaProcessError";
+    super(`Media process ${reason}.`, {
+      cause: options.cause,
+      details: {
+        executable: options.executable,
+        exitCode: options.exitCode,
+        signal: options.signal,
+        timedOut: options.timedOut,
+        aborted: options.aborted,
+        outputLimitExceeded: options.outputLimitExceeded,
+      },
+    });
     this.executable = options.executable;
     this.exitCode = options.exitCode;
     this.signal = options.signal;
@@ -67,25 +79,13 @@ const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 
 function validateProcessToken(value: string, label: string): void {
   if (!value || value.includes("\0")) {
-    throw new Error(`${label} must be a non-empty string without NUL bytes.`);
+    throw new ApexifyProcessError(`${label} must be a non-empty string without NUL bytes.`);
   }
 }
 
-/**
- * Remove query strings/fragments from URL-like text before it is retained in an error object.
- * This prevents signed URLs and tokens from being copied into exception telemetry.
- */
-export function redactUrlSecrets(value: string): string {
-  return value.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
-    try {
-      const parsed = new URL(raw);
-      parsed.search = "";
-      parsed.hash = "";
-      return parsed.toString();
-    } catch {
-      return raw.replace(/[?#].*$/, "");
-    }
-  });
+/** Sanitize every URL-like token using the authoritative network redactor. */
+function redactProcessText(value: string): string {
+  return value.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => redactUrl(raw));
 }
 
 /**
@@ -99,8 +99,8 @@ export class MediaProcessRunner {
   private ffprobePath: string;
 
   constructor(paths: MediaProcessPaths = {}) {
-    this.ffmpegPath = paths.ffmpegPath || "ffmpeg";
-    this.ffprobePath = paths.ffprobePath || "ffprobe";
+    this.ffmpegPath = paths.ffmpegPath ?? "ffmpeg";
+    this.ffprobePath = paths.ffprobePath ?? "ffprobe";
     validateProcessToken(this.ffmpegPath, "ffmpegPath");
     validateProcessToken(this.ffprobePath, "ffprobePath");
   }
@@ -136,7 +136,7 @@ export class MediaProcessRunner {
     validateProcessToken(executable, "executable");
     for (const [index, arg] of args.entries()) {
       if (typeof arg !== "string" || arg.includes("\0")) {
-        throw new Error(`process argv[${index}] must be a string without NUL bytes.`);
+        throw new ApexifyProcessError(`process argv[${index}] must be a string without NUL bytes.`);
       }
     }
 
@@ -154,6 +154,7 @@ export class MediaProcessRunner {
           timedOut: false,
           aborted: true,
           outputLimitExceeded: false,
+          cause: options.signal.reason,
         })
       );
     }
@@ -206,7 +207,7 @@ export class MediaProcessRunner {
         options.signal?.removeEventListener("abort", onAbort);
 
         const stdout = Buffer.concat(stdoutChunks).toString("utf8");
-        const stderr = redactUrlSecrets(Buffer.concat(stderrChunks).toString("utf8"));
+        const stderr = redactProcessText(Buffer.concat(stderrChunks).toString("utf8"));
 
         if (
           spawnError !== undefined ||
