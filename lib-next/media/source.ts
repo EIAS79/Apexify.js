@@ -46,6 +46,16 @@ function schemeOf(input: string): string | undefined {
   return match?.[1]?.toLowerCase();
 }
 
+function isFilesystemPath(input: string): boolean {
+  return path.isAbsolute(input) || path.win32.isAbsolute(input) || /^[a-zA-Z]:[\\/]/.test(input);
+}
+
+function limitName(kind: MediaKind): string {
+  if (kind === "image") return "maxRemoteImageBytes";
+  if (kind === "video") return "maxRemoteVideoBytes";
+  return "maxRemoteGenericBytes";
+}
+
 function getDiscordAttachmentExpiry(source: string): Date | undefined {
   try {
     const url = new URL(source);
@@ -92,10 +102,11 @@ export class MediaSourceResolver {
     options: MediaResolveOptions = {}
   ): Promise<ResolvedMediaInput> {
     const maximum = remoteByteLimitForKind(kind, this.runtime.config.limits);
+    const limit = limitName(kind);
 
     if (Buffer.isBuffer(source)) {
       if (source.length === 0) throw new ApexifyInputError("Media buffer is empty.");
-      assertByteLimit(source.length, maximum, `max${kind[0].toUpperCase()}${kind.slice(1)}Bytes`, "media buffer");
+      assertByteLimit(source.length, maximum, limit, "media buffer");
       return { kind: "buffer", value: source, origin: "buffer" };
     }
 
@@ -107,33 +118,38 @@ export class MediaSourceResolver {
     const data = decodeDataUrl(trimmed);
     if (data) {
       if (data.length === 0) throw new ApexifyInputError("Data URL payload is empty.");
-      assertByteLimit(data.length, maximum, `max${kind[0].toUpperCase()}${kind.slice(1)}Bytes`, "data URL");
+      assertByteLimit(data.length, maximum, limit, "data URL");
       return { kind: "buffer", value: data, origin: "data" };
     }
 
-    const scheme = schemeOf(trimmed);
-    if (scheme) {
-      if (scheme !== "http" && scheme !== "https") {
-        throw new ApexifyInputError(`Unsupported media-source protocol: ${scheme}:`);
+    // A drive-letter path such as C:\\assets\\x.png is not a custom URL scheme.
+    if (!isFilesystemPath(trimmed)) {
+      const scheme = schemeOf(trimmed);
+      if (scheme) {
+        if (scheme !== "http" && scheme !== "https") {
+          throw new ApexifyInputError(`Unsupported media-source protocol: ${scheme}:`);
+        }
+        if (kind === "image") assertRemoteImageUrlFresh(trimmed);
+        const key = `${kind}:${trimmed}`;
+        const bytes = await this.runtime.remoteBytesCache.getOrCreate(key, () =>
+          getRemoteFetchClient(this.runtime).fetchBuffer(trimmed, {
+            maxBytes: maximum,
+            signal: options.signal,
+            headers: { Accept: acceptHeader(kind) },
+          })
+        );
+        return { kind: "buffer", value: bytes, origin: "remote" };
       }
-      if (kind === "image") assertRemoteImageUrlFresh(trimmed);
-      const key = `${kind}:${trimmed}`;
-      const bytes = await this.runtime.remoteBytesCache.getOrCreate(key, () =>
-        getRemoteFetchClient(this.runtime).fetchBuffer(trimmed, {
-          maxBytes: maximum,
-          signal: options.signal,
-          headers: { Accept: acceptHeader(kind) },
-        })
-      );
-      return { kind: "buffer", value: bytes, origin: "remote" };
     }
 
-    const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
+    const resolvedPath = path.isAbsolute(trimmed) || path.win32.isAbsolute(trimmed)
+      ? trimmed
+      : path.resolve(process.cwd(), trimmed);
     const stat = await fs.stat(resolvedPath).catch((error: unknown) => {
       throw new ApexifyInputError("Media file does not exist or is not accessible.", { cause: error });
     });
     if (!stat.isFile()) throw new ApexifyInputError("Media source path must resolve to a file.");
-    assertByteLimit(stat.size, maximum, `max${kind[0].toUpperCase()}${kind.slice(1)}Bytes`, "media file");
+    assertByteLimit(stat.size, maximum, limit, "media file");
     return { kind: "path", value: resolvedPath, origin: "file" };
   }
 
