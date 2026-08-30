@@ -18,6 +18,7 @@ import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { applyContextImageFilters } from "../render/context-image-filters";
 import { withTempWorkspace } from "../video/temp-workspace";
 import { assertCanvasResourceLimits } from "../runtime/limits";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 export type { CanvasResults };
 
@@ -131,7 +132,11 @@ export class CanvasCreator {
           if (!canvas.height) canvas.height = img.height;
         }
       } catch {
-        console.warn("createCanvas: Failed to extract video frame for sizing, using defaults");
+        emitDiagnostic({
+          level: "warn",
+          code: "CANVAS_VIDEO_SIZE_FALLBACK",
+          message: "Video frame sizing failed; canvas defaults will be used.",
+        });
       }
     }
   }
