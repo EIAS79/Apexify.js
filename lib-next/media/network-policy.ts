@@ -21,9 +21,19 @@ export interface ResolvedNetworkTarget {
   trusted: boolean;
 }
 
-export type DnsLookup = (
-  hostname: string
-) => Promise<ReadonlyArray<{ address: string; family: number }>>;
+export type DnsLookup = (hostname: string) => Promise<ReadonlyArray<{ address: string; family: number }>>;
+
+function normalizeHostname(hostname: string): string {
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  return normalized.startsWith("[") && normalized.endsWith("]")
+    ? normalized.slice(1, -1)
+    : normalized;
+}
+
+function normalizeIpInput(address: string): string {
+  const unwrapped = address.startsWith("[") && address.endsWith("]") ? address.slice(1, -1) : address;
+  return unwrapped.split("%", 1)[0];
+}
 
 function ipv4ToInt(address: string): number | undefined {
   const parts = address.split(".");
@@ -60,10 +70,8 @@ function expandEmbeddedIpv4(address: string): string {
 }
 
 function ipv6ToBigInt(input: string): bigint | undefined {
-  const withoutZone = input.split("%", 1)[0].toLowerCase();
-  const address = expandEmbeddedIpv4(withoutZone);
+  const address = expandEmbeddedIpv4(normalizeIpInput(input).toLowerCase());
   if (isIP(address) !== 6) return undefined;
-
   const pieces = address.split("::");
   if (pieces.length > 2) return undefined;
   const left = pieces[0] ? pieces[0].split(":") : [];
@@ -74,7 +82,6 @@ function ipv6ToBigInt(input: string): bigint | undefined {
     ? [...left, ...new Array<string>(missing).fill("0"), ...right]
     : left;
   if (hextets.length !== 8) return undefined;
-
   let value = 0n;
   for (const hextet of hextets) {
     if (!/^[0-9a-f]{1,4}$/i.test(hextet)) return undefined;
@@ -116,55 +123,45 @@ function classifyIpv6(address: string): IpClassification {
   if (value === undefined) return "reserved";
   if (value === 0n) return "unspecified";
   if (value === 1n) return "loopback";
-
-  // IPv4-mapped IPv6. Apply the full IPv4 policy to the embedded address.
   if (ipv6InCidr(address, "::ffff:0:0", 96)) {
     const embedded = Number(value & 0xffffffffn) >>> 0;
-    const ipv4 = `${(embedded >>> 24) & 255}.${(embedded >>> 16) & 255}.${(embedded >>> 8) & 255}.${embedded & 255}`;
-    return classifyIpv4(ipv4);
+    return classifyIpv4(`${(embedded >>> 24) & 255}.${(embedded >>> 16) & 255}.${(embedded >>> 8) & 255}.${embedded & 255}`);
   }
-
   if (ipv6InCidr(address, "fc00::", 7)) return "private";
   if (ipv6InCidr(address, "fe80::", 10)) return "link-local";
   if (ipv6InCidr(address, "ff00::", 8)) return "multicast";
-  if (ipv6InCidr(address, "2001:db8::", 32) || ipv6InCidr(address, "3fff::", 20)) {
-    return "documentation";
-  }
+  if (ipv6InCidr(address, "2001:db8::", 32) || ipv6InCidr(address, "3fff::", 20)) return "documentation";
   if (
     ipv6InCidr(address, "100::", 64) ||
     ipv6InCidr(address, "64:ff9b::", 96) ||
     ipv6InCidr(address, "64:ff9b:1::", 48) ||
     ipv6InCidr(address, "2001::", 23) ||
     ipv6InCidr(address, "2002::", 16)
-  ) {
-    return "reserved";
-  }
-
-  // Current globally routable unicast allocation. Conservatively block other special space.
+  ) return "reserved";
   return ipv6InCidr(address, "2000::", 3) ? "public" : "reserved";
 }
 
 export function classifyIpAddress(address: string): IpClassification {
-  const family = isIP(address.split("%", 1)[0]);
-  if (family === 4) return classifyIpv4(address);
-  if (family === 6) return classifyIpv6(address);
+  const normalized = normalizeIpInput(address);
+  const family = isIP(normalized);
+  if (family === 4) return classifyIpv4(normalized);
+  if (family === 6) return classifyIpv6(normalized);
   return "reserved";
 }
 
 export function redactUrl(value: string | URL): string {
   try {
     const url = typeof value === "string" ? new URL(value) : new URL(value.toString());
-    const authority = url.port ? `${url.hostname}:${url.port}` : url.hostname;
-    return `${url.protocol}//${authority}/<redacted>`;
+    return `${url.protocol}//${url.host}/<redacted>`;
   } catch {
     return "<redacted-url>";
   }
 }
 
 export function isTrustedHostname(hostname: string, trustedHosts: readonly string[]): boolean {
-  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  const normalized = normalizeHostname(hostname);
   return trustedHosts.some((entry) => {
-    const trusted = entry.toLowerCase().replace(/\.$/, "");
+    const trusted = normalizeHostname(entry);
     if (trusted.startsWith("*.")) {
       const suffix = trusted.slice(1);
       return normalized.endsWith(suffix) && normalized.length > suffix.length;
@@ -187,7 +184,7 @@ function assertUrlShape(url: URL, policy: Readonly<NetworkPolicyConfig>): void {
       details: { reason: "URL_CREDENTIALS_BLOCKED" },
     });
   }
-  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  const hostname = normalizeHostname(url.hostname);
   if (!hostname) {
     throw new ApexifyRemoteFetchError("Remote URL hostname is required.", {
       url: redacted,
@@ -208,7 +205,6 @@ async function defaultLookup(hostname: string): Promise<ReadonlyArray<{ address:
   return dnsLookup(hostname, { all: true, verbatim: true });
 }
 
-/** Validate protocol/hostname, resolve DNS, classify every address, and pin one approved address. */
 export async function resolveNetworkTarget(
   input: string | URL,
   policy: Readonly<NetworkPolicyConfig>,
@@ -216,14 +212,10 @@ export async function resolveNetworkTarget(
 ): Promise<ResolvedNetworkTarget> {
   const url = typeof input === "string" ? new URL(input) : new URL(input.toString());
   assertUrlShape(url, policy);
-
-  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  const hostname = normalizeHostname(url.hostname);
   const trusted = policy.allowPrivateNetwork || isTrustedHostname(hostname, policy.trustedHosts);
   const literalFamily = isIP(hostname);
-  const resolved = literalFamily
-    ? [{ address: hostname, family: literalFamily }]
-    : await lookup(hostname);
-
+  const resolved = literalFamily ? [{ address: hostname, family: literalFamily }] : await lookup(hostname);
   if (resolved.length === 0) {
     throw new ApexifyRemoteFetchError("Remote hostname resolved to no addresses.", {
       url: redactUrl(url),
@@ -237,23 +229,18 @@ export async function resolveNetworkTarget(
     if (candidate.family !== 4 && candidate.family !== 6) continue;
     const classification = classifyIpAddress(candidate.address);
     if (!trusted && classification !== "public") {
-      throw new ApexifyRemoteFetchError(
-        `Remote destination is blocked by network policy (${classification}).`,
-        {
-          url: redactUrl(url),
-          details: { reason: "IP_BLOCKED", classification, family: candidate.family },
-        }
-      );
+      throw new ApexifyRemoteFetchError(`Remote destination is blocked by network policy (${classification}).`, {
+        url: redactUrl(url),
+        details: { reason: "IP_BLOCKED", classification, family: candidate.family },
+      });
     }
     usable.push({ address: candidate.address, family: candidate.family });
   }
-
   if (usable.length === 0) {
     throw new ApexifyRemoteFetchError("Remote hostname did not resolve to a usable IPv4/IPv6 address.", {
       url: redactUrl(url),
       details: { reason: "DNS_NO_USABLE_ADDRESS" },
     });
   }
-
   return { url, address: usable[0].address, family: usable[0].family, trusted };
 }
