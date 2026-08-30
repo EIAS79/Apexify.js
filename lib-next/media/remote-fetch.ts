@@ -10,26 +10,74 @@ const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 type PinnedLookupAddress = { address: string; family: 4 | 6 };
+type ReleaseRemoteSlot = () => void;
+type RemoteWaiter = {
+  settled: boolean;
+  resolve: (release: ReleaseRemoteSlot) => void;
+  reject: (error: unknown) => void;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+};
 
 let activeRemoteRequests = 0;
-const remoteWaiters: Array<() => void> = [];
+const remoteWaiters: RemoteWaiter[] = [];
 
-async function acquireRemoteSlot(maxConcurrent: number): Promise<() => void> {
-  while (activeRemoteRequests >= maxConcurrent) {
-    await new Promise<void>((resolve) => remoteWaiters.push(resolve));
-  }
-  activeRemoteRequests += 1;
+function makeReleaseRemoteSlot(): ReleaseRemoteSlot {
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    activeRemoteRequests -= 1;
-    remoteWaiters.shift()?.();
+
+    while (remoteWaiters.length > 0) {
+      const waiter = remoteWaiters.shift()!;
+      if (waiter.settled) continue;
+      waiter.settled = true;
+      if (waiter.signal && waiter.onAbort) waiter.signal.removeEventListener("abort", waiter.onAbort);
+      // Transfer the occupied slot directly to the oldest waiter. Keeping the
+      // active count unchanged prevents a newly arriving request from stealing
+      // the slot between release and waiter wake-up.
+      waiter.resolve(makeReleaseRemoteSlot());
+      return;
+    }
+
+    activeRemoteRequests = Math.max(0, activeRemoteRequests - 1);
   };
 }
 
+async function acquireRemoteSlot(maxConcurrent: number, signal?: AbortSignal, source?: string): Promise<ReleaseRemoteSlot> {
+  if (signal?.aborted) {
+    throw new ApexifyRemoteFetchError("Remote media request was aborted before it acquired a network slot.", {
+      requestUrl: source ? redactUrl(source) : undefined,
+      cause: signal.reason,
+    });
+  }
+
+  if (activeRemoteRequests < maxConcurrent) {
+    activeRemoteRequests += 1;
+    return makeReleaseRemoteSlot();
+  }
+
+  return new Promise<ReleaseRemoteSlot>((resolve, reject) => {
+    const waiter: RemoteWaiter = { settled: false, resolve, reject, signal };
+    if (signal) {
+      waiter.onAbort = () => {
+        if (waiter.settled) return;
+        waiter.settled = true;
+        const index = remoteWaiters.indexOf(waiter);
+        if (index >= 0) remoteWaiters.splice(index, 1);
+        reject(new ApexifyRemoteFetchError("Remote media request was aborted while waiting for a network slot.", {
+          requestUrl: source ? redactUrl(source) : undefined,
+          cause: signal.reason,
+        }));
+      };
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+    }
+    remoteWaiters.push(waiter);
+  });
+}
+
 export function getRemoteConcurrencyStats(): { active: number; queued: number } {
-  return { active: activeRemoteRequests, queued: remoteWaiters.length };
+  return { active: activeRemoteRequests, queued: remoteWaiters.filter((waiter) => !waiter.settled).length };
 }
 
 export interface RemoteFetchOptions {
@@ -60,6 +108,10 @@ function defaultMaxBytes(kind: RemoteFetchOptions["kind"]): number {
   return limits.maxRemoteImageBytes;
 }
 
+function remoteLimitName(kind: RemoteFetchOptions["kind"]): "maxRemoteImageBytes" | "maxRemoteVideoBytes" {
+  return kind === "image" ? "maxRemoteImageBytes" : "maxRemoteVideoBytes";
+}
+
 function parseRetryAfter(value: string | string[] | undefined): number | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return undefined;
@@ -87,9 +139,21 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(signal.reason ?? new Error("Aborted"));
       return;
     }
-    const timer = setTimeout(resolve, ms);
+    let settled = false;
+    const cleanup = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    }, ms);
     const onAbort = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      cleanup();
       reject(signal?.reason ?? new Error("Aborted"));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -110,19 +174,61 @@ function createPinnedLookup(addresses: readonly string[]): LookupFunction {
   }) as LookupFunction;
 }
 
+function timeoutError(source: string | URL, timeoutMs: number): ApexifyRemoteFetchError {
+  return new ApexifyRemoteFetchError(`Remote media request timed out after ${timeoutMs}ms.`, {
+    requestUrl: redactUrl(source),
+    details: { timeoutMs },
+  });
+}
+
+async function validateTargetBeforeDeadline(source: string, deadline: number, timeoutMs: number) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw timeoutError(source, timeoutMs);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      validateRemoteTarget(source, getDefaultApexifyRuntimeConfig().network),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(timeoutError(source, timeoutMs)), remaining);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function requestOnce(
   source: string,
   options: Required<Pick<RemoteFetchOptions, "maxBytes" | "timeoutMs" | "maxRedirects">> & RemoteFetchOptions,
-  redirectCount = 0
+  redirectCount = 0,
+  deadline = Date.now() + options.timeoutMs
 ): Promise<AttemptResult> {
   if (options.signal?.aborted) {
     throw new ApexifyRemoteFetchError("Remote media request was aborted.", { requestUrl: redactUrl(source), cause: options.signal.reason });
   }
+
   const config = getDefaultApexifyRuntimeConfig();
-  const target = await validateRemoteTarget(source, config.network);
+  const target = await validateTargetBeforeDeadline(source, deadline, options.timeoutMs);
   const client = target.url.protocol === "https:" ? https : http;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw timeoutError(target.url, options.timeoutMs);
 
   return new Promise<AttemptResult>((resolve, reject) => {
+    let settled = false;
+    const finishResolve = (value: AttemptResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(wallTimer);
+      resolve(value);
+    };
+    const finishReject = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(wallTimer);
+      reject(error);
+    };
+
     const request = client.request(target.url, {
       method: "GET",
       headers: {
@@ -138,7 +244,7 @@ async function requestOnce(
       if (REDIRECT_STATUSES.has(status) && location) {
         response.resume();
         if (redirectCount >= options.maxRedirects) {
-          reject(new ApexifyRemoteFetchError("Remote media redirect limit exceeded.", {
+          finishReject(new ApexifyRemoteFetchError("Remote media redirect limit exceeded.", {
             status,
             requestUrl: redactUrl(target.url),
             details: { maxRedirects: options.maxRedirects },
@@ -149,26 +255,27 @@ async function requestOnce(
         try {
           next = new URL(location, target.url).toString();
         } catch (cause) {
-          reject(new ApexifyRemoteFetchError("Remote media redirect URL is invalid.", { status, requestUrl: redactUrl(target.url), cause }));
+          finishReject(new ApexifyRemoteFetchError("Remote media redirect URL is invalid.", { status, requestUrl: redactUrl(target.url), cause }));
           return;
         }
-        requestOnce(next, options, redirectCount + 1).then(resolve, reject);
+        requestOnce(next, options, redirectCount + 1, deadline).then(finishResolve, finishReject);
         return;
       }
 
       const contentLength = Number(response.headers["content-length"] ?? 0);
       if (Number.isFinite(contentLength) && contentLength > options.maxBytes) {
-        response.destroy();
-        reject(new ApexifyResourceLimitError(options.kind === "video" ? "maxRemoteVideoBytes" : "maxRemoteImageBytes", options.maxBytes, contentLength, {
+        const error = new ApexifyResourceLimitError(remoteLimitName(options.kind), options.maxBytes, contentLength, {
           details: { requestUrl: redactUrl(target.url) },
-        }));
+        });
+        response.destroy(error);
+        finishReject(error);
         return;
       }
 
       if (status < 200 || status >= 300) {
         const retryAfterMs = parseRetryAfter(response.headers["retry-after"]);
         response.resume();
-        reject(new ApexifyRemoteFetchError(`Remote media request failed with HTTP ${status}.`, {
+        finishReject(new ApexifyRemoteFetchError(`Remote media request failed with HTTP ${status}.`, {
           status,
           requestUrl: redactUrl(target.url),
           details: { retryAfterMs },
@@ -179,40 +286,55 @@ async function requestOnce(
       const chunks: Buffer[] = [];
       let bytes = 0;
       response.on("data", (chunk: Buffer | Uint8Array) => {
+        if (settled) return;
         const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         bytes += buffer.length;
         if (bytes > options.maxBytes) {
-          response.destroy(new ApexifyResourceLimitError(options.kind === "video" ? "maxRemoteVideoBytes" : "maxRemoteImageBytes", options.maxBytes, bytes, {
+          const error = new ApexifyResourceLimitError(remoteLimitName(options.kind), options.maxBytes, bytes, {
             details: { requestUrl: redactUrl(target.url) },
-          }));
+          });
+          response.destroy(error);
+          finishReject(error);
           return;
         }
         chunks.push(buffer);
       });
       response.once("end", () => {
         if (bytes === 0) {
-          reject(new ApexifyRemoteFetchError("Remote media response was empty.", { status, requestUrl: redactUrl(target.url) }));
+          finishReject(new ApexifyRemoteFetchError("Remote media response was empty.", { status, requestUrl: redactUrl(target.url) }));
           return;
         }
-        resolve({
+        finishResolve({
           buffer: Buffer.concat(chunks, bytes),
           finalUrl: target.url.toString(),
           status,
           headers: response.headers,
         });
       });
-      response.once("error", reject);
+      response.once("error", finishReject);
     });
 
-    request.setTimeout(options.timeoutMs, () => {
-      request.destroy(new ApexifyRemoteFetchError(`Remote media request timed out after ${options.timeoutMs}ms.`, {
-        requestUrl: redactUrl(target.url),
-        details: { timeoutMs: options.timeoutMs },
-      }));
+    // Hard wall-clock deadline for the entire attempt (including redirects).
+    // Unlike socket-idle timeouts, a peer cannot evade this by trickling bytes.
+    const wallTimer = setTimeout(() => {
+      request.destroy(timeoutError(target.url, options.timeoutMs));
+    }, remaining);
+
+    // Keep an idle timeout as a second bound for stalled sockets. The hard
+    // wall timer above is still authoritative for total attempt duration.
+    request.setTimeout(Math.min(options.timeoutMs, remaining), () => {
+      request.destroy(timeoutError(target.url, options.timeoutMs));
     });
     request.once("error", (cause) => {
-      if (cause instanceof ApexifyRemoteFetchError || cause instanceof ApexifyResourceLimitError) reject(cause);
-      else reject(new ApexifyRemoteFetchError("Remote media request failed.", { requestUrl: redactUrl(target.url), cause }));
+      if (cause instanceof ApexifyRemoteFetchError || cause instanceof ApexifyResourceLimitError) finishReject(cause);
+      else if (options.signal?.aborted) {
+        finishReject(new ApexifyRemoteFetchError("Remote media request was aborted.", {
+          requestUrl: redactUrl(target.url),
+          cause: options.signal.reason ?? cause,
+        }));
+      } else {
+        finishReject(new ApexifyRemoteFetchError("Remote media request failed.", { requestUrl: redactUrl(target.url), cause }));
+      }
     });
     request.end();
   });
@@ -228,7 +350,7 @@ function retryable(error: unknown): boolean {
   if (error instanceof ApexifyResourceLimitError) return false;
   if (!(error instanceof ApexifyRemoteFetchError)) return false;
   if (error.status !== undefined) return RETRYABLE_STATUSES.has(error.status);
-  if (error.message.includes("aborted")) return false;
+  if (/aborted/i.test(error.message)) return false;
   return true;
 }
 
@@ -238,7 +360,7 @@ export async function fetchRemoteMedia(source: string, options: RemoteFetchOptio
   const timeoutMs = options.timeoutMs ?? config.network.timeoutMs;
   const attempts = Math.max(1, Math.floor(options.attempts ?? config.network.retryAttempts));
   const maxRedirects = Math.max(0, Math.floor(options.maxRedirects ?? config.network.maxRedirects));
-  const release = await acquireRemoteSlot(config.limits.maxConcurrentRemoteFetches);
+  const release = await acquireRemoteSlot(config.limits.maxConcurrentRemoteFetches, options.signal, source);
   try {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
