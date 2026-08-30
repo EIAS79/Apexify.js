@@ -23,16 +23,23 @@
   "types": "./dist/declarations/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/declarations/index.d.ts",
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.cjs",
+      "import": {
+        "types": "./dist/declarations/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/declarations-cjs/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      },
       "default": "./dist/esm/index.js"
     },
     "./types": {
-      "types": "./dist/declarations/types/index.d.ts",
-      "import": "./dist/esm/types/index.js",
-      "require": "./dist/cjs/types/index.cjs",
-      "default": "./dist/esm/types/index.js"
+      "import": {
+        "types": "./dist/declarations/types/index.d.ts"
+      },
+      "require": {
+        "types": "./dist/declarations-cjs/types/index.d.cts"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -40,7 +47,7 @@
     "clean": "node scripts/clean-dist.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:js": "node scripts/build-package.mjs",
-    "build:types": "tsc -p tsconfig.types.json",
+    "build:types": "tsc -p tsconfig.types.json && node scripts/process-declarations.cjs",
     "build": "npm run clean && npm run typecheck && npm run build:js && npm run build:types && node scripts/verify-dist.cjs",
     "test:security": "node scripts/phase1-security-scan.cjs && node scripts/build-security-fixture.mjs && node tests/security-phase1.cjs",
     "test": "npm run test:security",
