@@ -1,5 +1,6 @@
 import { MediaProcessRunner, type MediaProcessRunOptions } from "./process-runner";
 import type { TempWorkspaceOptions } from "./temp-workspace";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 
 function buildFfmpegInstallGuide(): string {
   const os = process.platform;
@@ -23,7 +24,7 @@ function buildFfmpegInstallGuide(): string {
     instructions += "  Official downloads: https://ffmpeg.org/download.html\n";
   }
 
-  instructions += "\nConfigure custom binaries with APEXIFY_FFMPEG_PATH and APEXIFY_FFPROBE_PATH.\n";
+  instructions += "\nConfigure custom binaries with configureApexifyRuntime({ ffmpeg: ... }) or APEXIFY_FFMPEG_PATH/APEXIFY_FFPROBE_PATH.\n";
   return instructions;
 }
 
@@ -65,31 +66,42 @@ function pairedFfprobePath(ffmpegPath: string): string {
  * which only accepts argv arrays and always uses shell:false.
  */
 export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegSession {
-  const explicitFfmpeg = options.ffmpegPath ?? process.env.APEXIFY_FFMPEG_PATH;
-  const explicitFfprobe = options.ffprobePath ?? process.env.APEXIFY_FFPROBE_PATH;
+  const runtime = getDefaultApexifyRuntimeConfig();
+  const explicitFfmpeg = options.ffmpegPath ?? runtime.ffmpeg.ffmpegPath ?? process.env.APEXIFY_FFMPEG_PATH;
+  const explicitFfprobe = options.ffprobePath ?? runtime.ffmpeg.ffprobePath ?? process.env.APEXIFY_FFPROBE_PATH;
   const runner = new MediaProcessRunner({
-    ffmpegPath: explicitFfmpeg || "ffmpeg",
-    ffprobePath: explicitFfprobe || "ffprobe",
+    ffmpegPath: explicitFfmpeg ?? "ffmpeg",
+    ffprobePath: explicitFfprobe ?? "ffprobe",
   });
   const workspaceOptions: TempWorkspaceOptions = {
-    rootDirectory: options.tempDirectory ?? process.env.APEXIFY_TEMP_DIR,
-    retain: options.retainTempFiles,
+    rootDirectory: options.tempDirectory ?? runtime.temp.rootDirectory ?? process.env.APEXIFY_TEMP_DIR,
+    retain: options.retainTempFiles ?? runtime.temp.retainFiles,
+  };
+
+  const defaultProcessOptions = (): Pick<MediaProcessRunOptions, "timeoutMs" | "maxStdoutBytes" | "maxStderrBytes"> => {
+    const ffmpeg = getDefaultApexifyRuntimeConfig().ffmpeg;
+    return {
+      timeoutMs: ffmpeg.processTimeoutMs,
+      maxStdoutBytes: ffmpeg.maxStdoutBytes,
+      maxStderrBytes: ffmpeg.maxStderrBytes,
+    };
   };
 
   let checked = false;
   let available = false;
 
   async function probePair(): Promise<boolean> {
+    const ffmpeg = getDefaultApexifyRuntimeConfig().ffmpeg;
     try {
       await runner.runFfmpeg(["-version"], {
-        timeoutMs: 5_000,
-        maxStdoutBytes: 1024 * 1024,
-        maxStderrBytes: 1024 * 1024,
+        timeoutMs: ffmpeg.probeTimeoutMs,
+        maxStdoutBytes: Math.min(ffmpeg.maxStdoutBytes, 1024 * 1024),
+        maxStderrBytes: Math.min(ffmpeg.maxStderrBytes, 1024 * 1024),
       });
       await runner.runFfprobe(["-version"], {
-        timeoutMs: 5_000,
-        maxStdoutBytes: 1024 * 1024,
-        maxStderrBytes: 1024 * 1024,
+        timeoutMs: ffmpeg.probeTimeoutMs,
+        maxStdoutBytes: Math.min(ffmpeg.maxStdoutBytes, 1024 * 1024),
+        maxStderrBytes: Math.min(ffmpeg.maxStderrBytes, 1024 * 1024),
       });
       return true;
     } catch {
@@ -101,8 +113,8 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
     runner,
     workspaceOptions,
     getInstallInstructions: () => buildFfmpegInstallGuide(),
-    runFfmpeg: (args, runOptions) => runner.runFfmpeg(args, runOptions),
-    runFfprobe: (args, runOptions) => runner.runFfprobe(args, runOptions),
+    runFfmpeg: (args, runOptions) => runner.runFfmpeg(args, { ...defaultProcessOptions(), ...runOptions }),
+    runFfprobe: (args, runOptions) => runner.runFfprobe(args, { ...defaultProcessOptions(), ...runOptions }),
 
     async checkAvailable(): Promise<boolean> {
       if (checked) return available;
