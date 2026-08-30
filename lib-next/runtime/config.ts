@@ -3,8 +3,12 @@ import { ApexifyConfigError } from "./errors";
 export interface RenderLimits {
   maxCanvasDimension: number;
   maxTotalPixels: number;
+  maxCollectionItems: number;
+  maxBackgroundLayers: number;
+  maxFiltersPerOperation: number;
   maxSceneLayers: number;
   maxNestedSurfaces: number;
+  maxSceneDepth: number;
   maxTextLength: number;
   maxRemoteAssets: number;
   maxRemoteImageBytes: number;
@@ -16,7 +20,15 @@ export interface RenderLimits {
   maxAudioDurationSeconds: number;
   maxAudioSampleRate: number;
   maxAudioEvents: number;
+  maxAudioLayers: number;
+  maxAudioPartials: number;
+  maxAudioBytes: number;
   maxVideoDurationSeconds: number;
+  maxVideoFps: number;
+  maxVideoBitrateKbps: number;
+  maxVideoOverlays: number;
+  maxBatchOperations: number;
+  maxBatchConcurrency: number;
   maxConcurrentRemoteFetches: number;
 }
 
@@ -103,8 +115,12 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
   limits: Object.freeze({
     maxCanvasDimension: 16_384,
     maxTotalPixels: 67_108_864,
+    maxCollectionItems: 2_048,
+    maxBackgroundLayers: 128,
+    maxFiltersPerOperation: 64,
     maxSceneLayers: 2_000,
     maxNestedSurfaces: 64,
+    maxSceneDepth: 32,
     maxTextLength: 1_000_000,
     maxRemoteAssets: 128,
     maxRemoteImageBytes: 32 * 1024 * 1024,
@@ -116,7 +132,15 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
     maxAudioDurationSeconds: 600,
     maxAudioSampleRate: 192_000,
     maxAudioEvents: 20_000,
+    maxAudioLayers: 1_024,
+    maxAudioPartials: 4_096,
+    maxAudioBytes: 256 * 1024 * 1024,
     maxVideoDurationSeconds: 14_400,
+    maxVideoFps: 240,
+    maxVideoBitrateKbps: 200_000,
+    maxVideoOverlays: 256,
+    maxBatchOperations: 256,
+    maxBatchConcurrency: 4,
     maxConcurrentRemoteFetches: 8,
   }),
   cache: Object.freeze({
@@ -131,23 +155,23 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
     maxStdoutBytes: 10 * 1024 * 1024,
     maxStderrBytes: 30 * 1024 * 1024,
   }),
-  temp: Object.freeze({
-    retainFiles: false,
-  }),
+  temp: Object.freeze({ retainFiles: false }),
   diagnostics: Object.freeze({}),
 });
 
 function finitePositive(name: string, value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new ApexifyConfigError(`${name} must be a finite positive number.`);
-  }
+  if (!Number.isFinite(value) || value <= 0) throw new ApexifyConfigError(`${name} must be a finite positive number.`);
+  return value;
+}
+
+function finitePositiveInteger(name: string, value: number): number {
+  finitePositive(name, value);
+  if (!Number.isInteger(value)) throw new ApexifyConfigError(`${name} must be an integer.`);
   return value;
 }
 
 function finiteNonNegative(name: string, value: number): number {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new ApexifyConfigError(`${name} must be a finite non-negative number.`);
-  }
+  if (!Number.isFinite(value) || value < 0) throw new ApexifyConfigError(`${name} must be a finite non-negative number.`);
   return value;
 }
 
@@ -187,7 +211,13 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
     throw new ApexifyConfigError("network.trustedNetworkAccess requires at least one explicit network.allowedHosts entry.");
   }
 
-  for (const [key, value] of Object.entries(limits)) finitePositive(`limits.${key}`, value);
+  for (const [key, value] of Object.entries(limits)) finitePositiveInteger(`limits.${key}`, value);
+  if (limits.maxSceneDepth > limits.maxNestedSurfaces) {
+    throw new ApexifyConfigError("limits.maxSceneDepth must be <= limits.maxNestedSurfaces.");
+  }
+  if (limits.maxBatchConcurrency > limits.maxBatchOperations) {
+    throw new ApexifyConfigError("limits.maxBatchConcurrency must be <= limits.maxBatchOperations.");
+  }
   cache.ttlMs = finitePositive("cache.ttlMs", cache.ttlMs);
   cache.maxEntries = Math.floor(finitePositive("cache.maxEntries", cache.maxEntries));
   cache.maxBytes = finitePositive("cache.maxBytes", cache.maxBytes);
@@ -205,34 +235,21 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
   }
 
   return Object.freeze({
-    network: Object.freeze(network),
-    limits: Object.freeze(limits),
-    cache: Object.freeze(cache),
-    ffmpeg: Object.freeze(ffmpeg),
-    temp: Object.freeze(temp),
-    diagnostics: Object.freeze(diagnostics),
+    network: Object.freeze(network), limits: Object.freeze(limits), cache: Object.freeze(cache),
+    ffmpeg: Object.freeze(ffmpeg), temp: Object.freeze(temp), diagnostics: Object.freeze(diagnostics),
   });
 }
 
 let defaultRuntimeConfig = resolveApexifyRuntimeConfig();
-
-export function getDefaultApexifyRuntimeConfig(): Readonly<ApexifyRuntimeConfig> {
-  return defaultRuntimeConfig;
-}
-
+export function getDefaultApexifyRuntimeConfig(): Readonly<ApexifyRuntimeConfig> { return defaultRuntimeConfig; }
 export function configureApexifyRuntime(input: ApexifyRuntimeConfigInput): Readonly<ApexifyRuntimeConfig> {
   defaultRuntimeConfig = resolveApexifyRuntimeConfig({
-    network: { ...defaultRuntimeConfig.network, ...input.network },
-    limits: { ...defaultRuntimeConfig.limits, ...input.limits },
-    cache: { ...defaultRuntimeConfig.cache, ...input.cache },
-    ffmpeg: { ...defaultRuntimeConfig.ffmpeg, ...input.ffmpeg },
-    temp: { ...defaultRuntimeConfig.temp, ...input.temp },
-    diagnostics: { ...defaultRuntimeConfig.diagnostics, ...input.diagnostics },
+    network: { ...defaultRuntimeConfig.network, ...input.network }, limits: { ...defaultRuntimeConfig.limits, ...input.limits },
+    cache: { ...defaultRuntimeConfig.cache, ...input.cache }, ffmpeg: { ...defaultRuntimeConfig.ffmpeg, ...input.ffmpeg },
+    temp: { ...defaultRuntimeConfig.temp, ...input.temp }, diagnostics: { ...defaultRuntimeConfig.diagnostics, ...input.diagnostics },
   });
   return defaultRuntimeConfig;
 }
-
 export function resetApexifyRuntimeConfig(): Readonly<ApexifyRuntimeConfig> {
-  defaultRuntimeConfig = resolveApexifyRuntimeConfig();
-  return defaultRuntimeConfig;
+  defaultRuntimeConfig = resolveApexifyRuntimeConfig(); return defaultRuntimeConfig;
 }
