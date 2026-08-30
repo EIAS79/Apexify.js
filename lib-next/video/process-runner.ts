@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { ApexifyProcessError } from "../runtime/errors";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { redactUrl } from "../media/network-policy";
 
 export interface MediaProcessPaths {
@@ -74,8 +75,6 @@ export class MediaProcessError extends ApexifyProcessError {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
-const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 
 function validateProcessToken(value: string, label: string): void {
   if (!value || value.includes("\0")) {
@@ -140,9 +139,10 @@ export class MediaProcessRunner {
       }
     }
 
-    const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    const maxStdoutBytes = Math.max(1, options.maxStdoutBytes ?? DEFAULT_MAX_OUTPUT_BYTES);
-    const maxStderrBytes = Math.max(1, options.maxStderrBytes ?? DEFAULT_MAX_OUTPUT_BYTES);
+    const runtime = getDefaultApexifyRuntimeConfig().ffmpeg;
+    const timeoutMs = Math.max(1, options.timeoutMs ?? runtime.processTimeoutMs);
+    const maxStdoutBytes = Math.max(1, options.maxStdoutBytes ?? runtime.maxStdoutBytes);
+    const maxStderrBytes = Math.max(1, options.maxStderrBytes ?? runtime.maxStderrBytes);
 
     if (options.signal?.aborted) {
       return Promise.reject(
