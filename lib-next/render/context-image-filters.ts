@@ -187,10 +187,9 @@ async function applyRadialBlurSharp(image: Sharp, intensity: number, centerX: nu
 }
 
 async function applySharpenSharp(image: Sharp, intensity: number): Promise<Sharp> {
-  // Intensity: sharpening strength (0-100+)
-  // Sharp's sharpen: (sigma, flat, jagged)
-  const sigma = Math.max(0.3, Math.min(1000, intensity));
-  return image.sharpen(sigma, 1, 2);
+  // Sharp 0.35 accepts an options object and limits sigma to 10.
+  const sigma = Math.max(0.000001, Math.min(10, intensity));
+  return image.sharpen({ sigma, m1: 1, m2: 2 });
 }
 
 async function applyBrightnessSharp(image: Sharp, value: number): Promise<Sharp> {

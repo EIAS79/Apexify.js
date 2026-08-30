@@ -1,6 +1,6 @@
 import path from 'path';
 import sharp from 'sharp';
-import type { Sharp, ResizeOptions as SharpResizeOptions, FormatEnum } from "sharp";
+import type { Sharp, ResizeOptions as SharpResizeOptions } from "sharp";
 import type { cropOptions, GradientConfig, ImageFilter, ResizeOptions } from "../types";
 import { createCanvas, loadImage, SKRSContext2D, Image, Canvas } from "@napi-rs/canvas";
 import fs from "fs";
@@ -110,16 +110,17 @@ export async function resizingImg(resizeOptions: ResizeOptions): Promise<Buffer>
 
 export async function converter(imageSource: string | Buffer, newExtension: string) {
   try {
-      const validExtensions: (keyof FormatEnum)[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw', 'pdf', 'svg'];
+      type SharpOutputFormat = 'jpeg' | 'png' | 'webp' | 'tiff' | 'gif' | 'avif' | 'heif' | 'raw';
+      const validExtensions: readonly SharpOutputFormat[] = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif', 'heif', 'raw'];
 
       const newExt = newExtension.toLowerCase();
-      if (!validExtensions.includes(newExt as keyof FormatEnum)) {
-          throw new Error(`Invalid image format: ${newExt}`);
+      if (!validExtensions.includes(newExt as SharpOutputFormat)) {
+          throw new Error(`Invalid image output format: ${newExt}`);
       }
 
       const image = await sharpFromResolvableInput(imageSource);
 
-      const convertedBuffer = await image.toFormat(newExt as keyof FormatEnum).toBuffer();
+      const convertedBuffer = await image.toFormat(newExt as SharpOutputFormat).toBuffer();
       return convertedBuffer;
   } catch (error) {
       console.error("Error changing image extension:", error);
