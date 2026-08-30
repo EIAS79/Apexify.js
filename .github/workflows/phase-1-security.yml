@@ -33,6 +33,9 @@ jobs:
       - name: Install package graph
         run: npm install
 
+      - name: Capture production dependency audit
+        run: npm audit --omit=dev --json > phase1-audit.json || true
+
       - name: Scan source before build
         run: node scripts/phase1-security-scan.cjs
 
@@ -53,5 +56,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phase1-security-evidence
-          path: phase1-pack.json
+          path: |
+            phase1-pack.json
+            phase1-audit.json
           if-no-files-found: ignore
