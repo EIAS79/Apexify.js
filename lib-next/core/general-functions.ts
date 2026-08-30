@@ -3,6 +3,7 @@ import sharp from "sharp";
 import type { GradientConfig, ImageFilter } from "../types";
 import { getCanvasContext } from "./errors";
 import { resolveMediaBuffer, resolveMediaInput } from "../media/source";
+import { fetchRemoteMedia } from "../media/remote-fetch";
 import { ApexifyDecodeError, ApexifyExternalServiceError, ApexifyInputError } from "../runtime/errors";
 
 /** Apply a solid color or gradient overlay to a resolved image source. */
@@ -192,27 +193,20 @@ export async function removeColor(
   }
 }
 
-/**
- * remove.bg is a fixed external-service endpoint, not an arbitrary media downloader.
- * The remote image URL is transmitted to remove.bg as request data and is never fetched by Apexify.
- */
+/** remove.bg uses the same bounded remote transport as all other network I/O. */
 export async function bgRemoval(imgURL: string, API_KEY: string): Promise<Buffer> {
   if (!API_KEY) throw new ApexifyInputError("API_KEY is required for remove.bg.");
   try {
-    // PHASE3-JUSTIFIED-FETCH: fixed service endpoint; not a user-selected network target.
-    const response = await fetch("https://api.remove.bg/v1.0/removebg", {
+    const body = JSON.stringify({ image_url: imgURL, size: "auto" });
+    const result = await fetchRemoteMedia("https://api.remove.bg/v1.0/removebg", {
+      kind: "image",
       method: "POST",
+      attempts: 1,
       headers: { "X-Api-Key": API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ image_url: imgURL, size: "auto" }),
+      body,
     });
-    if (!response.ok) {
-      throw new ApexifyExternalServiceError(`remove.bg request failed with HTTP ${response.status}.`, {
-        details: { status: response.status },
-      });
-    }
-    return Buffer.from(await response.arrayBuffer());
+    return result.buffer;
   } catch (cause) {
-    if (cause instanceof ApexifyExternalServiceError) throw cause;
     throw new ApexifyExternalServiceError("remove.bg request failed.", { cause });
   }
 }
