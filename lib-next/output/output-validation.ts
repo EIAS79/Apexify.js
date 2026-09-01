@@ -22,6 +22,12 @@ function assertOptionalString(value: unknown, name: string, maxLength: number, a
   }
 }
 
+export function validateOutputBytes(value: unknown, name = "output.buffer"): asserts value is Buffer | Uint8Array {
+  if (!(Buffer.isBuffer(value) || value instanceof Uint8Array) || value.byteLength === 0) {
+    throw new ApexifyInputError(`${name} must be a non-empty Buffer or Uint8Array.`);
+  }
+}
+
 export function validateOutputBuffer(value: unknown, name = "output.buffer"): asserts value is Buffer {
   if (!Buffer.isBuffer(value) || value.length === 0) {
     throw new ApexifyInputError(`${name} must be a non-empty Buffer.`);
