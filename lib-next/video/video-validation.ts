@@ -10,7 +10,6 @@ import { ApexifyInputError } from "../runtime/errors";
 import { assertVideoResourceLimits, assertWithinLimit } from "../runtime/limits";
 import {
   assertCollection,
-  assertEnum,
   assertFiniteNumber,
   assertFiniteNumericLeaves,
   assertNonEmptyString,
@@ -89,8 +88,10 @@ function grid(value: unknown, name: string, inputCount?: number): { cols: number
 function range(start: unknown, end: unknown, name: string): void {
   time(start, `${name}.start`, false);
   time(end, `${name}.end`, false);
-  if (end <= start) throw new ApexifyInputError(`${name}.end must be greater than start.`);
-  duration(end - start, `${name}.duration`, false);
+  const startValue = start as number;
+  const endValue = end as number;
+  if (endValue <= startValue) throw new ApexifyInputError(`${name}.end must be greater than start.`);
+  duration(endValue - startValue, `${name}.duration`, false);
 }
 
 function validateRanges(value: unknown, name: string): void {
@@ -265,8 +266,13 @@ export function validateVideoCreationOptions(options: VideoCreationOptions): voi
     }
   }
   if (options.rotate) {
-    assertOptionalEnum(options.rotate.angle, "video.rotate.angle", [90, 180, 270] as const as readonly string[]);
-    if (options.rotate.angle !== undefined && ![90, 180, 270].includes(options.rotate.angle)) throw new ApexifyInputError("video.rotate.angle must be 90, 180, or 270.");
+    const angle = options.rotate.angle as unknown;
+    if (angle !== undefined) {
+      assertFiniteNumber(angle, "video.rotate.angle", { integer: true });
+      if (angle !== 90 && angle !== 180 && angle !== 270) {
+        throw new ApexifyInputError("video.rotate.angle must be 90, 180, or 270.");
+      }
+    }
     assertOptionalEnum(options.rotate.flip, "video.rotate.flip", ["horizontal", "vertical", "both"] as const);
     outputPath(options.rotate.outputPath, "video.rotate.outputPath");
   }
