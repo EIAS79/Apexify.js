@@ -1,7 +1,7 @@
-import { createCanvas, loadImage, SKRSContext2D, Canvas } from "@napi-rs/canvas";
+import { createCanvas, type SKRSContext2D, type Canvas } from "@napi-rs/canvas";
 import { loadImageCached } from "../image/image-properties";
 import type { CanvasConfig, CanvasResults } from "../types";
-import { getErrorMessage, getCanvasContext } from "../core/errors";
+import { getCanvasContext } from "../core/errors";
 import {
   drawBackgroundGradient,
   drawBackgroundColor,
@@ -16,9 +16,9 @@ import { applyShadow } from "../render/shadow-renderer";
 import { applyStroke } from "../render/stroke-renderer";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { applyContextImageFilters } from "../render/context-image-filters";
-import { withTempWorkspace } from "../video/temp-workspace";
 import { assertCanvasResourceLimits } from "../runtime/limits";
 import { emitDiagnostic } from "../runtime/diagnostics";
+import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 
 export type { CanvasResults };
 
@@ -112,8 +112,8 @@ export class CanvasCreator {
         canvas.width = img.width;
         canvas.height = img.height;
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`createCanvas: Failed to load image for inherit sizing: ${message}`);
+        if (error instanceof ApexifyError) throw error;
+        throw new ApexifyDecodeError("createCanvas: failed to load image for inherit sizing.", { cause: error });
       }
     }
 
@@ -123,15 +123,16 @@ export class CanvasCreator {
           canvas.videoBg.source,
           canvas.videoBg.frame ?? 0,
           canvas.videoBg.time,
-          canvas.videoBg.format || "jpg",
-          canvas.videoBg.quality || 2
+          canvas.videoBg.format ?? "jpg",
+          canvas.videoBg.quality ?? 2
         );
         if (frameBuffer) {
-          const img = await loadImage(frameBuffer);
+          const img = await loadImageCached(frameBuffer);
           if (!canvas.width) canvas.width = img.width;
           if (!canvas.height) canvas.height = img.height;
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ApexifyError) throw error;
         emitDiagnostic({
           level: "warn",
           code: "CANVAS_VIDEO_SIZE_FALLBACK",
@@ -142,14 +143,7 @@ export class CanvasCreator {
   }
 
   private async decodeVideoFrame(frameBuffer: Buffer) {
-    try {
-      return await loadImage(frameBuffer);
-    } catch {
-      return withTempWorkspace({ prefix: "apexify-canvas-video-" }, async (workspace) => {
-        const tempFramePath = await workspace.writeFile("frame.png", frameBuffer);
-        return loadImage(tempFramePath);
-      });
-    }
+    return loadImageCached(frameBuffer);
   }
 
   private async paintConfiguredCanvasSurface(cv: Canvas, canvas: CanvasConfig, width: number, height: number): Promise<void> {
@@ -193,8 +187,8 @@ export class CanvasCreator {
           videoBg.source,
           videoBg.frame ?? 0,
           videoBg.time,
-          videoBg.format || "jpg",
-          videoBg.quality || 2
+          videoBg.format ?? "jpg",
+          videoBg.quality ?? 2
         );
         if (!frameBuffer?.length) throw new Error("Frame extraction returned empty buffer");
         const videoImg = await this.decodeVideoFrame(frameBuffer);
@@ -205,9 +199,10 @@ export class CanvasCreator {
         ctx.drawImage(videoImg, 0, 0, width, height);
         ctx.globalAlpha = opacity;
       } catch (error: unknown) {
+        if (error instanceof ApexifyError) throw error;
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         if (errorMsg.includes("FFMPEG NOT FOUND") || errorMsg.includes("FFmpeg")) throw error;
-        throw new Error(`createCanvas: videoBg extraction failed: ${errorMsg}`, { cause: error });
+        throw new ApexifyDecodeError(`createCanvas: videoBg extraction failed: ${errorMsg}`, { cause: error });
       }
     } else if (customBg) {
       const customBgOpacity = customBg.opacity ?? 1;
@@ -282,7 +277,8 @@ export class CanvasCreator {
       const { cv } = await this.composeCanvasForScene(canvas);
       return { buffer: cv.toBuffer("image/png"), canvas };
     } catch (error) {
-      throw new Error(`createCanvas failed: ${getErrorMessage(error)}`, { cause: error });
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError("Canvas creation failed.", { cause: error });
     }
   }
 }
