@@ -1,30 +1,19 @@
-import { createCanvas, loadImage, type Image } from "@napi-rs/canvas";
-import type { CanvasResults } from "../types";
-import type { CustomOptions } from "../types";
+import { createCanvas, type Image } from "@napi-rs/canvas";
+import type { CanvasResults, CustomOptions } from "../types";
 import { customLines } from "../path/custom-lines";
-import { getErrorMessage, getCanvasContext } from "../core/errors";
+import { getCanvasContext } from "../core/errors";
+import { loadImageCached } from "../image/image-properties";
+import { validateSceneCustomLinesOptions } from "../scene/scene-normalizer";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
-function validateCustomOptions(options: CustomOptions | CustomOptions[]): void {
-  const opts = Array.isArray(options) ? options : [options];
-  if (opts.length === 0) {
-    throw new Error("createCustom: At least one custom option is required.");
+function extractBuffer(buffer: CanvasResults | Buffer): Buffer {
+  if (Buffer.isBuffer(buffer)) {
+    if (buffer.length === 0) throw new ApexifyInputError("path2d.custom.buffer must be non-empty.");
+    return buffer;
   }
-  for (const opt of opts) {
-    if (
-      !opt.startCoordinates ||
-      typeof opt.startCoordinates.x !== "number" ||
-      typeof opt.startCoordinates.y !== "number"
-    ) {
-      throw new Error("createCustom: startCoordinates with valid x and y are required.");
-    }
-    if (
-      !opt.endCoordinates ||
-      typeof opt.endCoordinates.x !== "number" ||
-      typeof opt.endCoordinates.y !== "number"
-    ) {
-      throw new Error("createCustom: endCoordinates with valid x and y are required.");
-    }
-  }
+  if (buffer && Buffer.isBuffer(buffer.buffer) && buffer.buffer.length > 0) return buffer.buffer;
+  throw new ApexifyInputError("path2d.custom.buffer must be a non-empty Buffer or CanvasResults.");
 }
 
 /** Path2D “custom” connector lines drawn on top of an existing canvas buffer. */
@@ -32,30 +21,18 @@ export async function runDrawCustomLines(
   options: CustomOptions | CustomOptions[],
   buffer: CanvasResults | Buffer
 ): Promise<Buffer> {
+  const opts = Array.isArray(options) ? options : [options];
+  validateSceneCustomLinesOptions(opts);
   try {
-    if (!buffer) {
-      throw new Error("createCustom: buffer is required.");
-    }
-    validateCustomOptions(options);
-    const opts = Array.isArray(options) ? options : [options];
-
-    let existingImage: Image;
-    if (Buffer.isBuffer(buffer)) {
-      existingImage = await loadImage(buffer);
-    } else if (buffer && buffer.buffer) {
-      existingImage = await loadImage(buffer.buffer);
-    } else {
-      throw new Error(
-        "Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer"
-      );
-    }
-
+    const existingImage: Image = await loadImageCached(extractBuffer(buffer));
+    assertCanvasResourceLimits(existingImage.width, existingImage.height);
     const canvas = createCanvas(existingImage.width, existingImage.height);
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(existingImage, 0, 0);
     await customLines(ctx, opts);
     return canvas.toBuffer("image/png");
   } catch (error) {
-    throw new Error(`createCustom failed: ${getErrorMessage(error)}`);
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError("Custom-line drawing failed.", { cause: error });
   }
 }
