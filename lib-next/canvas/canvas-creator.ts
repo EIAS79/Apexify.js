@@ -142,6 +142,18 @@ export class CanvasCreator {
     }
   }
 
+  /** Decode/metadata-check image-backed backgrounds before the native output canvas exists. */
+  private async preflightCanvasImageSources(canvas: CanvasConfig): Promise<void> {
+    const sources: string[] = [];
+    if (canvas.customBg?.source) sources.push(canvas.customBg.source);
+    for (const layer of canvas.bgLayers ?? []) {
+      if ((layer.type === "image" || layer.type === "pattern") && layer.source) sources.push(layer.source);
+    }
+    for (const source of sources) {
+      await loadImageCached(resolveMediaPath(source));
+    }
+  }
+
   private async decodeVideoFrame(frameBuffer: Buffer) {
     return loadImageCached(frameBuffer);
   }
@@ -254,6 +266,7 @@ export class CanvasCreator {
     const width = canvas.width ?? 500;
     const height = canvas.height ?? 500;
     assertCanvasResourceLimits(width, height);
+    await this.preflightCanvasImageSources(canvas);
     const cv = createCanvas(width, height);
     await this.paintConfiguredCanvasSurface(cv, canvas, width, height);
     return { cv, width, height };
@@ -266,6 +279,7 @@ export class CanvasCreator {
     const width = work.width ?? 500;
     const height = work.height ?? 500;
     assertCanvasResourceLimits(width, height);
+    await this.preflightCanvasImageSources(work);
     if (targetCv.width !== width || targetCv.height !== height) {
       throw new Error(`paintCanvasOntoExisting: target is ${targetCv.width}×${targetCv.height} but config resolves to ${width}×${height}.`);
     }
