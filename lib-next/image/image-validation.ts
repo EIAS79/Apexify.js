@@ -61,6 +61,33 @@ export function validateGroupTransform(group: GroupTransformOptions | undefined)
   }
 }
 
+function validateGroupedTemporarySurfaceBudget(list: ImageProperties[], options?: CreateImageOptions): void {
+  const group = options?.groupTransform;
+  if (!options?.isGrouped || !group || list.length <= 1) return;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const image of list) {
+    const width = image.width ?? 100;
+    const height = image.height ?? 100;
+    minX = Math.min(minX, image.x);
+    minY = Math.min(minY, image.y);
+    maxX = Math.max(maxX, image.x + width);
+    maxY = Math.max(maxY, image.y + height);
+  }
+
+  const groupWidth = maxX - minX;
+  const groupHeight = maxY - minY;
+  if (group.filters?.length && group.filterOrder === "pre") {
+    assertCanvasResourceLimits(groupWidth, groupHeight);
+  }
+  if (group.effects?.chromaticAberration || group.effects?.filmGrain) {
+    assertCanvasResourceLimits(groupWidth * (group.scaleX ?? 1), groupHeight * (group.scaleY ?? 1));
+  }
+}
+
 export function validateImageProperties(ip: ImageProperties, index?: number): void {
   const name = index === undefined ? "image" : `images[${index}]`;
   assertRecord(ip, name);
@@ -138,5 +165,6 @@ export function validateImageInput(images: ImageProperties | ImageProperties[], 
     if (options.isGrouped !== undefined && typeof options.isGrouped !== "boolean") throw new ApexifyInputError("createImage.options.isGrouped must be boolean.");
     validateGroupTransform(options.groupTransform);
   }
+  validateGroupedTemporarySurfaceBudget(list, options);
   return list;
 }
