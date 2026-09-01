@@ -1,4 +1,4 @@
-import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { GifEncoder } from "@skyra/gifenc";
 import { PassThrough } from "node:stream";
 import fs from "node:fs";
@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { getCanvasContext } from "../core/errors";
 import { resolveMediaBuffer } from "../media/source";
+import { loadImageCached } from "../image/image-properties";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { assertGifResourceLimits } from "../runtime/limits";
 import {
@@ -50,7 +51,7 @@ export class GIFCreator {
     targetHeight: number,
     skipResizeWhenDimensionsMatch: boolean
   ): Promise<void> {
-    const image = await loadImage(frameBuffer);
+    const image = await loadImageCached(frameBuffer);
     ctx.clearRect(0, 0, targetWidth, targetHeight);
     if (skipResizeWhenDimensionsMatch && image.width === targetWidth && image.height === targetHeight) {
       ctx.drawImage(image, 0, 0);
@@ -61,7 +62,7 @@ export class GIFCreator {
   }
 
   private async loadRasterSource(src: string): Promise<Image> {
-    return loadImage(await resolveMediaBuffer(src, { kind: "image" }));
+    return loadImageCached(src);
   }
 
   private parseTransparentForEncoder(color: number | string | null): number | null {
