@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { createCanvas } = require('@napi-rs/canvas');
 const phase4 = require('../node_modules/.cache/apexify-phase4/phase4-entry.cjs');
 const {
   ApexPainter,
@@ -34,6 +35,7 @@ async function withLimits(limits, fn) {
 
 async function main() {
   const painter = new ApexPainter();
+  const oversizedBase = createCanvas(11, 1).toBuffer('image/png');
 
   const resourceCases = [
     {
@@ -71,6 +73,30 @@ async function main() {
         { startCoordinates: { x: 0, y: 0 }, endCoordinates: { x: 1, y: 1 } },
         { startCoordinates: { x: 0, y: 0 }, endCoordinates: { x: 1, y: 1 } },
       ], Buffer.alloc(0)),
+    },
+    {
+      label: 'createText base canvas budget before legacy decode',
+      limits: { maxCanvasDimension: 10 },
+      expected: 'maxCanvasDimension',
+      action: () => painter.createText({ text: 'x', x: 0, y: 0 }, oversizedBase),
+    },
+    {
+      label: 'createImage base canvas budget before legacy decode',
+      limits: { maxCanvasDimension: 10 },
+      expected: 'maxCanvasDimension',
+      action: () => painter.createImage({ source: 'rectangle', x: 0, y: 0, width: 1, height: 1 }, oversizedBase),
+    },
+    {
+      label: 'grouped image temporary surface budget before base decode',
+      limits: { maxCanvasDimension: 10 },
+      expected: 'maxCanvasDimension',
+      action: () => painter.createImage([
+        { source: 'rectangle', x: 0, y: 0, width: 1, height: 1 },
+        { source: 'rectangle', x: 20, y: 0, width: 1, height: 1 },
+      ], Buffer.alloc(0), {
+        isGrouped: true,
+        groupTransform: { filters: [{ type: 'invert' }], filterOrder: 'pre' },
+      }),
     },
   ];
 
