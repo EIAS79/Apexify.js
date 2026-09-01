@@ -18,6 +18,7 @@ import { cropRasterImage } from "./crop-raster";
 import { applyRasterMask } from "./raster-masking";
 import { blendGradientOverImage } from "./gradient-blend";
 import { resolveMediaInput } from "../media/source";
+import { loadImageCached } from "./image-properties";
 import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
 import { ApexifyDecodeError, ApexifyError, ApexifyExternalServiceError } from "../runtime/errors";
@@ -39,6 +40,10 @@ import {
   validateStitchInputs,
 } from "./image-utils-validation";
 
+async function preflightImageSource(source: string | Buffer): Promise<void> {
+  await loadImageCached(source);
+}
+
 async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
   const source = await resolveMediaInput(options.imagePath, { kind: "image" });
   const resizeOptions: SharpResizeOptions = {
@@ -48,18 +53,12 @@ async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
     kernel: sharp.kernel.lanczos3,
     withoutEnlargement: true,
   };
-
-  return sharp(source)
-    .resize(resizeOptions)
-    .png({ quality: options.quality ?? 90 })
-    .toBuffer();
+  return sharp(source).resize(resizeOptions).png({ quality: options.quality ?? 90 }).toBuffer();
 }
 
 async function convertResolved(source: string | Buffer, newExtension: string): Promise<Buffer> {
   const resolved = await resolveMediaInput(source, { kind: "image" });
-  return sharp(resolved)
-    .toFormat(newExtension.toLowerCase() as keyof FormatEnum)
-    .toBuffer();
+  return sharp(resolved).toFormat(newExtension.toLowerCase() as keyof FormatEnum).toBuffer();
 }
 
 function rethrowDecode(error: unknown, label: string): never {
@@ -73,6 +72,7 @@ export const painterImageUtils: PainterImageUtils = {
   async stitchImages(images, options) {
     validateStitchInputs(images, options);
     try {
+      for (const image of images) await preflightImageSource(image);
       return await stitchImages(images, options);
     } catch (error) {
       rethrowDecode(error, "stitchImages");
@@ -82,6 +82,7 @@ export const painterImageUtils: PainterImageUtils = {
   async createCollage(images, layout) {
     validateCollageInputs(images, layout);
     try {
+      for (const image of images) await preflightImageSource(image.source);
       return await createCollage(images, layout);
     } catch (error) {
       rethrowDecode(error, "createCollage");
@@ -91,6 +92,7 @@ export const painterImageUtils: PainterImageUtils = {
   async compress(image, options) {
     validateCompressionInputs(image, options);
     try {
+      await preflightImageSource(image);
       return await compressImage(image, options);
     } catch (error) {
       rethrowDecode(error, "compress");
@@ -100,6 +102,7 @@ export const painterImageUtils: PainterImageUtils = {
   async extractPalette(image, options) {
     validatePaletteInputs(image, options);
     try {
+      await preflightImageSource(image);
       return await extractPalette(image, options);
     } catch (error) {
       rethrowDecode(error, "extractPalette");
@@ -109,6 +112,7 @@ export const painterImageUtils: PainterImageUtils = {
   async resize(resizeOptions) {
     validateResizeInputs(resizeOptions);
     try {
+      await preflightImageSource(resizeOptions.imagePath);
       return await resizeResolved(resizeOptions);
     } catch (error) {
       rethrowDecode(error, "resize");
@@ -118,6 +122,7 @@ export const painterImageUtils: PainterImageUtils = {
   async imgConverter(source, newExtension) {
     validateConverterInputs(source, newExtension);
     try {
+      await preflightImageSource(source);
       return await convertResolved(source, newExtension);
     } catch (error) {
       rethrowDecode(error, "imgConverter");
@@ -127,6 +132,7 @@ export const painterImageUtils: PainterImageUtils = {
   async effects(source, filters) {
     validateEffectsInputs(source, filters);
     try {
+      await preflightImageSource(source);
       return await imgEffects(source, filters);
     } catch (error) {
       rethrowDecode(error, "effects");
@@ -137,6 +143,7 @@ export const painterImageUtils: PainterImageUtils = {
     validateColorFilterInputs(source, opacity);
     assertFiniteNumericLeaves(filterColor, "image.colorsFilter.filterColor");
     try {
+      await preflightImageSource(source);
       return await applyColorFilters(source, filterColor, opacity);
     } catch (error) {
       rethrowDecode(error, "colorsFilter");
@@ -146,6 +153,7 @@ export const painterImageUtils: PainterImageUtils = {
   async colorAnalysis(source) {
     assertSource(source, "image.colorAnalysis.source");
     try {
+      await preflightImageSource(source);
       return await detectColors(source);
     } catch (error) {
       rethrowDecode(error, "colorAnalysis");
@@ -155,6 +163,7 @@ export const painterImageUtils: PainterImageUtils = {
   async colorsRemover(source, colorToRemove) {
     validateColorRemovalInputs(source, colorToRemove);
     try {
+      await preflightImageSource(source);
       return await removeColor(source, colorToRemove);
     } catch (error) {
       rethrowDecode(error, "colorsRemover");
@@ -190,9 +199,14 @@ export const painterImageUtils: PainterImageUtils = {
     return applyRasterMask(source, maskSource, options);
   },
 
-  gradientBlend(source, options) {
+  async gradientBlend(source, options) {
     validateGradientBlendInputs(source, options);
-    return blendGradientOverImage(source, options);
+    try {
+      await preflightImageSource(source as string | Buffer);
+      return await blendGradientOverImage(source, options);
+    } catch (error) {
+      rethrowDecode(error, "gradientBlend");
+    }
   },
 
   validHex(hexColor) {
