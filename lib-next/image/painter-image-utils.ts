@@ -22,6 +22,7 @@ import { loadImageCached } from "./image-properties";
 import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
 import { ApexifyDecodeError, ApexifyError, ApexifyExternalServiceError } from "../runtime/errors";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 import { assertFiniteNumericLeaves, assertSource } from "../runtime/validation";
 import {
   validateBackgroundRemovalInputs,
@@ -42,6 +43,11 @@ import {
 
 async function preflightImageSource(source: string | Buffer): Promise<void> {
   await loadImageCached(source);
+}
+
+async function preflightCanvasSource(source: string | Buffer): Promise<void> {
+  const image = await loadImageCached(source);
+  assertCanvasResourceLimits(image.width, image.height);
 }
 
 async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
@@ -132,7 +138,7 @@ export const painterImageUtils: PainterImageUtils = {
   async effects(source, filters) {
     validateEffectsInputs(source, filters);
     try {
-      await preflightImageSource(source);
+      await preflightCanvasSource(source);
       return await imgEffects(source, filters);
     } catch (error) {
       rethrowDecode(error, "effects");
@@ -143,7 +149,7 @@ export const painterImageUtils: PainterImageUtils = {
     validateColorFilterInputs(source, opacity);
     assertFiniteNumericLeaves(filterColor, "image.colorsFilter.filterColor");
     try {
-      await preflightImageSource(source);
+      await preflightCanvasSource(source);
       return await applyColorFilters(source, filterColor, opacity);
     } catch (error) {
       rethrowDecode(error, "colorsFilter");
@@ -153,7 +159,7 @@ export const painterImageUtils: PainterImageUtils = {
   async colorAnalysis(source) {
     assertSource(source, "image.colorAnalysis.source");
     try {
-      await preflightImageSource(source);
+      await preflightCanvasSource(source);
       return await detectColors(source);
     } catch (error) {
       rethrowDecode(error, "colorAnalysis");
@@ -163,7 +169,7 @@ export const painterImageUtils: PainterImageUtils = {
   async colorsRemover(source, colorToRemove) {
     validateColorRemovalInputs(source, colorToRemove);
     try {
-      await preflightImageSource(source);
+      await preflightCanvasSource(source);
       return await removeColor(source, colorToRemove);
     } catch (error) {
       rethrowDecode(error, "colorsRemover");
@@ -202,7 +208,7 @@ export const painterImageUtils: PainterImageUtils = {
   async gradientBlend(source, options) {
     validateGradientBlendInputs(source, options);
     try {
-      await preflightImageSource(source as string | Buffer);
+      await preflightCanvasSource(source as string | Buffer);
       return await blendGradientOverImage(source, options);
     } catch (error) {
       rethrowDecode(error, "gradientBlend");
