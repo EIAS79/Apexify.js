@@ -112,7 +112,12 @@ export async function imgEffects(
           applySepia(ctx);
           break;
         case "blur":
-          applyBlur(ctx, filter.radius ?? 0);
+          await applyContextImageFilters(
+            ctx,
+            [{ type: "gaussianBlur", intensity: Math.min(100, Math.max(0, filter.radius ?? 0)) }],
+            image.width,
+            image.height
+          );
           break;
         case "posterize":
           posterize(ctx, filter.levels ?? 4);
@@ -251,37 +256,6 @@ function applySepia(ctx: SKRSContext2D): void {
   ctx.putImageData(imageData, 0, 0);
 }
 
-function applyBlur(ctx: SKRSContext2D, radius: number): void {
-  if (radius <= 0) return;
-  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-  const pixels = imageData.data;
-  const width = ctx.canvas.width;
-  const height = ctx.canvas.height;
-  const blurSize = Math.floor(radius);
-  for (let y = blurSize; y < height - blurSize; y++) {
-    for (let x = blurSize; x < width - blurSize; x++) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let count = 0;
-      for (let dy = -blurSize; dy <= blurSize; dy++) {
-        for (let dx = -blurSize; dx <= blurSize; dx++) {
-          const index = ((y + dy) * width + (x + dx)) * 4;
-          r += pixels[index];
-          g += pixels[index + 1];
-          b += pixels[index + 2];
-          count += 1;
-        }
-      }
-      const index = (y * width + x) * 4;
-      pixels[index] = r / count;
-      pixels[index + 1] = g / count;
-      pixels[index + 2] = b / count;
-    }
-  }
-  ctx.putImageData(imageData, 0, 0);
-}
-
 function posterize(ctx: SKRSContext2D, levels: number): void {
   if (levels < 2 || levels > 255) return;
   const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -341,32 +315,54 @@ function pixelate(
   ctx.putImageData(imageData, startX, startY);
 }
 
-/** Return exact visible colors and their frequency, retaining historical response shape. */
+/**
+ * Return a bounded, useful visible-color palette while retaining the historical
+ * { color: "r,g,b", frequency: "N.NN" } response shape. Large inputs are
+ * metadata-preflighted, downsampled before pixel access, quantized, and capped.
+ */
 export async function detectColors(imagePath: string): Promise<Array<{ color: string; frequency: string }>> {
   try {
-    const image = await loadImageCached(imagePath);
-    const canvas = createCanvas(image.width, image.height);
-    const ctx = getCanvasContext(canvas);
-    ctx.drawImage(image, 0, 0);
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const counts = new Map<string, number>();
-    const totalPixels = canvas.width * canvas.height;
+    const inspected = await inspectImageSource(imagePath, { label: "color analysis source" });
+    const { data } = await sharp(inspected.resolved, {
+      page: 0,
+      pages: 1,
+      limitInputPixels: false,
+      sequentialRead: true,
+    })
+      .rotate()
+      .resize({ width: 160, height: 160, fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const counts = new Map<number, number>();
+    let visiblePixels = 0;
+    const quantize = (channel: number) => Math.min(255, Math.round(channel / 4) * 4);
+
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] < 50) continue;
-      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      visiblePixels += 1;
+      const r = quantize(data[i]);
+      const g = quantize(data[i + 1]);
+      const b = quantize(data[i + 2]);
+      const key = (r << 16) | (g << 8) | b;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    if (totalPixels === 0) return [];
+
+    if (visiblePixels === 0) return [];
     return [...counts.entries()]
-      .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
-      .filter(({ frequency }) => Number(frequency) >= 0.1)
-      .sort((a, b) => Number(b.frequency) - Number(a.frequency));
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+      .slice(0, 16)
+      .map(([key, count]) => ({
+        color: `${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}`,
+        frequency: ((count / visiblePixels) * 100).toFixed(2),
+      }))
+      .filter(({ frequency }) => Number(frequency) >= 0.1);
   } catch {
     emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });
     return [];
   }
 }
-
 /** Remove one exact RGB color from a resolved image. */
 export async function removeColor(
   inputImagePath: string,
