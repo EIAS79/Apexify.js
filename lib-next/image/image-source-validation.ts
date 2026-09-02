@@ -120,8 +120,10 @@ export async function inspectImageSource(
     if (svgText !== undefined) assertSvgPolicy(svgText, label);
 
     const limits = getDefaultApexifyRuntimeConfig().limits;
+    // Metadata inspection does not decode raster pixels. Apexify must see dimensions first
+    // so it can emit its own structured resource-limit error before native decode/allocation.
     const metadata = await sharp(resolved, {
-      limitInputPixels: limits.maxDecodedImagePixels,
+      limitInputPixels: false,
       sequentialRead: true,
     }).metadata();
 
