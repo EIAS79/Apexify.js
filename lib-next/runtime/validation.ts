@@ -110,10 +110,11 @@ export function assertGradient(value: unknown, name: string): void {
 
   assertEnum(value.type, `${name}.type`, ["linear", "radial", "conic"] as const);
   assertCollection(value.colors, `${name}.colors`, { min: 2, limit: "maxCollectionItems" });
+  const stops = value.colors as unknown[];
 
   let previousStop = -Infinity;
-  for (let i = 0; i < value.colors.length; i++) {
-    const stop = value.colors[i];
+  for (let i = 0; i < stops.length; i++) {
+    const stop: unknown = stops[i];
     assertRecord(stop, `${name}.colors[${i}]`);
     assertFiniteNumber(stop.stop, `${name}.colors[${i}].stop`, { min: 0, max: 1 });
     assertNonEmptyString(stop.color, `${name}.colors[${i}].color`, 256);
