@@ -23,65 +23,64 @@ jobs:
           const fs = require('node:fs');
           const file = 'lib-next/core/general-functions.ts';
           let text = fs.readFileSync(file, 'utf8');
-
           const detectStart = text.indexOf('/** Return exact visible colors and their frequency, retaining historical response shape. */');
           const detectEnd = text.indexOf('/** Remove one exact RGB color from a resolved image. */', detectStart);
           if (detectStart < 0 || detectEnd < 0) throw new Error('detectColors replacement markers not found');
-
-          const replacement = `/**
- * Return a bounded, useful visible-color palette while retaining the historical
- * { color: "r,g,b", frequency: "N.NN" } response shape. Large inputs are
- * metadata-preflighted, downsampled before pixel access, quantized, and capped.
- */
-export async function detectColors(imagePath: string): Promise<Array<{ color: string; frequency: string }>> {
-  try {
-    const inspected = await inspectImageSource(imagePath, { label: "color analysis source" });
-    const { data } = await sharp(inspected.resolved, {
-      page: 0,
-      pages: 1,
-      limitInputPixels: false,
-      sequentialRead: true,
-    })
-      .rotate()
-      .resize({ width: 160, height: 160, fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 })
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const counts = new Map<number, number>();
-    let visiblePixels = 0;
-    const quantize = (channel: number) => Math.min(255, Math.round(channel / 4) * 4);
-
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] < 50) continue;
-      visiblePixels += 1;
-      const r = quantize(data[i]);
-      const g = quantize(data[i + 1]);
-      const b = quantize(data[i + 2]);
-      const key = (r << 16) | (g << 8) | b;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-
-    if (visiblePixels === 0) return [];
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
-      .slice(0, 16)
-      .map(([key, count]) => ({
-        color: \`${'${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}'}\`,
-        frequency: ((count / visiblePixels) * 100).toFixed(2),
-      }))
-      .filter(({ frequency }) => Number(frequency) >= 0.1);
-  } catch {
-    emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });
-    return [];
-  }
-}
-
-`;
+          const replacement = [
+            '/**',
+            ' * Return a bounded, useful visible-color palette while retaining the historical',
+            ' * { color: "r,g,b", frequency: "N.NN" } response shape. Large inputs are',
+            ' * metadata-preflighted, downsampled before pixel access, quantized, and capped.',
+            ' */',
+            'export async function detectColors(imagePath: string): Promise<Array<{ color: string; frequency: string }>> {',
+            '  try {',
+            '    const inspected = await inspectImageSource(imagePath, { label: "color analysis source" });',
+            '    const { data } = await sharp(inspected.resolved, {',
+            '      page: 0,',
+            '      pages: 1,',
+            '      limitInputPixels: false,',
+            '      sequentialRead: true,',
+            '    })',
+            '      .rotate()',
+            '      .resize({ width: 160, height: 160, fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 })',
+            '      .ensureAlpha()',
+            '      .raw()',
+            '      .toBuffer({ resolveWithObject: true });',
+            '',
+            '    const counts = new Map<number, number>();',
+            '    let visiblePixels = 0;',
+            '    const quantize = (channel: number) => Math.min(255, Math.round(channel / 4) * 4);',
+            '',
+            '    for (let i = 0; i < data.length; i += 4) {',
+            '      if (data[i + 3] < 50) continue;',
+            '      visiblePixels += 1;',
+            '      const r = quantize(data[i]);',
+            '      const g = quantize(data[i + 1]);',
+            '      const b = quantize(data[i + 2]);',
+            '      const key = (r << 16) | (g << 8) | b;',
+            '      counts.set(key, (counts.get(key) ?? 0) + 1);',
+            '    }',
+            '',
+            '    if (visiblePixels === 0) return [];',
+            '    return [...counts.entries()]',
+            '      .sort((a, b) => b[1] - a[1] || a[0] - b[0])',
+            '      .slice(0, 16)',
+            '      .map(([key, count]) => ({',
+            '        color: `${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}`,',
+            '        frequency: ((count / visiblePixels) * 100).toFixed(2),',
+            '      }))',
+            '      .filter(({ frequency }) => Number(frequency) >= 0.1);',
+            '  } catch {',
+            '    emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });',
+            '    return [];',
+            '  }',
+            '}',
+            '',
+          ].join('\n');
           text = text.slice(0, detectStart) + replacement + text.slice(detectEnd);
 
-          const blurBefore = `        case "blur":\n          applyBlur(ctx, filter.radius ?? 0);\n          break;`;
-          const blurAfter = `        case "blur":\n          await applyContextImageFilters(\n            ctx,\n            [{ type: "gaussianBlur", intensity: Math.min(100, Math.max(0, filter.radius ?? 0)) }],\n            image.width,\n            image.height\n          );\n          break;`;
+          const blurBefore = '        case "blur":\n          applyBlur(ctx, filter.radius ?? 0);\n          break;';
+          const blurAfter = '        case "blur":\n          await applyContextImageFilters(\n            ctx,\n            [{ type: "gaussianBlur", intensity: Math.min(100, Math.max(0, filter.radius ?? 0)) }],\n            image.width,\n            image.height\n          );\n          break;';
           if (!text.includes(blurBefore)) throw new Error('legacy blur switch marker not found');
           text = text.replace(blurBefore, blurAfter);
 
@@ -89,7 +88,6 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
           const posterizeStart = text.indexOf('function posterize(ctx: SKRSContext2D, levels: number): void {', blurFnStart);
           if (blurFnStart < 0 || posterizeStart < 0) throw new Error('legacy blur function markers not found');
           text = text.slice(0, blurFnStart) + text.slice(posterizeStart);
-
           fs.writeFileSync(file, text);
           NODE
 
