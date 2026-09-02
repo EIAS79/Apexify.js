@@ -5,6 +5,7 @@ import type { CanvasConfig, gradient } from "../types";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { loadImageCached } from "../image/image-properties";
 import { createGradientFill } from "../render/gradient-fill";
+import { createDeterministicRandom, rasterSeed } from "../render/deterministic-random";
 import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 
 export type AlignMode =
@@ -162,12 +163,14 @@ export function buildPathbg(
 }
 
 export function applyNoise(ctx: SKRSContext2D, width: number, height: number, intensity = 0.05) {
+  if (intensity <= 0) return;
   const noiseCanvas = createCanvas(width, height);
   const nctx = noiseCanvas.getContext("2d");
   if (!nctx) return;
   const imageData = nctx.createImageData(width, height);
+  const random = createDeterministicRandom(rasterSeed(width, height, intensity, 0x42474e44));
   for (let i = 0; i < imageData.data.length; i += 4) {
-    const v = (Math.random() * 255) | 0;
+    const v = (random() * 255) | 0;
     imageData.data[i] = v;
     imageData.data[i + 1] = v;
     imageData.data[i + 2] = v;
