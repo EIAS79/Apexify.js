@@ -40,6 +40,7 @@ const requiredBoundaries = [
   ['canvas façade', 'lib-next/apex-painter/creates/canvas-create.ts', /validateCanvasConfig\s*\(/],
   ['image façade', 'lib-next/apex-painter/creates/image-text-create.ts', /validateImageInput\s*\(/],
   ['text façade', 'lib-next/apex-painter/creates/image-text-create.ts', /validateTextInput\s*\(/],
+  ['base canvas decode preflight', 'lib-next/apex-painter/creates/image-text-create.ts', /inspectDecodedImageSource\s*\(/],
   ['scene core', 'lib-next/scene/scene-creator.ts', /validateSceneRenderInput\s*\(/],
   ['GIF generated frames', 'lib-next/gif/gif-creator.ts', /validateGeneratedGIFFrame\s*\(/],
   ['audio façade', 'lib-next/audio-synth/painter-create-audio.ts', /validateSynthSoundOptions\s*\(/],
@@ -47,8 +48,15 @@ const requiredBoundaries = [
   ['video pipeline guard', 'lib-next/video/video-pipeline-render.ts', /validateVideoPipelineLayers\s*\(/],
   ['chart façade', 'lib-next/chart/chart-creator.ts', /validateChartRequest\s*\(/],
   ['image utilities', 'lib-next/image/painter-image-utils.ts', /validateResizeInputs\s*\(/],
+  ['grouped image temporary surfaces', 'lib-next/image/image-validation.ts', /validateGroupedTemporarySurfaceBudget\s*\(/],
+  ['pixel surface', 'lib-next/pixels/pixel-data-creator.ts', /assertCanvasResourceLimits\s*\(/],
+  ['Path2D surface', 'lib-next/path/path2d-creator.ts', /assertWithinLimit\s*\(\s*"maxCollectionItems"/],
+  ['hit detection collections', 'lib-next/pixels/hit-detection-creator.ts', /maxCollectionItems/],
+  ['output encoding façade', 'lib-next/apex-painter/facets.ts', /validateOutputBytes\s*\(/],
+  ['save façade', 'lib-next/apex-painter/creates/output-save.ts', /validateSaveRequest\s*\(/],
+  ['saveMultiple façade', 'lib-next/apex-painter/creates/output-save.ts', /validateSaveMultipleRequest\s*\(/],
   ['batch concurrency', 'lib-next/batch/batch-operations.ts', /maxBatchConcurrency/],
-  ['decoded image budget', 'lib-next/image/image-properties.ts', /maxDecodedImagePixels/],
+  ['decoded image budget', 'lib-next/image/image-source-validation.ts', /maxDecodedImagePixels/],
 ];
 
 for (const [label, rel, pattern] of requiredBoundaries) {
@@ -67,5 +75,16 @@ assert.match(gif, /assertGifResourceLimits/, 'GIF creator must enforce final res
 
 const ffprobe = read('lib-next/video/ffprobe-metadata.ts');
 assert.match(ffprobe, /validateVideoProbeMetadata\s*\(metadata\)/, 'probed video metadata must be governed before transforms');
+
+const outputSave = read('lib-next/apex-painter/creates/output-save.ts');
+assert.match(outputSave, /await validateSaveRequest\s*\(/, 'save validation must complete before saveImageBuffer');
+assert.ok(
+  outputSave.indexOf('await validateSaveRequest') < outputSave.indexOf('saveImageBuffer(buffer'),
+  'save validation must precede filesystem implementation call'
+);
+assert.ok(
+  outputSave.indexOf('await validateSaveMultipleRequest') < outputSave.indexOf('saveImageBuffers(buffers'),
+  'saveMultiple validation must precede filesystem implementation call'
+);
 
 console.log(`phase4-validation-scan: ${limitKeys.length} limits and ${requiredBoundaries.length} public/core boundaries verified.`);
