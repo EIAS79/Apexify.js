@@ -1,9 +1,10 @@
-import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import type { TextProperties } from "../types";
 import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
+import { decodeImageSource } from "../image/image-source-validation";
 
 /**
  * Extended class for text creation functionality
@@ -70,33 +71,25 @@ export class TextCreator {
    */
   async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
     try {
-
       if (!canvasBuffer) {
         throw new Error("createText: canvasBuffer is required.");
       }
       this.validateTextArray(textArray);
 
       const textList = Array.isArray(textArray) ? textArray : [textArray];
-
-      let existingImage: Image;
-
-      if (Buffer.isBuffer(canvasBuffer)) {
-        existingImage = await loadImage(canvasBuffer);
-      } else if (canvasBuffer && canvasBuffer.buffer) {
-        existingImage = await loadImage(canvasBuffer.buffer);
-      } else {
-        throw new Error('Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer');
+      const sourceBuffer = Buffer.isBuffer(canvasBuffer) ? canvasBuffer : canvasBuffer?.buffer;
+      if (!sourceBuffer) {
+        throw new Error("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer");
       }
 
-      if (!existingImage) {
-        throw new Error('Unable to load image from buffer');
-      }
-
+      const existingImage: Image = await decodeImageSource(sourceBuffer, {
+        label: "createText canvasBuffer",
+        requireCanvasBudget: true,
+      });
       const canvas = createCanvas(existingImage.width, existingImage.height);
       const ctx = getCanvasContext(canvas);
 
       ctx.drawImage(existingImage, 0, 0);
-
       await this.renderTextsOntoContext(ctx, textList);
 
       return assignCanvasResultsBuffer(canvasBuffer, canvas.toBuffer("image/png"));
