@@ -1,8 +1,8 @@
-import { createCanvas, loadImage, SKRSContext2D, Image } from '@napi-rs/canvas';
+import { createCanvas, type SKRSContext2D, type Image } from '@napi-rs/canvas';
 import { getCanvasContext } from "../core/errors";
-import { resolveMediaBuffer } from "../media/source";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits } from "../runtime/limits";
+import { loadImageCached } from "./image-properties";
 
 /**
  * Applies a mask to an image
@@ -27,7 +27,7 @@ export async function applyImageMask(
 ): Promise<void> {
   try {
     assertCanvasResourceLimits(width, height);
-    const maskImage = await loadImage(await resolveMediaBuffer(maskSource, { kind: 'image' }));
+    const maskImage = await loadImageCached(maskSource);
 
     const maskCanvas = createCanvas(width, height);
     const maskCtx = getCanvasContext(maskCanvas);
