@@ -1,9 +1,11 @@
 import type { FfmpegSession } from "./ffmpeg-session";
 import type { VideoProbeMetadata } from "../types";
-import { getErrorMessage } from "../core/errors";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { ApexifyError, ApexifyProcessError } from "../runtime/errors";
+import { assertSource } from "../runtime/validation";
 import { resolveVideoInputToPath } from "./video-input-resolve";
 import { withTempWorkspace } from "./temp-workspace";
+import { validateVideoProbeMetadata } from "./video-validation";
 
 function probeOptions() {
   const ffmpeg = getDefaultApexifyRuntimeConfig().ffmpeg;
@@ -21,10 +23,9 @@ export async function ffprobeVideoFile(
   skipFfmpegCheck: boolean = false
 ): Promise<VideoProbeMetadata> {
   if (!skipFfmpegCheck && !(await session.checkAvailable())) {
-    throw new Error(
-      "FFMPEG NOT FOUND\n" +
-        "Video processing features require FFmpeg/ffprobe to be installed.\n" +
-        session.getInstallInstructions()
+    throw new ApexifyProcessError(
+      "Video processing features require FFmpeg/ffprobe to be installed.",
+      { details: { installInstructions: session.getInstallInstructions() } }
     );
   }
 
@@ -52,7 +53,7 @@ export async function ffprobeVideoFile(
       })()
     : 30;
 
-  return {
+  const metadata: VideoProbeMetadata = {
     duration: Number.parseFloat(format.duration || "0"),
     width: Number.parseInt(String(videoStream?.width || "0"), 10),
     height: Number.parseInt(String(videoStream?.height || "0"), 10),
@@ -60,6 +61,9 @@ export async function ffprobeVideoFile(
     bitrate: Number.parseInt(String(videoStream?.bit_rate || format.bit_rate || "0"), 10),
     format: format.format_name || "unknown",
   };
+  // Enforce input video resource budgets immediately after the lightweight probe and before FFmpeg transforms.
+  validateVideoProbeMetadata(metadata);
+  return metadata;
 }
 
 export async function probeHasAudioStream(mediaPath: string, session: FfmpegSession): Promise<boolean> {
@@ -103,6 +107,7 @@ export async function probeVideoCodecSource(
   source: string | Buffer,
   session: FfmpegSession
 ): Promise<string> {
+  assertSource(source, "video.codec.source");
   return withTempWorkspace(
     { ...session.workspaceOptions, prefix: "apexify-codec-" },
     async (workspace) => {
@@ -130,12 +135,13 @@ export async function probeImageDimensions(
   }
 }
 
-/** Resolve a source inside an isolated workspace, probe it, and guarantee cleanup. */
+/** Resolve a source inside an isolated workspace, probe it, validate it, and guarantee cleanup. */
 export async function probeVideoMetadata(
   videoSource: string | Buffer,
   session: FfmpegSession,
   skipFfmpegCheck: boolean = false
 ): Promise<VideoProbeMetadata | null> {
+  assertSource(videoSource, "video.getVideoInfo.source");
   try {
     return await withTempWorkspace(
       { ...session.workspaceOptions, prefix: "apexify-probe-" },
@@ -145,8 +151,7 @@ export async function probeVideoMetadata(
       }
     );
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) throw error;
-    throw new Error(`getVideoInfo failed: ${errorMessage}`, { cause: error });
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyProcessError("Video metadata probe failed.", { cause: error });
   }
 }

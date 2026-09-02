@@ -1,4 +1,4 @@
-import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { GifEncoder } from "@skyra/gifenc";
 import { PassThrough } from "node:stream";
 import fs from "node:fs";
@@ -10,9 +10,16 @@ import type {
   GIFWatermarkSpec,
   GIFDisposalMethod,
 } from "../types";
-import { getErrorMessage, getCanvasContext } from "../core/errors";
+import { getCanvasContext } from "../core/errors";
 import { resolveMediaBuffer } from "../media/source";
+import { loadImageCached } from "../image/image-properties";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { assertGifResourceLimits } from "../runtime/limits";
+import {
+  validateGeneratedGIFFrame,
+  validateGIFInputFrames,
+  validateGIFOptions,
+} from "./gif-validation";
 
 interface GIFCanonicalFrame {
   buffer: Buffer;
@@ -23,34 +30,6 @@ interface GIFCanonicalFrame {
 }
 
 export class GIFCreator {
-  private validateGIFOptions(gifFrames: GIFInputFrame[] | undefined, options: GIFOptions): void {
-    if (!options || typeof options !== "object") throw new Error("createGIF: options are required.");
-    if (options.outputFormat === "file" && !options.outputFile) {
-      throw new Error("createGIF: outputFile is required when outputFormat is 'file'.");
-    }
-    if (options.repeat !== undefined && (typeof options.repeat !== "number" || options.repeat < 0)) {
-      throw new Error("createGIF: repeat must be a non-negative number or undefined.");
-    }
-    if (options.quality !== undefined && (typeof options.quality !== "number" || options.quality < 1 || options.quality > 20)) {
-      throw new Error("createGIF: quality must be a number between 1 and 20 or undefined.");
-    }
-    if (options.onStart) return;
-    if (!gifFrames || gifFrames.length === 0) {
-      throw new Error("createGIF: At least one frame is required when onStart callback is not provided.");
-    }
-    for (const frame of gifFrames) {
-      const hasBuffer = Buffer.isBuffer(frame.buffer);
-      const hasBgBuffer = Buffer.isBuffer(frame.background);
-      const hasPath = typeof frame.background === "string" && frame.background.trim().length > 0;
-      if (!hasBuffer && !hasBgBuffer && !hasPath) {
-        throw new Error("createGIF: Each frame must include `buffer` and/or `background` (path, URL, or buffer).");
-      }
-      if (typeof frame.duration !== "number" || frame.duration < 0) {
-        throw new Error("createGIF: Each frame duration must be a non-negative number.");
-      }
-    }
-  }
-
   private async resizeImage(image: Image, targetWidth: number, targetHeight: number) {
     const canvas = createCanvas(targetWidth, targetHeight);
     const ctx = canvas.getContext("2d");
@@ -62,7 +41,7 @@ export class GIFCreator {
     if (Buffer.isBuffer(frame.buffer)) return frame.buffer;
     if (Buffer.isBuffer(frame.background)) return frame.background;
     if (typeof frame.background === "string") return resolveMediaBuffer(frame.background, { kind: "image" });
-    throw new Error("createGIF: Frame is missing image data (`buffer` or `background`).");
+    throw new ApexifyInputError("createGIF: frame is missing image data (`buffer` or `background`).");
   }
 
   private async drawFrameOntoEncoderCanvas(
@@ -72,7 +51,7 @@ export class GIFCreator {
     targetHeight: number,
     skipResizeWhenDimensionsMatch: boolean
   ): Promise<void> {
-    const image = await loadImage(frameBuffer);
+    const image = await loadImageCached(frameBuffer);
     ctx.clearRect(0, 0, targetWidth, targetHeight);
     if (skipResizeWhenDimensionsMatch && image.width === targetWidth && image.height === targetHeight) {
       ctx.drawImage(image, 0, 0);
@@ -83,7 +62,7 @@ export class GIFCreator {
   }
 
   private async loadRasterSource(src: string): Promise<Image> {
-    return loadImage(await resolveMediaBuffer(src, { kind: "image" }));
+    return loadImageCached(src);
   }
 
   private parseTransparentForEncoder(color: number | string | null): number | null {
@@ -91,7 +70,7 @@ export class GIFCreator {
     if (typeof color === "number") return color >>> 0;
     const s = String(color).trim().replace(/^#/, "");
     if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(s)) {
-      throw new Error(`createGIF: Invalid transparentColor "${color}" (use #RRGGBB or 0xRRGGBB).`);
+      throw new ApexifyInputError(`createGIF: invalid transparentColor "${color}" (use #RRGGBB or 0xRRGGBB).`);
     }
     return parseInt(s.slice(0, 6), 16);
   }
@@ -114,12 +93,16 @@ export class GIFCreator {
     const generated = await options.onStart!(frameCountHint, this.painter);
     if (GIFCreator.isAsyncIterable<GIFEncodedFrame>(generated)) {
       const out: GIFCanonicalFrame[] = [];
-      for await (const raw of generated) out.push(this.normalizeEncodedFrame(raw, options));
-      if (out.length === 0) throw new Error("createGIF: AsyncIterable from onStart yielded no frames.");
+      for await (const raw of generated) {
+        validateGeneratedGIFFrame(raw, out.length);
+        out.push(this.normalizeEncodedFrame(raw, options));
+      }
+      if (out.length === 0) throw new ApexifyInputError("createGIF: AsyncIterable from onStart yielded no frames.");
       return out;
     }
     const arr = generated as GIFEncodedFrame[];
-    if (!arr?.length) throw new Error("createGIF: onStart callback must return at least one frame.");
+    if (!arr?.length) throw new ApexifyInputError("createGIF: onStart callback must return at least one frame.");
+    arr.forEach((frame, index) => validateGeneratedGIFFrame(frame, index));
     return arr.map((f) => this.normalizeEncodedFrame(f, options));
   }
 
@@ -178,9 +161,10 @@ export class GIFCreator {
     options: GIFOptions
   ): Promise<GIFResults | Buffer | string | Array<{ attachment: NodeJS.ReadableStream | any; name: string }> | { gif: Buffer | string; static: Buffer } | undefined> {
     try {
-      this.validateGIFOptions(gifFrames, options);
-      let finalFrames: GIFCanonicalFrame[] = [];
+      validateGIFOptions(options, gifFrames?.length ?? 0);
+      if (!options.onStart) validateGIFInputFrames(gifFrames ?? []);
 
+      let finalFrames: GIFCanonicalFrame[] = [];
       if (options.onStart) {
         let frameCountHint: number;
         if (options.frameCount) frameCountHint = options.frameCount;
@@ -189,8 +173,9 @@ export class GIFCreator {
         else frameCountHint = 30;
         finalFrames = await this.collectFramesFromOnStart(options, frameCountHint);
       } else {
-        if (!gifFrames || gifFrames.length === 0) throw new Error("createGIF: Either gifFrames array or onStart callback is required.");
-        finalFrames = [];
+        if (!gifFrames || gifFrames.length === 0) {
+          throw new ApexifyInputError("createGIF: either gifFrames array or onStart callback is required.");
+        }
         for (const frame of gifFrames) {
           finalFrames.push({
             buffer: await this.resolveFrameToBuffer(frame),
@@ -206,6 +191,8 @@ export class GIFCreator {
       const canvasHeight = options.height ?? 1200;
       assertGifResourceLimits(canvasWidth, canvasHeight, finalFrames.length);
       const skipResizeWhenDimensionsMatch = options.skipResizeWhenDimensionsMatch !== false;
+
+      // Validation and resource accounting are complete before encoder, stream, or canvas allocation.
       const encoder = new GifEncoder(canvasWidth, canvasHeight);
       const useBufferStream = options.outputFormat !== "file";
       const outputStream = useBufferStream
@@ -247,16 +234,14 @@ export class GIFCreator {
       } else if (options.outputFormat === "base64") {
         await new Promise<void>((resolve) => { outputStream.on("end", () => resolve()); outputStream.end(); });
         if ("getBuffer" in outputStream && typeof outputStream.getBuffer === "function") gifResult = outputStream.getBuffer().toString("base64");
-        else throw new Error("createGIF: Unable to get buffer for base64 output.");
+        else throw new ApexifyDecodeError("createGIF: unable to get buffer for base64 output.");
       } else if (options.outputFormat === "attachment") {
         const gifStream = encoder.createReadStream();
         return [{ attachment: gifStream, name: "image.gif" }];
       } else if (options.outputFormat === "buffer") {
         await new Promise<void>((resolve) => { outputStream.on("end", () => resolve()); outputStream.end(); });
         if ("getBuffer" in outputStream && typeof outputStream.getBuffer === "function") gifResult = outputStream.getBuffer();
-        else throw new Error("createGIF: Unable to get buffer for buffer output.");
-      } else {
-        throw new Error("Invalid output format. Supported formats are 'file', 'base64', 'attachment', and 'buffer'.");
+        else throw new ApexifyDecodeError("createGIF: unable to get buffer for buffer output.");
       }
 
       let staticImage: Buffer | undefined;
@@ -265,7 +250,8 @@ export class GIFCreator {
       if (staticImage && gifResult === undefined) return staticImage;
       return gifResult;
     } catch (error) {
-      throw new Error(`createGIF failed: ${getErrorMessage(error)}`, { cause: error });
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError("GIF creation failed.", { cause: error });
     }
   }
 }

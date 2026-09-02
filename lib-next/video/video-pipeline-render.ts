@@ -13,6 +13,7 @@ import type {
 import type { VideoHelpers } from "./video-helpers";
 import { synthesizePreset, synthesizeSequence, synthesizeSound } from "../audio-synth/synthesizer";
 import { withTempWorkspace, type TempWorkspace } from "./temp-workspace";
+import { validateVideoPipelineLayers, validateVideoPipelineRenderOptions } from "./video-validation";
 
 interface ParsedPipeline {
   source: string | Buffer;
@@ -36,13 +37,11 @@ function parseLayers(layers: VideoPipelineLayer[]): ParsedPipeline {
   const audio = audioLayers.length
     ? { ...audioLayers[audioLayers.length - 1]!, tracks: audioLayers.flatMap((layer) => layer.tracks) }
     : undefined;
-  if (trim && trim.startTime >= trim.endTime) throw new Error("videoPipeline: trim startTime must be less than endTime.");
   return { source: sourceLayer.source, trim, splices, textOverlays, audio };
 }
 
 async function materializePipelineSource(source: string | Buffer, workspace: TempWorkspace): Promise<string> {
   if (Buffer.isBuffer(source)) return workspace.writeFile("pipeline-source.mp4", source);
-  // URL strings remain URLs until the secured helper resolves them inside its own workspace.
   if (/^https?:\/\//i.test(source)) return source;
   const resolved = path.isAbsolute(source) ? source : path.resolve(process.cwd(), source);
   await fs.access(resolved);
@@ -83,9 +82,6 @@ async function renderTrimAndSplicePass(
   outputPath: string,
   workspace: TempWorkspace
 ): Promise<void> {
-  if (!splice.replacementVideo && !splice.replacementFrames) {
-    throw new Error("videoPipeline: splice requires replacementVideo or replacementFrames.");
-  }
   let base = mainPath;
   if (trim) {
     const trimmedPath = workspace.path("pipeline-trim.mp4");
@@ -109,7 +105,11 @@ export async function renderVideoPipeline(
   layers: VideoPipelineLayer[],
   options: VideoPipelineRenderOptions
 ): Promise<VideoPipelineRenderResult> {
+  // Mandatory before source materialization, synth allocation, temp files, or FFmpeg.
+  validateVideoPipelineLayers(layers);
+  validateVideoPipelineRenderOptions(options);
   const plan = parseLayers(layers);
+
   return withTempWorkspace({ prefix: "apexify-pipeline-" }, async (workspace) => {
     let passes = 0;
     let currentPath = await materializePipelineSource(plan.source, workspace);

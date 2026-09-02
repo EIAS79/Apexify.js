@@ -5,6 +5,7 @@ import {
   arrayBuffer as encodeArrayBuffer,
 } from "../output/buffer-encoding";
 import { url as uploadPngToUrl } from "../output/upload-imgur";
+import { validateOutputBuffer, validateOutputBytes } from "../output/output-validation";
 import type { HitDetectionCreator } from "../pixels/hit-detection-creator";
 import type { Path2DCreator } from "../path/path2d-creator";
 import type { PixelDataCreator } from "../pixels/pixel-data-creator";
@@ -43,10 +44,25 @@ export function createPainterPixelsFacet(px: PixelDataCreator): PainterPixels {
 
 export function createPainterOutputFacet(): PainterOutput {
   return {
-    dataURL: encodeDataURL,
-    base64: encodeBase64,
-    blob: encodeBlob,
-    arrayBuffer: encodeArrayBuffer,
-    url: uploadPngToUrl,
+    dataURL(buffer) {
+      validateOutputBytes(buffer, "output.dataURL.buffer");
+      return encodeDataURL(buffer);
+    },
+    base64(buffer) {
+      validateOutputBytes(buffer, "output.base64.buffer");
+      return encodeBase64(buffer);
+    },
+    blob(buffer) {
+      validateOutputBytes(buffer, "output.blob.buffer");
+      return encodeBlob(buffer);
+    },
+    arrayBuffer(buffer) {
+      validateOutputBuffer(buffer, "output.arrayBuffer.buffer");
+      return encodeArrayBuffer(buffer);
+    },
+    url(buffer, credentials) {
+      validateOutputBuffer(buffer, "output.url.buffer");
+      return uploadPngToUrl(buffer, credentials);
+    },
   };
 }

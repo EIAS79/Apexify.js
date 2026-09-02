@@ -14,8 +14,12 @@ import { validateSceneRenderInput } from "../../scene/scene-validation";
 import { expandSceneGifFrames } from "../../scene/gif-scene";
 import { renderSceneToVideoFrames } from "../../scene/render-scene-to-video";
 import type { GIFCreator } from "../../gif/gif-creator";
+import { validateGIFInputFrames, validateGIFOptions } from "../../gif/gif-validation";
 import type { VideoCreator } from "../../video/video-creator";
 import type { AssetResolveFn } from "../../assets/asset-strings";
+import { ApexifyInputError } from "../../runtime/errors";
+import { assertWithinLimit } from "../../runtime/limits";
+import { assertFiniteNumber } from "../../runtime/validation";
 
 /** Scene builder, render, scene→GIF, scene→video frames. */
 export class SceneCreate {
@@ -45,15 +49,15 @@ export class SceneCreate {
   ): SceneBuilder {
     if (typeof widthOrConfig === "object") {
       const { width, height: h, background, layers } = widthOrConfig;
+      validateSceneRenderInput({ width, height: h, background, layers: layers ?? [] });
       const b = new SceneBuilder(this.sceneCreator, width, h, layers, this.assetResolve);
-      if (background !== undefined) {
-        b.setBackground(background);
-      }
+      if (background !== undefined) b.setBackground(background);
       return b;
     }
     if (height === undefined) {
-      throw new Error("createScene: height is required when the first argument is numeric width.");
+      throw new ApexifyInputError("createScene: height is required when the first argument is numeric width.");
     }
+    validateSceneRenderInput({ width: widthOrConfig, height, layers: [] });
     return new SceneBuilder(this.sceneCreator, widthOrConfig, height, [], this.assetResolve);
   }
 
@@ -61,10 +65,6 @@ export class SceneCreate {
     return this.sceneCreator.render(input, options);
   }
 
-  /**
-   * Throws if `SceneRenderInput` is structurally invalid (dimensions, nested `surface` depth).
-   * Use before persisting or accepting untrusted scene JSON.
-   */
   validateRenderInput(
     input: SceneRenderInput,
     options?: Pick<SceneRenderOptions, "maxSurfaceDepth">
@@ -80,32 +80,42 @@ export class SceneCreate {
       prependComposedRaster?: boolean;
       composedFrameDuration?: number;
       composedFrameRepeat?: number;
-      /** Passed to {@link SceneCreator.render} for the composed raster frame. */
       sceneRender?: SceneRenderOptions;
     }
   ): Promise<Awaited<ReturnType<GIFCreator["createGIF"]>>> {
-    const composedPng = await this.sceneCreator.render(scene, gif.sceneRender);
     if (gif.options.onStart) {
-      throw new Error(
+      throw new ApexifyInputError(
         "renderSceneToGIF: use createGIF with onStart alone, or remove onStart when building from a composed scene."
       );
     }
+
     const prepend = gif.prependComposedRaster !== false;
-    const duration =
-      gif.composedFrameDuration ?? (typeof gif.options.delay === "number" ? gif.options.delay : 100);
-    const composedRepeat = Math.max(1, Math.floor(gif.composedFrameRepeat ?? 1));
+    const duration = gif.composedFrameDuration ?? gif.options.delay ?? 100;
+    assertFiniteNumber(duration, "renderSceneToGIF.composedFrameDuration", { min: 0, exclusiveMin: true });
+
+    const repeatRaw = gif.composedFrameRepeat ?? 1;
+    assertFiniteNumber(repeatRaw, "renderSceneToGIF.composedFrameRepeat", { min: 1, integer: true });
+    const composedRepeat = repeatRaw;
+    assertWithinLimit("maxGifFrames", composedRepeat);
+
+    // Expand and validate user-supplied tail before rendering the scene to avoid wasted raster work.
     const tail = expandSceneGifFrames(gif.gifFrames ?? []);
+    if (tail.length > 0) validateGIFInputFrames(tail);
+    const totalFrames = (prepend ? composedRepeat : 0) + tail.length;
+    if (totalFrames === 0) {
+      throw new ApexifyInputError("renderSceneToGIF: need at least one frame (prepend and/or gifFrames).");
+    }
+    assertWithinLimit("maxGifFrames", totalFrames);
+    validateGIFOptions(gif.options, totalFrames);
+    validateSceneRenderInput(scene, { maxSurfaceDepth: gif.sceneRender?.maxSurfaceDepth });
+
+    const composedPng = await this.sceneCreator.render(scene, gif.sceneRender);
     const frames: GIFInputFrame[] = [];
     if (prepend) {
       const base: GIFInputFrame = { buffer: composedPng, duration };
-      for (let i = 0; i < composedRepeat; i++) {
-        frames.push({ ...base });
-      }
+      for (let i = 0; i < composedRepeat; i++) frames.push({ ...base });
     }
     frames.push(...tail);
-    if (frames.length === 0) {
-      throw new Error("renderSceneToGIF: need at least one frame (prepend and/or gifFrames).");
-    }
     return this.gifCreator.createGIF(frames, gif.options);
   }
 
@@ -119,6 +129,7 @@ export class SceneCreate {
       sceneRender?: SceneRenderOptions;
     }
   ): Promise<SceneToVideoResult> {
+    validateSceneRenderInput(scene, { maxSurfaceDepth: video.sceneRender?.maxSurfaceDepth });
     return renderSceneToVideoFrames(this.sceneCreator, videoCreator, scene, video);
   }
 }

@@ -1,4 +1,5 @@
 import { ImgurClient } from "imgur";
+import { ApexifyError, ApexifyExternalServiceError, ApexifyInputError } from "../runtime/errors";
 import { base64 } from "./buffer-encoding";
 
 export interface ImgurCredentials {
@@ -24,7 +25,7 @@ function requireImgurCredentials(explicit?: Partial<ImgurCredentials>): ImgurCre
     .map(([key]) => key);
 
   if (missing.length > 0) {
-    throw new Error(
+    throw new ApexifyInputError(
       `output.url: Imgur credentials are required (${missing.join(", ")}). ` +
         "Pass them explicitly or configure IMGUR_CLIENT_ID, IMGUR_CLIENT_SECRET, " +
         "IMGUR_ACCESS_TOKEN, and IMGUR_REFRESH_TOKEN."
@@ -44,10 +45,15 @@ export async function url(
   credentials?: Partial<ImgurCredentials>
 ): Promise<string> {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-    throw new Error("output.url: a non-empty Buffer is required.");
+    throw new ApexifyInputError("output.url: a non-empty Buffer is required.");
   }
 
-  const client = new ImgurClient(requireImgurCredentials(credentials));
-  const response = await client.upload({ image: base64(buffer), type: "base64" });
-  return response.data.link;
+  try {
+    const client = new ImgurClient(requireImgurCredentials(credentials));
+    const response = await client.upload({ image: base64(buffer), type: "base64" });
+    return response.data.link;
+  } catch (error) {
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyExternalServiceError("output.url: Imgur upload failed.", { cause: error });
+  }
 }

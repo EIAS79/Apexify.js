@@ -18,51 +18,36 @@ import { cropRasterImage } from "./crop-raster";
 import { applyRasterMask } from "./raster-masking";
 import { blendGradientOverImage } from "./gradient-blend";
 import { resolveMediaInput } from "../media/source";
+import { loadImageCached } from "./image-properties";
 import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
+import { ApexifyDecodeError, ApexifyError, ApexifyExternalServiceError } from "../runtime/errors";
+import { assertCanvasResourceLimits } from "../runtime/limits";
+import { assertFiniteNumericLeaves, assertSource } from "../runtime/validation";
+import {
+  validateBackgroundRemovalInputs,
+  validateBlendInputs,
+  validateCollageInputs,
+  validateColorFilterInputs,
+  validateColorRemovalInputs,
+  validateCompressionInputs,
+  validateConverterInputs,
+  validateCropInputs,
+  validateEffectsInputs,
+  validateGradientBlendInputs,
+  validateMaskInputs,
+  validatePaletteInputs,
+  validateResizeInputs,
+  validateStitchInputs,
+} from "./image-utils-validation";
 
-function validateResizeOptions(options: ResizeOptions): void {
-  const src = options?.imagePath;
-  if (
-    src === undefined ||
-    src === null ||
-    (typeof src === "string" && !src.trim()) ||
-    (Buffer.isBuffer(src) && src.length === 0)
-  ) {
-    throw new Error("resize: imagePath is required.");
-  }
-  if (options.size) {
-    if (options.size.width !== undefined && (typeof options.size.width !== "number" || options.size.width <= 0)) {
-      throw new Error("resize: size.width must be a positive number.");
-    }
-    if (options.size.height !== undefined && (typeof options.size.height !== "number" || options.size.height <= 0)) {
-      throw new Error("resize: size.height must be a positive number.");
-    }
-  }
-  if (
-    options.quality !== undefined &&
-    (typeof options.quality !== "number" || options.quality < 0 || options.quality > 100)
-  ) {
-    throw new Error("resize: quality must be a number between 0 and 100.");
-  }
+async function preflightImageSource(source: string | Buffer): Promise<void> {
+  await loadImageCached(source);
 }
 
-function validateConverterInputs(source: string | Buffer, newExtension: string): void {
-  if (
-    source === undefined ||
-    source === null ||
-    (typeof source === "string" && !source.trim()) ||
-    (Buffer.isBuffer(source) && source.length === 0)
-  ) {
-    throw new Error("imgConverter: source is required.");
-  }
-  if (!newExtension) {
-    throw new Error("imgConverter: newExtension is required.");
-  }
-  const validExtensions = ["jpeg", "png", "webp", "tiff", "gif", "avif", "heif", "raw", "pdf", "svg"];
-  if (!validExtensions.includes(newExtension.toLowerCase())) {
-    throw new Error(`imgConverter: Invalid extension. Supported: ${validExtensions.join(", ")}`);
-  }
+async function preflightCanvasSource(source: string | Buffer): Promise<void> {
+  const image = await loadImageCached(source);
+  assertCanvasResourceLimits(image.width, image.height);
 }
 
 async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
@@ -74,146 +59,160 @@ async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
     kernel: sharp.kernel.lanczos3,
     withoutEnlargement: true,
   };
-
-  return sharp(source)
-    .resize(resizeOptions)
-    .png({ quality: options.quality ?? 90 })
-    .toBuffer();
+  return sharp(source).resize(resizeOptions).png({ quality: options.quality ?? 90 }).toBuffer();
 }
 
 async function convertResolved(source: string | Buffer, newExtension: string): Promise<Buffer> {
   const resolved = await resolveMediaInput(source, { kind: "image" });
-  return sharp(resolved)
-    .toFormat(newExtension.toLowerCase() as keyof FormatEnum)
-    .toBuffer();
+  return sharp(resolved).toFormat(newExtension.toLowerCase() as keyof FormatEnum).toBuffer();
 }
 
-function validateEffectsInputs(source: string, filters: unknown[]): void {
-  if (!source) {
-    throw new Error("effects: source is required.");
-  }
-  if (!filters || !Array.isArray(filters) || filters.length === 0) {
-    throw new Error("effects: filters array with at least one filter is required.");
-  }
+function rethrowDecode(error: unknown, label: string): never {
+  if (error instanceof ApexifyError) throw error;
+  throw new ApexifyDecodeError(`${label} failed: ${getErrorMessage(error)}`, { cause: error });
 }
 
 export type { PainterImageUtils } from "../types";
 
 export const painterImageUtils: PainterImageUtils = {
   async stitchImages(images, options) {
+    validateStitchInputs(images, options);
     try {
-      if (!images || images.length === 0) {
-        throw new Error("stitchImages: images array is required");
-      }
+      for (const image of images) await preflightImageSource(image);
       return await stitchImages(images, options);
     } catch (error) {
-      throw new Error(`stitchImages failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "stitchImages");
     }
   },
 
   async createCollage(images, layout) {
+    validateCollageInputs(images, layout);
     try {
-      if (!images || images.length === 0) {
-        throw new Error("createCollage: images array is required");
-      }
-      if (!layout) {
-        throw new Error("createCollage: layout configuration is required");
-      }
+      for (const image of images) await preflightImageSource(image.source);
       return await createCollage(images, layout);
     } catch (error) {
-      throw new Error(`createCollage failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "createCollage");
     }
   },
 
   async compress(image, options) {
+    validateCompressionInputs(image, options);
     try {
+      await preflightImageSource(image);
       return await compressImage(image, options);
     } catch (error) {
-      throw new Error(`compress failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "compress");
     }
   },
 
   async extractPalette(image, options) {
+    validatePaletteInputs(image, options);
     try {
+      await preflightImageSource(image);
       return await extractPalette(image, options);
     } catch (error) {
-      throw new Error(`extractPalette failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "extractPalette");
     }
   },
 
   async resize(resizeOptions) {
+    validateResizeInputs(resizeOptions);
     try {
-      validateResizeOptions(resizeOptions);
+      await preflightImageSource(resizeOptions.imagePath);
       return await resizeResolved(resizeOptions);
     } catch (error) {
-      throw new Error(`resize failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "resize");
     }
   },
 
   async imgConverter(source, newExtension) {
+    validateConverterInputs(source, newExtension);
     try {
-      validateConverterInputs(source, newExtension);
+      await preflightImageSource(source);
       return await convertResolved(source, newExtension);
     } catch (error) {
-      throw new Error(`imgConverter failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "imgConverter");
     }
   },
 
   async effects(source, filters) {
+    validateEffectsInputs(source, filters);
     try {
-      validateEffectsInputs(source, filters);
+      await preflightCanvasSource(source);
       return await imgEffects(source, filters);
     } catch (error) {
-      throw new Error(`effects failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "effects");
     }
   },
 
   async colorsFilter(source, filterColor, opacity = 1) {
+    validateColorFilterInputs(source, opacity);
+    assertFiniteNumericLeaves(filterColor, "image.colorsFilter.filterColor");
     try {
+      await preflightCanvasSource(source);
       return await applyColorFilters(source, filterColor, opacity);
     } catch (error) {
-      throw new Error(`colorsFilter failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "colorsFilter");
     }
   },
 
   async colorAnalysis(source) {
+    assertSource(source, "image.colorAnalysis.source");
     try {
+      await preflightCanvasSource(source);
       return await detectColors(source);
     } catch (error) {
-      throw new Error(`colorAnalysis failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "colorAnalysis");
     }
   },
 
   async colorsRemover(source, colorToRemove) {
+    validateColorRemovalInputs(source, colorToRemove);
     try {
+      await preflightCanvasSource(source);
       return await removeColor(source, colorToRemove);
     } catch (error) {
-      throw new Error(`colorsRemover failed: ${getErrorMessage(error)}`);
+      rethrowDecode(error, "colorsRemover");
     }
   },
 
   async removeBackground(imageURL, apiKey) {
+    validateBackgroundRemovalInputs(imageURL, apiKey);
     try {
       return await bgRemoval(imageURL, apiKey);
     } catch (error) {
-      throw new Error(`removeBackground failed: ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyExternalServiceError(`removeBackground failed: ${getErrorMessage(error)}`, { cause: error });
     }
   },
 
   blend(layers, baseImageBuffer, defaultBlendMode = "source-over") {
-    return blendImageLayers(layers, baseImageBuffer, defaultBlendMode);
+    validateBlendInputs(layers, baseImageBuffer);
+    try {
+      return blendImageLayers(layers, baseImageBuffer, defaultBlendMode);
+    } catch (error) {
+      rethrowDecode(error, "blend");
+    }
   },
 
   cropImage(options) {
+    validateCropInputs(options);
     return cropRasterImage(options);
   },
 
   masking(source, maskSource, options = { type: "alpha" }) {
+    validateMaskInputs(source, maskSource, options);
     return applyRasterMask(source, maskSource, options);
   },
 
-  gradientBlend(source, options) {
-    return blendGradientOverImage(source, options);
+  async gradientBlend(source, options) {
+    validateGradientBlendInputs(source, options);
+    try {
+      await preflightCanvasSource(source as string | Buffer);
+      return await blendGradientOverImage(source, options);
+    } catch (error) {
+      rethrowDecode(error, "gradientBlend");
+    }
   },
 
   validHex(hexColor) {

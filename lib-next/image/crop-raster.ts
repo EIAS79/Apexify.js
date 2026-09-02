@@ -1,8 +1,9 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import type { cropOptions } from "../types";
-import { getErrorMessage, getCanvasContext } from "../core/errors";
-import { resolveMediaBuffer } from "../media/source";
-import { ApexifyInputError } from "../runtime/errors";
+import { getCanvasContext } from "../core/errors";
+import { loadImageCached } from "./image-properties";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
 function validateCropOptions(options: cropOptions): void {
   if (!options) throw new ApexifyInputError("cropImage: options object is required.");
@@ -16,7 +17,7 @@ function validateCropOptions(options: cropOptions): void {
 }
 
 async function cropInner(options: cropOptions): Promise<Buffer> {
-  const image = await loadImage(await resolveMediaBuffer(options.imageSource, { kind: "image" }));
+  const image = await loadImageCached(options.imageSource);
   const xs: number[] = [];
   const ys: number[] = [];
   for (const coordinate of options.coordinates) {
@@ -32,6 +33,7 @@ async function cropInner(options: cropOptions): Promise<Buffer> {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     throw new ApexifyInputError("cropImage: coordinates must define a positive crop area.");
   }
+  assertCanvasResourceLimits(width, height);
 
   const canvas = createCanvas(width, height);
   const ctx = getCanvasContext(canvas);
@@ -52,7 +54,8 @@ async function cropInner(options: cropOptions): Promise<Buffer> {
 }
 
 async function cropOuter(options: cropOptions): Promise<Buffer> {
-  const image = await loadImage(await resolveMediaBuffer(options.imageSource, { kind: "image" }));
+  const image = await loadImageCached(options.imageSource);
+  assertCanvasResourceLimits(image.width, image.height);
   const canvas = createCanvas(image.width, image.height);
   const ctx = getCanvasContext(canvas);
   ctx.drawImage(image, 0, 0);
@@ -77,12 +80,13 @@ async function cropOuter(options: cropOptions): Promise<Buffer> {
   return canvas.toBuffer("image/png");
 }
 
-/** Polygon inner/outer crop routed through the authoritative media source layer. */
+/** Polygon inner/outer crop routed through the authoritative media source and decoded-image budget. */
 export async function cropRasterImage(options: cropOptions): Promise<Buffer> {
+  validateCropOptions(options);
   try {
-    validateCropOptions(options);
     return options.crop === "outer" ? await cropOuter(options) : await cropInner(options);
   } catch (error) {
-    throw new Error(`cropImage failed: ${getErrorMessage(error)}`, { cause: error });
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError("Image crop failed.", { cause: error });
   }
 }

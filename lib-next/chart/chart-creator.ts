@@ -1,4 +1,5 @@
 import { getErrorMessage } from "../core/errors";
+import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 import { createPieChart } from "./impl/piechart";
 import { createBarChart } from "./impl/barchart";
 import { createHorizontalBarChart } from "./impl/horizontalbarchart";
@@ -8,6 +9,7 @@ import { createRadarChart } from "./impl/radarchart";
 import { createPolarAreaChart } from "./impl/polarareachart";
 import { createComboChart } from "./impl/combochart";
 import { createComparisonChart } from "./impl/comparisonchart";
+import { validateChartRequest, validateCompositeChartOptions } from "./chart-validation";
 
 /**
  * Chart facades — same surface as legacy {@link ChartCreator}; implementations live in `./impl/*`.
@@ -53,6 +55,7 @@ export class ChartCreator {
     data: unknown,
     options?: unknown
   ): Promise<Buffer> {
+    validateChartRequest(chartType, data, options);
     try {
       switch (chartType) {
         case "pie":
@@ -79,28 +82,33 @@ export class ChartCreator {
             options as never
           );
         default:
-          throw new Error(`Unsupported chart type: ${chartType}`);
+          throw new ApexifyDecodeError(`Unsupported chart type: ${chartType}`);
       }
     } catch (error) {
-      throw new Error(`createChart failed for type '${chartType}': ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError(`createChart failed for type '${chartType}': ${getErrorMessage(error)}`, { cause: error });
     }
   }
 
   async createComparisonChart(
     options: import("./impl/comparisonchart").ComparisonChartOptions
   ): Promise<Buffer> {
+    validateCompositeChartOptions(options, "comparisonChart");
     try {
       return await createComparisonChart(options);
     } catch (error) {
-      throw new Error(`createComparisonChart failed: ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError(`createComparisonChart failed: ${getErrorMessage(error)}`, { cause: error });
     }
   }
 
   async createComboChart(options: import("./impl/combochart").ComboChartOptions): Promise<Buffer> {
+    validateCompositeChartOptions(options, "comboChart");
     try {
       return await createComboChart(options);
     } catch (error) {
-      throw new Error(`createComboChart failed: ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError(`createComboChart failed: ${getErrorMessage(error)}`, { cause: error });
     }
   }
 }
