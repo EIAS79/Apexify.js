@@ -1,5 +1,5 @@
-import { SKRSContext2D, Image, loadImage } from "@napi-rs/canvas";
-import { resolveMediaBuffer } from "../media/source";
+import { type SKRSContext2D, type Image } from "@napi-rs/canvas";
+import { loadImageCached } from "../image/image-properties";
 import { emitDiagnostic } from "../runtime/diagnostics";
 
 export function drawArrow(
@@ -260,7 +260,7 @@ export async function applyLineTexture(
   _lineLength: number
 ): Promise<void> {
   try {
-    const textureImage: Image = await loadImage(await resolveMediaBuffer(textureSource, { kind: "image" }));
+    const textureImage: Image = await loadImageCached(textureSource);
     const pat = ctx.createPattern(textureImage, "repeat");
     if (pat) {
       ctx.strokeStyle = pat;
