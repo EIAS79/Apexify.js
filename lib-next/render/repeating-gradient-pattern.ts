@@ -1,4 +1,5 @@
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 
 /**
  * Turn a rendered single gradient period into a repeating canvas pattern.
@@ -14,6 +15,8 @@ export function createRepeatingGradientPattern(
 ): CanvasPattern {
   const w = Math.max(1, Math.ceil(width));
   const h = Math.max(1, Math.ceil(height));
+  assertCanvasResourceLimits(w, h);
+
   const period = createCanvas(w, h);
   const periodCtx = period.getContext("2d") as SKRSContext2D;
   periodCtx.fillStyle = gradient;
@@ -21,25 +24,29 @@ export function createRepeatingGradientPattern(
 
   let source = period;
   if (repeat === "reflect") {
-    const reflected = createCanvas(w * 2, h * 2);
+    const reflectedWidth = w * 2;
+    const reflectedHeight = h * 2;
+    assertCanvasResourceLimits(reflectedWidth, reflectedHeight);
+
+    const reflected = createCanvas(reflectedWidth, reflectedHeight);
     const rctx = reflected.getContext("2d") as SKRSContext2D;
 
     rctx.drawImage(period, 0, 0);
 
     rctx.save();
-    rctx.translate(w * 2, 0);
+    rctx.translate(reflectedWidth, 0);
     rctx.scale(-1, 1);
     rctx.drawImage(period, 0, 0);
     rctx.restore();
 
     rctx.save();
-    rctx.translate(0, h * 2);
+    rctx.translate(0, reflectedHeight);
     rctx.scale(1, -1);
     rctx.drawImage(period, 0, 0);
     rctx.restore();
 
     rctx.save();
-    rctx.translate(w * 2, h * 2);
+    rctx.translate(reflectedWidth, reflectedHeight);
     rctx.scale(-1, -1);
     rctx.drawImage(period, 0, 0);
     rctx.restore();
