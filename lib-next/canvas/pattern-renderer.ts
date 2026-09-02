@@ -46,8 +46,8 @@ export class EnhancedPatternRenderer {
         ctx.translate(-centerX, -centerY);
       }
 
-      if (patternOptions.offsetX || patternOptions.offsetY) {
-        ctx.translate(patternOptions.offsetX || 0, patternOptions.offsetY || 0);
+      if (patternOptions.offsetX !== undefined || patternOptions.offsetY !== undefined) {
+        ctx.translate(patternOptions.offsetX ?? 0, patternOptions.offsetY ?? 0);
       }
 
       switch (patternOptions.type) {
