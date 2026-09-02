@@ -31,8 +31,8 @@ async function main() {
   api.resetApexifyRuntimeConfig();
   api.clearDecodedImageCache();
 
-  // Direct byte sources are local inputs and must use maxImageSourceBytes, not the
-  // smaller remote transport cap.
+  // Direct byte and data-URL sources are local inputs and must use
+  // maxImageSourceBytes, not the smaller remote transport cap.
   const localPng = await sharp({
     create: { width: 8, height: 8, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } },
   }).png().toBuffer();
@@ -43,6 +43,9 @@ async function main() {
   const inspected = await api.inspectImageSource(localPng);
   assert.equal(inspected.width, 8);
   assert.equal(inspected.height, 8);
+  const inspectedDataUrl = await api.inspectImageSource(`data:image/png;base64,${localPng.toString('base64')}`);
+  assert.equal(inspectedDataUrl.width, 8);
+  assert.equal(inspectedDataUrl.height, 8);
   api.resetApexifyRuntimeConfig();
 
   // Every opening SVG element must count, including elements omitted by the old
@@ -113,7 +116,7 @@ async function main() {
     await fs.rm(tmp, { recursive: true, force: true });
   }
 
-  console.log('phase5-review-regressions: all four review findings are covered and fixed.');
+  console.log('phase5-review-regressions: all four review findings plus local data-URL limits are covered and fixed.');
 }
 
 main().catch((error) => {
