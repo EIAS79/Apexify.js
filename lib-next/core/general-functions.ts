@@ -336,6 +336,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
       .toBuffer({ resolveWithObject: true });
 
     const counts = new Map<number, number>();
+    const totalPixels = data.length / 4;
     let visiblePixels = 0;
     const quantize = (channel: number) => Math.min(255, Math.round(channel / 4) * 4);
 
@@ -355,7 +356,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
       .slice(0, 16)
       .map(([key, count]) => ({
         color: `${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}`,
-        frequency: ((count / visiblePixels) * 100).toFixed(2),
+        frequency: ((count / totalPixels) * 100).toFixed(2),
       }))
       .filter(({ frequency }) => Number(frequency) >= 0.1);
   } catch {
