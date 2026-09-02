@@ -31,6 +31,14 @@ function isRasterRelevant(rel) {
   ].includes(rel);
 }
 
+function lineAndSnippet(text, index) {
+  const line = text.slice(0, index).split('\n').length;
+  const start = text.lastIndexOf('\n', index - 1) + 1;
+  const endCandidate = text.indexOf('\n', index);
+  const end = endCandidate === -1 ? text.length : endCandidate;
+  return { line, snippet: text.slice(start, end).trim() };
+}
+
 const nativeDecodeAllowlist = new Set([
   // This module is the authoritative image metadata/decode boundary.
   'lib-next/image/image-source-validation.ts',
@@ -61,8 +69,9 @@ for (const file of walk(SOURCE)) {
   // silently overwrites an explicit zero. Requiring a property access avoids false
   // positives from ordinary boolean expressions such as `a.height !== h || ...`.
   const suspiciousDefault = /\.(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY|opacity|rotation|scale|blur|radius|size|levels|value|width|height)\s*\|\|/g;
-  if (suspiciousDefault.test(text)) {
-    failures.push(`${rel}: suspicious || numeric property default; preserve explicit zero with ?? or explicit checks`);
+  for (const match of text.matchAll(suspiciousDefault)) {
+    const location = lineAndSnippet(text, match.index ?? 0);
+    failures.push(`${rel}:${location.line}: suspicious || numeric property default: ${location.snippet}`);
   }
 }
 
