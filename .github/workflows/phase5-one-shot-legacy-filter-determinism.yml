@@ -1,0 +1,77 @@
+name: Phase 5 one-shot legacy filter determinism
+
+on:
+  push:
+    branches:
+      - reengineering/phase-5-raster-pipeline
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: reengineering/phase-5-raster-pipeline
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Make legacy image filters deterministic and zero-safe
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'lib-next/image/image-filters.ts';
+          let text = fs.readFileSync(file, 'utf8');
+
+          const importMarker = 'import type { ImageFilter } from "../types";';
+          if (!text.includes(importMarker)) throw new Error('image-filters import marker not found');
+          text = text.replace(
+            importMarker,
+            importMarker + '\nimport { createDeterministicRandom, rasterSeed } from "../render/deterministic-random";'
+          );
+
+          const replacements = [
+            ['filter.intensity || 0', 'filter.intensity ?? 0'],
+            ['filter.angle || 0', 'filter.angle ?? 0'],
+            ['filter.centerX || width/2', 'filter.centerX ?? width / 2'],
+            ['filter.centerY || height/2', 'filter.centerY ?? height / 2'],
+            ['filter.intensity || 0.1', 'filter.intensity ?? 0.1'],
+            ['filter.intensity || 0.05', 'filter.intensity ?? 0.05'],
+            ['filter.intensity || 1', 'filter.intensity ?? 1'],
+            ['filter.size || 10', 'filter.size ?? 10'],
+            ['filter.value || 0', 'filter.value ?? 0'],
+            ['filter.levels || 4', 'filter.levels ?? 4'],
+          ];
+          for (const [before, after] of replacements) text = text.replaceAll(before, after);
+
+          const noiseMarker = '    const data = imageData.data;\n\n    for (let i = 0; i < data.length; i += 4) {\n      const noise = (Math.random() - 0.5) * intensity * 255;';
+          const noiseReplacement = '    const data = imageData.data;\n    const random = createDeterministicRandom(rasterSeed(ctx.canvas.width, ctx.canvas.height, intensity, 0x4e4f4953));\n\n    for (let i = 0; i < data.length; i += 4) {\n      const noise = (random() - 0.5) * intensity * 255;';
+          if (!text.includes(noiseMarker)) throw new Error('legacy noise marker not found');
+          text = text.replace(noiseMarker, noiseReplacement);
+
+          const grainMarker = '    const data = imageData.data;\n\n    for (let i = 0; i < data.length; i += 4) {\n      const grain = (Math.random() - 0.5) * intensity * 100;';
+          const grainReplacement = '    const data = imageData.data;\n    const random = createDeterministicRandom(rasterSeed(ctx.canvas.width, ctx.canvas.height, intensity, 0x47524149));\n\n    for (let i = 0; i < data.length; i += 4) {\n      const grain = (random() - 0.5) * intensity * 100;';
+          if (!text.includes(grainMarker)) throw new Error('legacy grain marker not found');
+          text = text.replace(grainMarker, grainReplacement);
+
+          if (/Math\.random\s*\(/.test(text)) throw new Error('Math.random remains in image-filters.ts');
+          fs.writeFileSync(file, text);
+          NODE
+      - name: Verify source
+        run: |
+          npm ci --ignore-scripts
+          npm run typecheck
+          node scripts/phase5-raster-scan.cjs
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/phase5-one-shot-legacy-filter-determinism.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib-next/image/image-filters.ts .github/workflows/phase5-one-shot-legacy-filter-determinism.yml
+          git diff --cached --check
+          git commit -m "fix: make legacy raster filters deterministic"
+          git push origin HEAD:reengineering/phase-5-raster-pipeline
