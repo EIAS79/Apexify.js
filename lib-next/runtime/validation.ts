@@ -107,15 +107,45 @@ export function assertGradient(value: unknown, name: string): void {
   if (value === undefined) return;
   assertRecord(value, name);
   assertFiniteNumericLeaves(value, name);
-  const colors = (value as { colors?: unknown }).colors;
-  if (colors !== undefined) {
-    assertCollection(colors, `${name}.colors`, { min: 1, limit: "maxCollectionItems" });
-    const stops: unknown[] = colors as unknown[];
-    for (let i = 0; i < stops.length; i++) {
-      const stop: unknown = stops[i];
-      assertRecord(stop, `${name}.colors[${i}]`);
-      assertFiniteNumber(stop.stop, `${name}.colors[${i}].stop`, { min: 0, max: 1 });
-      assertNonEmptyString(stop.color, `${name}.colors[${i}].color`, 256);
+
+  assertEnum(value.type, `${name}.type`, ["linear", "radial", "conic"] as const);
+  assertCollection(value.colors, `${name}.colors`, { min: 2, limit: "maxCollectionItems" });
+
+  let previousStop = -Infinity;
+  for (let i = 0; i < value.colors.length; i++) {
+    const stop = value.colors[i];
+    assertRecord(stop, `${name}.colors[${i}]`);
+    assertFiniteNumber(stop.stop, `${name}.colors[${i}].stop`, { min: 0, max: 1 });
+    assertNonEmptyString(stop.color, `${name}.colors[${i}].color`, 256);
+    if (stop.stop < previousStop) {
+      throw new ApexifyInputError(`${name}.colors must be ordered by non-decreasing stop; duplicate stops are allowed.`);
+    }
+    previousStop = stop.stop;
+  }
+
+  if (value.type === "linear" || value.type === "radial") {
+    assertOptionalEnum(value.repeat, `${name}.repeat`, ["repeat", "reflect", "no-repeat"] as const);
+  }
+
+  if (value.type === "linear") {
+    if (
+      value.startX !== undefined && value.startY !== undefined &&
+      value.endX !== undefined && value.endY !== undefined &&
+      value.startX === value.endX && value.startY === value.endY
+    ) {
+      throw new ApexifyInputError(`${name} linear start and end points must not be identical.`);
+    }
+  }
+
+  if (value.type === "radial") {
+    assertOptionalFiniteNumber(value.startRadius, `${name}.startRadius`, { min: 0 });
+    assertOptionalFiniteNumber(value.endRadius, `${name}.endRadius`, { min: 0 });
+    if (
+      value.startX !== undefined && value.startY !== undefined && value.startRadius !== undefined &&
+      value.endX !== undefined && value.endY !== undefined && value.endRadius !== undefined &&
+      value.startX === value.endX && value.startY === value.endY && value.startRadius === value.endRadius
+    ) {
+      throw new ApexifyInputError(`${name} radial start and end circles must not be identical.`);
     }
   }
 }
