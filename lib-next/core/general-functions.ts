@@ -361,8 +361,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
       .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
       .filter(({ frequency }) => Number(frequency) >= 0.1)
       .sort((a, b) => Number(b.frequency) - Number(a.frequency));
-  } catch (error) {
-    if (error instanceof ApexifyError) throw error;
+  } catch {
     emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });
     return [];
   }
@@ -390,8 +389,7 @@ export async function removeColor(
     }
     ctx.putImageData(imageData, 0, 0);
     return canvas.toBuffer("image/png");
-  } catch (error) {
-    if (error instanceof ApexifyError) throw error;
+  } catch {
     emitDiagnostic({ level: "warn", code: "COLOR_REMOVAL_FAILED", message: "Color removal failed." });
     return undefined;
   }
