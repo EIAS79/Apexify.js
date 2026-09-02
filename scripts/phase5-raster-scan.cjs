@@ -41,8 +41,8 @@ for (const file of walk(SOURCE)) {
   if (!isRasterRelevant(rel)) continue;
   const text = fs.readFileSync(file, 'utf8');
 
-  if (/\bJimp\b|from\s+["']jimp["']/.test(text)) {
-    failures.push(`${rel}: Jimp remains in the raster pipeline`);
+  if (/from\s+["']jimp["']|require\s*\(\s*["']jimp["']\s*\)/.test(text)) {
+    failures.push(`${rel}: executable Jimp dependency remains in the raster pipeline`);
   }
   if (/\bresolveMediaPath\b|media-path\.ts/.test(text)) {
     failures.push(`${rel}: obsolete image path resolver remains`);
@@ -57,11 +57,18 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: unfinished raster marker remains`);
   }
 
-  // Explicit numeric zero must not be replaced by fallback defaults.
-  const suspiciousDefault = /(?:\.|\b)(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY|opacity|rotation|scale|blur|radius|size|levels|value|width|height)\s*\|\|/g;
+  // Executable option/property defaults are the dangerous case: `props.x || 10`
+  // silently overwrites an explicit zero. Requiring a property access avoids false
+  // positives from ordinary boolean expressions such as `a.height !== h || ...`.
+  const suspiciousDefault = /\.(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY|opacity|rotation|scale|blur|radius|size|levels|value|width|height)\s*\|\|/g;
   if (suspiciousDefault.test(text)) {
-    failures.push(`${rel}: suspicious || numeric default; preserve explicit zero with ?? or explicit checks`);
+    failures.push(`${rel}: suspicious || numeric property default; preserve explicit zero with ?? or explicit checks`);
   }
+}
+
+const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+if (packageJson.dependencies?.jimp || packageJson.optionalDependencies?.jimp) {
+  failures.push('package.json: Jimp remains a production dependency after the Sharp/RAW filter migration');
 }
 
 if (failures.length) {
