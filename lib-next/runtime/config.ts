@@ -13,7 +13,10 @@ export interface RenderLimits {
   maxRemoteAssets: number;
   maxRemoteImageBytes: number;
   maxRemoteVideoBytes: number;
+  maxImageSourceBytes: number;
   maxDecodedImagePixels: number;
+  maxDecodedImageFrames: number;
+  maxSvgElements: number;
   maxGifFrames: number;
   maxGifDimension: number;
   maxGifResourceCost: number;
@@ -125,7 +128,10 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
     maxRemoteAssets: 128,
     maxRemoteImageBytes: 32 * 1024 * 1024,
     maxRemoteVideoBytes: 512 * 1024 * 1024,
+    maxImageSourceBytes: 64 * 1024 * 1024,
     maxDecodedImagePixels: 67_108_864,
+    maxDecodedImageFrames: 128,
+    maxSvgElements: 10_000,
     maxGifFrames: 1_000,
     maxGifDimension: 4_096,
     maxGifResourceCost: 268_435_456,
@@ -227,6 +233,9 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
   }
   if (limits.maxBatchConcurrency > limits.maxBatchOperations) {
     throw new ApexifyConfigError("limits.maxBatchConcurrency must be <= limits.maxBatchOperations.");
+  }
+  if (limits.maxRemoteImageBytes > limits.maxImageSourceBytes) {
+    throw new ApexifyConfigError("limits.maxRemoteImageBytes must be <= limits.maxImageSourceBytes.");
   }
   cache.ttlMs = finitePositive("cache.ttlMs", cache.ttlMs);
   cache.maxEntries = Math.floor(finitePositive("cache.maxEntries", cache.maxEntries));
