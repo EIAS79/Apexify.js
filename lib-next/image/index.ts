@@ -7,7 +7,6 @@ export {
   fitInto,
   loadImageCached,
   drawBoxBackground,
-  loadImages,
 } from "./image-properties";
 
 export * from "./image-mask";
