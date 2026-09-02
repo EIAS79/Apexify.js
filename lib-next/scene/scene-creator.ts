@@ -1,4 +1,4 @@
-import { loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
+import { type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { getCanvasContext } from "../core/errors";
 import type {
   SceneLayer,
@@ -13,6 +13,7 @@ import { customLines } from "../path/custom-lines";
 import { validateSceneCustomLinesOptions } from "./scene-normalizer";
 import { validateSceneRenderInput } from "./scene-validation";
 import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
+import { decodeImageSource } from "../image/image-source-validation";
 
 function drawSurfaceOntoParent(
   ctx: SKRSContext2D,
@@ -32,6 +33,10 @@ function drawSurfaceOntoParent(
   ctx.translate(-w / 2, -h / 2);
   ctx.drawImage(surfaceImage, 0, 0, w, h);
   ctx.restore();
+}
+
+async function decodeSceneBuffer(buffer: Buffer, label: string): Promise<Image> {
+  return decodeImageSource(buffer, { label, requireCanvasBudget: true });
 }
 
 /** Composes root and nested surfaces to one PNG using paint-onto-context. */
@@ -55,7 +60,7 @@ export class SceneCreator {
           this.deps.path2DCreator.drawPathOntoContext(ctx, layer.path, size, layer.options);
           break;
         case "imageBuffer": {
-          const img = await loadImage(layer.buffer);
+          const img = await decodeSceneBuffer(layer.buffer, "scene imageBuffer layer");
           const dw = layer.width ?? img.width;
           const dh = layer.height ?? img.height;
           ctx.save();
@@ -67,7 +72,7 @@ export class SceneCreator {
         }
         case "chart": {
           const chartBuf = await this.deps.chartCreator.createChart(layer.chartType, layer.data, layer.options);
-          const chartImg = await loadImage(chartBuf);
+          const chartImg = await decodeSceneBuffer(chartBuf, "scene chart layer");
           const dw = layer.width ?? chartImg.width;
           const dh = layer.height ?? chartImg.height;
           ctx.save();
@@ -78,7 +83,7 @@ export class SceneCreator {
         }
         case "chartComparison": {
           const chartBuf = await this.deps.chartCreator.createComparisonChart(layer.options);
-          const chartImg = await loadImage(chartBuf);
+          const chartImg = await decodeSceneBuffer(chartBuf, "scene comparison chart layer");
           const dw = layer.width ?? chartImg.width;
           const dh = layer.height ?? chartImg.height;
           ctx.save();
@@ -89,7 +94,7 @@ export class SceneCreator {
         }
         case "chartCombo": {
           const chartBuf = await this.deps.chartCreator.createComboChart(layer.options);
-          const chartImg = await loadImage(chartBuf);
+          const chartImg = await decodeSceneBuffer(chartBuf, "scene combo chart layer");
           const dw = layer.width ?? chartImg.width;
           const dh = layer.height ?? chartImg.height;
           ctx.save();
@@ -106,7 +111,7 @@ export class SceneCreator {
         }
         case "surface": {
           const buf = await this.renderSurface(layer);
-          const surfImg = await loadImage(buf);
+          const surfImg = await decodeSceneBuffer(buf, "scene nested surface");
           drawSurfaceOntoParent(ctx, surfImg, layer.placement);
           break;
         }
