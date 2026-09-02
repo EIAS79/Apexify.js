@@ -61,6 +61,9 @@ for (const file of walk(SOURCE)) {
   if (/\b(?:readFileSync|writeFileSync|existsSync|mkdirSync|rmSync)\s*\(/.test(text)) {
     failures.push(`${rel}: synchronous filesystem call remains on a raster/render path`);
   }
+  if (/\bMath\.random\s*\(/.test(text)) {
+    failures.push(`${rel}: nondeterministic Math.random remains on a raster/render path`);
+  }
   if (/\b(?:TODO|FIXME)\b|\bnot implemented\b|\bstub\b/i.test(text)) {
     failures.push(`${rel}: unfinished raster marker remains`);
   }
@@ -75,9 +78,35 @@ for (const file of walk(SOURCE)) {
   }
 }
 
+const generalFunctions = fs.readFileSync(path.join(ROOT, 'lib-next/core/general-functions.ts'), 'utf8');
+const detectStart = generalFunctions.indexOf('export async function detectColors');
+const detectEnd = generalFunctions.indexOf('/** Remove one exact RGB color', detectStart);
+if (detectStart < 0 || detectEnd < 0) {
+  failures.push('lib-next/core/general-functions.ts: detectColors implementation could not be located');
+} else {
+  const detectColors = generalFunctions.slice(detectStart, detectEnd);
+  if (/\bloadImageCached\s*\(/.test(detectColors) || /\bgetImageData\s*\(/.test(detectColors)) {
+    failures.push('lib-next/core/general-functions.ts: detectColors regressed to full decoded-canvas pixel enumeration');
+  }
+  if (!/\.resize\s*\(\s*\{[^}]*width:\s*160[^}]*height:\s*160/s.test(detectColors)) {
+    failures.push('lib-next/core/general-functions.ts: detectColors must downsample before palette extraction');
+  }
+  if (!/\.slice\s*\(\s*0\s*,\s*16\s*\)/.test(detectColors)) {
+    failures.push('lib-next/core/general-functions.ts: detectColors palette must remain explicitly bounded');
+  }
+}
+if (/function\s+applyBlur\s*\(/.test(generalFunctions)) {
+  failures.push('lib-next/core/general-functions.ts: legacy quadratic blur loop remains after native filter migration');
+}
+
 const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 if (packageJson.dependencies?.jimp || packageJson.optionalDependencies?.jimp) {
   failures.push('package.json: Jimp remains a production dependency after the Sharp/RAW filter migration');
+}
+
+const lock = fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8');
+if (/"node_modules\/(?:@jimp\/|jimp")/.test(lock)) {
+  failures.push('package-lock.json: Jimp packages remain in the locked dependency graph');
 }
 
 if (failures.length) {
