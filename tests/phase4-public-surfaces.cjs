@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createCanvas } = require('@napi-rs/canvas');
 const phase4 = require('../node_modules/.cache/apexify-phase4/phase4-entry.cjs');
 const {
@@ -108,7 +111,39 @@ async function main() {
     ));
   }
 
+  const saveLimitDir = path.join(os.tmpdir(), `apexify-phase4-save-limit-${process.pid}`);
+  fs.rmSync(saveLimitDir, { recursive: true, force: true });
+  await withLimits({ maxCollectionItems: 2 }, async () => {
+    await expectFailure(
+      'saveMultiple collection budget before directory creation',
+      () => painter.saveMultiple([Buffer.from('a'), Buffer.from('b'), Buffer.from('c')], { directory: saveLimitDir }),
+      (error) => error instanceof ApexifyResourceLimitError && error.limit === 'maxCollectionItems'
+    );
+    assert.equal(fs.existsSync(saveLimitDir), false, 'saveMultiple must reject before creating its directory');
+  });
+
   resetApexifyRuntimeConfig();
+  const invalidSaveDir = path.join(os.tmpdir(), `apexify-phase4-invalid-save-${process.pid}`);
+  fs.rmSync(invalidSaveDir, { recursive: true, force: true });
+  await expectFailure(
+    'save option validation before directory creation',
+    () => painter.save(Buffer.from('not-written'), { directory: invalidSaveDir, quality: 0 }),
+    (error) => error instanceof ApexifyInputError && /quality/i.test(error.message)
+  );
+  assert.equal(fs.existsSync(invalidSaveDir), false, 'invalid save options must not create the output directory');
+
+  await expectFailure(
+    'output encoder empty-byte validation',
+    () => painter.output.base64(new Uint8Array()),
+    (error) => error instanceof ApexifyInputError && /non-empty/i.test(error.message)
+  );
+
+  await expectFailure(
+    'output upload buffer validation before network/client creation',
+    () => painter.output.url(Buffer.alloc(0), {}),
+    (error) => error instanceof ApexifyInputError && /non-empty/i.test(error.message)
+  );
+
   await expectFailure(
     'pixel coordinate validation before decode',
     () => painter.pixels.getColor(Buffer.alloc(0), Number.NaN, 0),
@@ -128,7 +163,7 @@ async function main() {
   );
 
   resetApexifyRuntimeConfig();
-  console.log(`phase4-public-surfaces: ${resourceCases.length} resource guards and 3 invalid-input guards passed.`);
+  console.log(`phase4-public-surfaces: ${resourceCases.length + 1} resource guards and 6 invalid-input/early-rejection guards passed.`);
 }
 
 main().catch((error) => {
