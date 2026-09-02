@@ -2,7 +2,7 @@ import { loadImage, type Image } from "@napi-rs/canvas";
 import { promises as fs } from "node:fs";
 import sharp from "sharp";
 import type { MediaSource } from "../media/source";
-import { resolveMediaInput } from "../media/source";
+import { decodeImageDataUrl, normalizeMediaSource, resolveMediaInput } from "../media/source";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import {
   ApexifyDecodeError,
@@ -41,7 +41,10 @@ function looksLikeSvg(buffer: Buffer): boolean {
 
 function assertSvgPolicy(text: string, label: string): void {
   const limits = getDefaultApexifyRuntimeConfig().limits;
-  const elementCount = (text.match(/<(?:svg|g|defs|path|rect|circle|ellipse|line|polyline|polygon|text|image|use|mask|clipPath|filter|linearGradient|radialGradient|pattern)\b/gi) ?? []).length;
+  // Count every opening XML element, including namespaced and less-common valid SVG
+  // elements such as stop/tspan/symbol/marker/a. A whitelist can be bypassed by
+  // repeating elements it forgot to name, so complexity accounting must be generic.
+  const elementCount = (text.match(/<(?![!?/])(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*\b/g) ?? []).length;
   if (elementCount > limits.maxSvgElements) {
     throw new ApexifyResourceLimitError("maxSvgElements", limits.maxSvgElements, elementCount);
   }
@@ -104,6 +107,21 @@ async function sourceSizeAndSvgText(resolved: string | Buffer, label: string): P
   };
 }
 
+async function resolveImageSource(source: MediaSource): Promise<string | Buffer> {
+  const normalized = normalizeMediaSource(source);
+  // Byte-backed and data-URL images are local inputs. Do not subject them to the
+  // smaller maxRemoteImageBytes transport cap; sourceSizeAndSvgText applies the
+  // authoritative maxImageSourceBytes limit immediately afterward.
+  if (Buffer.isBuffer(normalized)) return normalized;
+  const trimmed = normalized.trim();
+  if (/^data:/i.test(trimmed)) {
+    const decoded = decodeImageDataUrl(trimmed);
+    if (!decoded) throw new ApexifyDecodeError("Only base64 data:image URLs are supported as image sources.");
+    return decoded;
+  }
+  return resolveMediaInput(normalized, { kind: "image" });
+}
+
 /**
  * Authoritative raster-image preflight. It resolves through the shared media layer,
  * bounds source bytes, inspects native metadata before full decode, applies decoded
@@ -115,7 +133,7 @@ export async function inspectImageSource(
 ): Promise<InspectedImageSource> {
   const label = options.label ?? "image source";
   try {
-    const resolved = await resolveMediaInput(source, { kind: "image" });
+    const resolved = await resolveImageSource(source);
     const { bytes, svgText } = await sourceSizeAndSvgText(resolved, label);
     if (svgText !== undefined) assertSvgPolicy(svgText, label);
 
