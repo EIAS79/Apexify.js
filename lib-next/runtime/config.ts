@@ -183,6 +183,12 @@ function optionalNonEmptyString(name: string, value: string | undefined): string
   return value;
 }
 
+const CONTINUOUS_RENDER_LIMITS = new Set<keyof RenderLimits>([
+  "maxAudioDurationSeconds",
+  "maxVideoDurationSeconds",
+  "maxVideoFps",
+]);
+
 export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {}): Readonly<ApexifyRuntimeConfig> {
   const network: NetworkRuntimeConfig = {
     ...DEFAULT_APEXIFY_RUNTIME_CONFIG.network,
@@ -211,7 +217,11 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
     throw new ApexifyConfigError("network.trustedNetworkAccess requires at least one explicit network.allowedHosts entry.");
   }
 
-  for (const [key, value] of Object.entries(limits)) finitePositiveInteger(`limits.${key}`, value);
+  for (const [rawKey, value] of Object.entries(limits)) {
+    const key = rawKey as keyof RenderLimits;
+    if (CONTINUOUS_RENDER_LIMITS.has(key)) finitePositive(`limits.${key}`, value);
+    else finitePositiveInteger(`limits.${key}`, value);
+  }
   if (limits.maxSceneDepth > limits.maxNestedSurfaces) {
     throw new ApexifyConfigError("limits.maxSceneDepth must be <= limits.maxNestedSurfaces.");
   }

@@ -13,25 +13,61 @@ export interface SceneValidationOptions { maxSurfaceDepth?: number; }
 interface SceneCounters { layers: number; surfaces: number; remoteAssets: number; charts: number; images: number; textLayers: number; textContent: number; }
 
 function isRemoteString(value: unknown): boolean { return typeof value === "string" && /^https?:\/\//i.test(value); }
-function countRemoteLeaves(value: unknown, depth = 0): number {
-  if (depth > 12 || value == null || Buffer.isBuffer(value) || value instanceof Uint8Array) return 0;
-  if (isRemoteString(value)) return 1;
-  if (Array.isArray(value)) return value.reduce<number>((sum, item) => sum + countRemoteLeaves(item, depth + 1), 0);
-  if (typeof value === "object") return Object.values(value as Record<string, unknown>).reduce<number>((sum, child) => sum + countRemoteLeaves(child, depth + 1), 0);
-  return 0;
+function countRemoteSource(value: unknown): number { return isRemoteString(value) ? 1 : 0; }
+
+function countPatternRemoteSource(pattern: unknown): number {
+  if (!pattern || typeof pattern !== "object" || Array.isArray(pattern) || Buffer.isBuffer(pattern)) return 0;
+  return countRemoteSource((pattern as { customPatternImage?: unknown }).customPatternImage);
+}
+
+function countCanvasBackgroundRemoteSources(background: unknown): number {
+  if (!background || typeof background !== "object" || Array.isArray(background) || Buffer.isBuffer(background)) return 0;
+  const value = background as {
+    customBg?: { source?: unknown };
+    videoBg?: { source?: unknown };
+    patternBg?: unknown;
+    bgLayers?: Array<{
+      type?: unknown;
+      source?: unknown;
+      pattern?: unknown;
+    }>;
+  };
+
+  let total = countRemoteSource(value.customBg?.source) + countRemoteSource(value.videoBg?.source);
+  total += countPatternRemoteSource(value.patternBg);
+  for (const layer of value.bgLayers ?? []) {
+    if (layer?.type === "image" || layer?.type === "pattern") total += countRemoteSource(layer.source);
+    else if (layer?.type === "presetPattern") total += countPatternRemoteSource(layer.pattern);
+  }
+  return total;
+}
+
+function countImageLayerRemoteSources(layer: Extract<SceneLayer, { type: "image" }>): number {
+  const images = Array.isArray(layer.images) ? layer.images : [layer.images];
+  let total = 0;
+  for (const image of images) {
+    total += countRemoteSource(image.source);
+    total += countRemoteSource(image.mask?.source);
+  }
+  total += countRemoteSource(layer.options?.groupTransform?.mask?.source);
+  return total;
+}
+
+function addRemoteAssets(counters: SceneCounters, count: number): void {
+  counters.remoteAssets += count;
+  assertWithinLimit("maxRemoteAssets", counters.remoteAssets);
 }
 
 function validateLayer(layer: SceneLayer, depth: number, maxDepth: number, counters: SceneCounters, path: string): void {
   assertRecord(layer, path);
   if (typeof layer.type !== "string") throw new ApexifyInputError(`${path}.type must be a string.`);
   counters.layers += 1;
-  counters.remoteAssets += countRemoteLeaves(layer);
   assertWithinLimit("maxSceneLayers", counters.layers);
-  assertWithinLimit("maxRemoteAssets", counters.remoteAssets);
   assertFiniteNumericLeaves(layer, path);
 
   switch (layer.type) {
     case "image": {
+      addRemoteAssets(counters, countImageLayerRemoteSources(layer));
       const list = validateImageInput(layer.images, layer.options);
       counters.images += list.length;
       assertWithinLimit("maxCollectionItems", counters.images);
@@ -82,7 +118,10 @@ function validateLayer(layer: SceneLayer, depth: number, maxDepth: number, count
       if (p.scaleX !== undefined) assertFiniteNumber(p.scaleX, `${path}.placement.scaleX`, { min: 0, exclusiveMin: true });
       if (p.scaleY !== undefined) assertFiniteNumber(p.scaleY, `${path}.placement.scaleY`, { min: 0, exclusiveMin: true });
       if (p.rotation !== undefined) assertFiniteNumber(p.rotation, `${path}.placement.rotation`);
-      if (layer.background !== undefined) validateCanvasConfig({ ...layer.background, width: p.width, height: p.height });
+      if (layer.background !== undefined) {
+        addRemoteAssets(counters, countCanvasBackgroundRemoteSources(layer.background));
+        validateCanvasConfig({ ...layer.background, width: p.width, height: p.height });
+      }
       assertCollection(layer.layers, `${path}.layers`);
       layer.layers.forEach((child, i) => validateLayer(child, depth + 1, maxDepth, counters, `${path}.layers[${i}]`)); return;
     }
@@ -103,7 +142,15 @@ export function validateSceneRenderInput(input: SceneRenderInput, options: Scene
     if (options.maxSurfaceDepth > configured) throw new ApexifyResourceLimitError("maxSceneDepth", configured, options.maxSurfaceDepth);
     maxDepth = options.maxSurfaceDepth;
   }
-  const counters: SceneCounters = { layers: 0, surfaces: 0, remoteAssets: countRemoteLeaves(input.background), charts: 0, images: 0, textLayers: 0, textContent: 0 };
+  const counters: SceneCounters = {
+    layers: 0,
+    surfaces: 0,
+    remoteAssets: countCanvasBackgroundRemoteSources(input.background),
+    charts: 0,
+    images: 0,
+    textLayers: 0,
+    textContent: 0,
+  };
   assertWithinLimit("maxRemoteAssets", counters.remoteAssets);
   input.layers.forEach((layer, i) => validateLayer(layer, 1, maxDepth, counters, `scene.layers[${i}]`));
 }
