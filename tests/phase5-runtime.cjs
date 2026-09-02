@@ -22,6 +22,10 @@ function canvasFromPixels(width, height, pixels) {
   return { canvas, ctx };
 }
 
+function raster(ctx, width = ctx.canvas.width, height = ctx.canvas.height) {
+  return [...ctx.getImageData(0, 0, width, height).data];
+}
+
 async function expectError(fn, predicate, label) {
   let caught;
   try {
@@ -110,12 +114,7 @@ async function main() {
     const canvas = createCanvas(8, 2);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = api.createGradientFill(ctx, {
-      type: 'linear',
-      startX: 0,
-      startY: 0,
-      endX: 4,
-      endY: 0,
-      repeat: 'repeat',
+      type: 'linear', startX: 0, startY: 0, endX: 4, endY: 0, repeat: 'repeat',
       colors: [{ stop: 1, color: '#0000ff' }, { stop: 0, color: '#ff0000' }],
     }, { x: 0, y: 0, w: 4, h: 2 });
     ctx.fillRect(0, 0, 8, 2);
@@ -126,12 +125,7 @@ async function main() {
     const canvas = createCanvas(8, 2);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = api.createGradientFill(ctx, {
-      type: 'linear',
-      startX: 0,
-      startY: 0,
-      endX: 4,
-      endY: 0,
-      repeat: 'reflect',
+      type: 'linear', startX: 0, startY: 0, endX: 4, endY: 0, repeat: 'reflect',
       colors: [{ stop: 0, color: '#ff0000' }, { stop: 1, color: '#0000ff' }],
     }, { x: 0, y: 0, w: 4, h: 2 });
     ctx.fillRect(0, 0, 8, 2);
@@ -143,13 +137,7 @@ async function main() {
     const canvas = createCanvas(8, 8);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = api.createGradientFill(ctx, {
-      type: 'radial',
-      startX: 0,
-      startY: 0,
-      startRadius: 0,
-      endX: 0,
-      endY: 0,
-      endRadius: 8,
+      type: 'radial', startX: 0, startY: 0, startRadius: 0, endX: 0, endY: 0, endRadius: 8,
       colors: [{ stop: 0, color: '#ffffff' }, { stop: 1, color: '#000000' }],
     }, { x: 0, y: 0, w: 8, h: 8 });
     ctx.fillRect(0, 0, 8, 8);
@@ -162,10 +150,7 @@ async function main() {
     const canvas = createCanvas(8, 8);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = api.createGradientFill(ctx, {
-      type: 'conic',
-      centerX: 0,
-      centerY: 0,
-      startAngle: 0,
+      type: 'conic', centerX: 0, centerY: 0, startAngle: 0,
       colors: [{ stop: 0, color: '#ff0000' }, { stop: 0.5, color: '#00ff00' }, { stop: 1, color: '#0000ff' }],
     }, { x: 0, y: 0, w: 8, h: 8 });
     ctx.fillRect(0, 0, 8, 8);
@@ -177,8 +162,7 @@ async function main() {
       const canvas = createCanvas(4, 4);
       const ctx = canvas.getContext('2d');
       api.createGradientFill(ctx, {
-        type: 'linear',
-        colors: [{ stop: -0.1, color: '#fff' }, { stop: 1, color: '#000' }],
+        type: 'linear', colors: [{ stop: -0.1, color: '#fff' }, { stop: 1, color: '#000' }],
       }, { x: 0, y: 0, w: 4, h: 4 });
     },
     (error) => error.code === 'APEXIFY_INPUT' && /stop/i.test(error.message),
@@ -209,11 +193,46 @@ async function main() {
     const b = canvasFromPixels(16, 16, sourcePixels);
     await api.applyContextImageFilters(a.ctx, [{ type: 'noise', intensity: 0.5 }], 16, 16);
     await api.applyContextImageFilters(b.ctx, [{ type: 'noise', intensity: 0.5 }], 16, 16);
-    assert.deepEqual(
-      [...a.ctx.getImageData(0, 0, 16, 16).data],
-      [...b.ctx.getImageData(0, 0, 16, 16).data],
-      'noise filter must be deterministic for reproducible golden renders'
-    );
+    assert.deepEqual(raster(a.ctx), raster(b.ctx), 'context noise must be deterministic');
+  }
+
+  {
+    const a = canvasFromPixels(16, 16, sourcePixels);
+    const b = canvasFromPixels(16, 16, sourcePixels);
+    api.applyImageFilters(a.ctx, [{ type: 'noise', intensity: 0.5 }], 16, 16);
+    api.applyImageFilters(b.ctx, [{ type: 'noise', intensity: 0.5 }], 16, 16);
+    assert.deepEqual(raster(a.ctx), raster(b.ctx), 'legacy noise must be deterministic');
+
+    const zero = canvasFromPixels(16, 16, sourcePixels);
+    api.applyImageFilters(zero.ctx, [{ type: 'noise', intensity: 0 }], 16, 16);
+    assert.deepEqual(raster(zero.ctx), [...sourcePixels], 'legacy noise intensity=0 must be a no-op');
+  }
+
+  {
+    const a = canvasFromPixels(16, 16, sourcePixels);
+    const b = canvasFromPixels(16, 16, sourcePixels);
+    api.applyFilmGrain(a.ctx, 0.5, 16, 16);
+    api.applyFilmGrain(b.ctx, 0.5, 16, 16);
+    assert.deepEqual(raster(a.ctx), raster(b.ctx), 'film grain must be deterministic');
+
+    const zero = canvasFromPixels(16, 16, sourcePixels);
+    api.applyFilmGrain(zero.ctx, 0, 16, 16);
+    assert.deepEqual(raster(zero.ctx), [...sourcePixels], 'film grain intensity=0 must be a no-op');
+  }
+
+  {
+    const a = createCanvas(16, 16);
+    const b = createCanvas(16, 16);
+    const actx = a.getContext('2d');
+    const bctx = b.getContext('2d');
+    api.applyBackgroundNoise(actx, 16, 16, 0.2);
+    api.applyBackgroundNoise(bctx, 16, 16, 0.2);
+    assert.deepEqual(raster(actx), raster(bctx), 'background noise must be deterministic');
+
+    const zero = createCanvas(16, 16);
+    const zctx = zero.getContext('2d');
+    api.applyBackgroundNoise(zctx, 16, 16, 0);
+    assert.ok(raster(zctx).every((value) => value === 0), 'background noise intensity=0 must be a no-op');
   }
 
   {
@@ -221,11 +240,7 @@ async function main() {
     const center = canvasFromPixels(16, 16, sourcePixels);
     await api.applyContextImageFilters(zero.ctx, [{ type: 'radialBlur', intensity: 12, centerX: 0, centerY: 0 }], 16, 16);
     await api.applyContextImageFilters(center.ctx, [{ type: 'radialBlur', intensity: 12, centerX: 8, centerY: 8 }], 16, 16);
-    assert.notDeepEqual(
-      [...zero.ctx.getImageData(0, 0, 16, 16).data],
-      [...center.ctx.getImageData(0, 0, 16, 16).data],
-      'radial blur centerX=0/centerY=0 must not fall back to canvas center'
-    );
+    assert.notDeepEqual(raster(zero.ctx), raster(center.ctx), 'radial blur centerX=0/centerY=0 must not fall back to canvas center');
   }
 
   await expectError(
@@ -263,7 +278,7 @@ async function main() {
 
   api.resetApexifyRuntimeConfig();
   api.clearDecodedImageCache();
-  console.log('phase5-runtime: decode preflight, SVG policy, cache, gradients, zero defaults, filters, palette, and legacy blur passed.');
+  console.log('phase5-runtime: decode preflight, SVG policy, cache, gradients, zero defaults, deterministic filters, palette, and legacy blur passed.');
 }
 
 main().catch((error) => {
