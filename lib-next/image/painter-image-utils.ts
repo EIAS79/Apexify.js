@@ -17,8 +17,8 @@ import { blendImageLayers } from "./layer-blend";
 import { cropRasterImage } from "./crop-raster";
 import { applyRasterMask } from "./raster-masking";
 import { blendGradientOverImage } from "./gradient-blend";
-import { resolveMediaInput } from "../media/source";
 import { loadImageCached } from "./image-properties";
+import { inspectImageSource } from "./image-source-validation";
 import { validHex as assertValidHex } from "../core/color";
 import { getErrorMessage } from "../core/errors";
 import { ApexifyDecodeError, ApexifyError, ApexifyExternalServiceError } from "../runtime/errors";
@@ -42,7 +42,7 @@ import {
 } from "./image-utils-validation";
 
 async function preflightImageSource(source: string | Buffer): Promise<void> {
-  await loadImageCached(source);
+  await inspectImageSource(source, { label: "image source" });
 }
 
 async function preflightCanvasSource(source: string | Buffer): Promise<void> {
@@ -51,7 +51,7 @@ async function preflightCanvasSource(source: string | Buffer): Promise<void> {
 }
 
 async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
-  const source = await resolveMediaInput(options.imagePath, { kind: "image" });
+  const inspected = await inspectImageSource(options.imagePath, { label: "resize source" });
   const resizeOptions: SharpResizeOptions = {
     width: options.size?.width ?? 500,
     height: options.size?.height ?? 500,
@@ -59,12 +59,16 @@ async function resizeResolved(options: ResizeOptions): Promise<Buffer> {
     kernel: sharp.kernel.lanczos3,
     withoutEnlargement: true,
   };
-  return sharp(source).resize(resizeOptions).png({ quality: options.quality ?? 90 }).toBuffer();
+  const pipeline = sharp(inspected.resolved).resize(resizeOptions);
+  const quality = options.quality ?? 90;
+  return options.outputFormat === "jpeg"
+    ? pipeline.jpeg({ quality }).toBuffer()
+    : pipeline.png({ quality }).toBuffer();
 }
 
 async function convertResolved(source: string | Buffer, newExtension: string): Promise<Buffer> {
-  const resolved = await resolveMediaInput(source, { kind: "image" });
-  return sharp(resolved).toFormat(newExtension.toLowerCase() as keyof FormatEnum).toBuffer();
+  const inspected = await inspectImageSource(source, { label: "convert source" });
+  return sharp(inspected.resolved).toFormat(newExtension.toLowerCase() as keyof FormatEnum).toBuffer();
 }
 
 function rethrowDecode(error: unknown, label: string): never {
@@ -98,7 +102,6 @@ export const painterImageUtils: PainterImageUtils = {
   async compress(image, options) {
     validateCompressionInputs(image, options);
     try {
-      await preflightImageSource(image);
       return await compressImage(image, options);
     } catch (error) {
       rethrowDecode(error, "compress");
@@ -108,7 +111,6 @@ export const painterImageUtils: PainterImageUtils = {
   async extractPalette(image, options) {
     validatePaletteInputs(image, options);
     try {
-      await preflightImageSource(image);
       return await extractPalette(image, options);
     } catch (error) {
       rethrowDecode(error, "extractPalette");
@@ -118,7 +120,6 @@ export const painterImageUtils: PainterImageUtils = {
   async resize(resizeOptions) {
     validateResizeInputs(resizeOptions);
     try {
-      await preflightImageSource(resizeOptions.imagePath);
       return await resizeResolved(resizeOptions);
     } catch (error) {
       rethrowDecode(error, "resize");
@@ -128,7 +129,6 @@ export const painterImageUtils: PainterImageUtils = {
   async imgConverter(source, newExtension) {
     validateConverterInputs(source, newExtension);
     try {
-      await preflightImageSource(source);
       return await convertResolved(source, newExtension);
     } catch (error) {
       rethrowDecode(error, "imgConverter");
