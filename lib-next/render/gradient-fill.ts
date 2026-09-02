@@ -12,7 +12,21 @@ function rotatePoint(x: number, y: number, px: number, py: number, deg = 0): [nu
 }
 
 function addStops(grad: CanvasGradient, colors: GradientType["colors"]): void {
-  for (const cs of colors) grad.addColorStop(cs.stop, cs.color);
+  if (!Array.isArray(colors) || colors.length < 2) {
+    throw new ApexifyInputError("Gradient colors must contain at least two stops.");
+  }
+
+  const ordered = colors.map((stop, index) => {
+    if (!stop || !Number.isFinite(stop.stop) || stop.stop < 0 || stop.stop > 1) {
+      throw new ApexifyInputError(`Gradient colors[${index}].stop must be a finite number between 0 and 1.`);
+    }
+    if (typeof stop.color !== "string" || stop.color.trim().length === 0) {
+      throw new ApexifyInputError(`Gradient colors[${index}].color must be a non-empty color string.`);
+    }
+    return stop;
+  }).sort((a, b) => a.stop - b.stop);
+
+  for (const cs of ordered) grad.addColorStop(cs.stop, cs.color);
 }
 
 function assertLinearGeometry(sx: number, sy: number, ex: number, ey: number): void {
