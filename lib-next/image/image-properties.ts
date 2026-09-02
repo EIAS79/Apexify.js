@@ -2,6 +2,7 @@ import type { Image, SKRSContext2D } from "@napi-rs/canvas";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AlignMode, FitMode, BoxBackground } from "../types";
 import { buildPath } from "../render/clip-path";
 import { createGradientFill } from "../render/gradient-fill";
@@ -46,7 +47,9 @@ function digestCacheKey(value: string): string {
 }
 
 async function sourceCacheKey(src: MediaSource): Promise<string | undefined> {
-  const raw = src instanceof URL ? src.toString() : src;
+  const raw = src instanceof URL
+    ? (src.protocol === "file:" ? fileURLToPath(src) : src.toString())
+    : src;
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
   if (/^https?:\/\//i.test(trimmed)) return `remote:${digestCacheKey(trimmed)}`;
