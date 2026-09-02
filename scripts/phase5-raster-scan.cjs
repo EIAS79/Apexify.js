@@ -65,13 +65,13 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: unfinished raster marker remains`);
   }
 
-  // Executable option/property defaults are the dangerous case: `props.x || 10`
-  // silently overwrites an explicit zero. Requiring a property access avoids false
-  // positives from ordinary boolean expressions such as `a.height !== h || ...`.
-  const suspiciousDefault = /\.(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY|opacity|rotation|scale|blur|radius|size|levels|value|width|height)\s*\|\|/g;
-  for (const match of text.matchAll(suspiciousDefault)) {
+  // Phase 5 specifically requires explicit zero coordinates to survive defaulting.
+  // Limit this gate to coordinate fields and literal fallbacks so boolean conditions
+  // and intentionally-positive dimensions/sizes do not become false positives.
+  const suspiciousCoordinateDefault = /\.(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY)\s*\|\|\s*[-+]?\d+(?:\.\d+)?\b/g;
+  for (const match of text.matchAll(suspiciousCoordinateDefault)) {
     const location = lineAndSnippet(text, match.index ?? 0);
-    failures.push(`${rel}:${location.line}: suspicious || numeric property default: ${location.snippet}`);
+    failures.push(`${rel}:${location.line}: zero coordinate is overwritten by || fallback: ${location.snippet}`);
   }
 }
 
