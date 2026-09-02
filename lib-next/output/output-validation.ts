@@ -65,9 +65,10 @@ export async function validateSaveMultipleRequest(buffers: unknown, options?: Sa
   validateSaveOptions(options);
   const format = options?.format ?? "png";
   for (let i = 0; i < buffers.length; i++) {
-    validateOutputBuffer(buffers[i], `saveMultiple.buffers[${i}]`);
+    const buffer: unknown = buffers[i];
+    validateOutputBuffer(buffer, `saveMultiple.buffers[${i}]`);
     if (format === "jpg" || format === "jpeg" || format === "webp" || format === "avif") {
-      await inspectDecodedImageSource(buffers[i], {
+      await inspectDecodedImageSource(buffer, {
         label: `saveMultiple.buffers[${i}]`,
         requireCanvasBudget: true,
       });
