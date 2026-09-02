@@ -101,18 +101,19 @@ export function validateResizeInputs(options: ResizeOptions): void {
   } else {
     assertCanvasResourceLimits(500, 500);
   }
-  assertOptionalFiniteNumber(options.quality, "image.resize.options.quality", { min: 0, max: 100 });
+  assertOptionalFiniteNumber(options.quality, "image.resize.options.quality", { min: 1, max: 100, integer: true });
   if (options.maintainAspectRatio !== undefined && typeof options.maintainAspectRatio !== "boolean") {
     throw new ApexifyInputError("image.resize.options.maintainAspectRatio must be boolean.");
   }
+  assertOptionalEnum(options.outputFormat, "image.resize.options.outputFormat", ["png", "jpeg"] as const);
 }
 
 export function validateConverterInputs(source: string | Buffer, newExtension: string): void {
   assertSource(source, "image.imgConverter.source");
   assertNonEmptyString(newExtension, "image.imgConverter.newExtension", 16);
   const extension = newExtension.toLowerCase();
-  if (!["jpeg", "png", "webp", "tiff", "gif", "avif", "heif", "raw", "pdf", "svg"].includes(extension)) {
-    throw new ApexifyInputError("image.imgConverter.newExtension is unsupported.");
+  if (!["jpeg", "jpg", "png", "webp", "tiff", "gif", "avif", "heif", "raw", "jp2", "jxl"].includes(extension)) {
+    throw new ApexifyInputError("image.imgConverter.newExtension is unsupported by the Sharp output backend.");
   }
 }
 
