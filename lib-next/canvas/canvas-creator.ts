@@ -9,8 +9,8 @@ import {
   applyCanvasZoom,
   applyNoise,
   drawBackgroundLayers,
-  resolveMediaPath,
 } from "./background-renderer";
+import { validateCanvasConfig, validateInheritedCanvasDimensions } from "./canvas-validation";
 import { buildPath, applyRotation } from "../render/clip-path";
 import { applyShadow } from "../render/shadow-renderer";
 import { applyStroke } from "../render/stroke-renderer";
@@ -18,7 +18,7 @@ import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { applyContextImageFilters } from "../render/context-image-filters";
 import { assertCanvasResourceLimits } from "../runtime/limits";
 import { emitDiagnostic } from "../runtime/diagnostics";
-import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 
 export type { CanvasResults };
 
@@ -47,73 +47,16 @@ export class CanvasCreator {
     this.extractVideoFrame = method;
   }
 
-  private validateCanvasConfig(canvas: CanvasConfig): void {
-    if (!canvas) throw new Error("createCanvas: canvas configuration is required.");
-    if (canvas.width !== undefined && (typeof canvas.width !== "number" || !Number.isFinite(canvas.width) || canvas.width <= 0)) {
-      throw new Error("createCanvas: width must be a finite positive number.");
-    }
-    if (canvas.height !== undefined && (typeof canvas.height !== "number" || !Number.isFinite(canvas.height) || canvas.height <= 0)) {
-      throw new Error("createCanvas: height must be a finite positive number.");
-    }
-    if (canvas.opacity !== undefined && (typeof canvas.opacity !== "number" || canvas.opacity < 0 || canvas.opacity > 1)) {
-      throw new Error("createCanvas: opacity must be a number between 0 and 1.");
-    }
-    if (canvas.zoom?.scale !== undefined && (typeof canvas.zoom.scale !== "number" || canvas.zoom.scale <= 0)) {
-      throw new Error("createCanvas: zoom.scale must be a positive number.");
-    }
-
-    if (canvas.bgLayers !== undefined) {
-      if (!Array.isArray(canvas.bgLayers)) throw new Error("createCanvas: bgLayers must be an array.");
-      const allowed = new Set(["color", "gradient", "image", "pattern", "presetPattern", "noise"]);
-      for (let i = 0; i < canvas.bgLayers.length; i++) {
-        const layer = canvas.bgLayers[i];
-        if (!layer || typeof layer !== "object" || !("type" in layer)) {
-          throw new Error(`createCanvas: bgLayers[${i}] must be an object with a type field.`);
-        }
-        if (!allowed.has(layer.type)) {
-          throw new Error(`createCanvas: bgLayers[${i}].type must be one of color, gradient, image, pattern, presetPattern, noise (got "${String((layer as { type: string }).type)}").`);
-        }
-        const layerOpacity = "opacity" in layer ? (layer as { opacity?: number }).opacity : undefined;
-        if (layerOpacity !== undefined && (typeof layerOpacity !== "number" || layerOpacity < 0 || layerOpacity > 1)) {
-          throw new Error(`createCanvas: bgLayers[${i}].opacity must be between 0 and 1.`);
-        }
-        if (layer.type === "color" && typeof (layer as { value?: unknown }).value !== "string") {
-          throw new Error(`createCanvas: bgLayers[${i}].value must be a string for color layers.`);
-        }
-        if (layer.type === "gradient") {
-          const g = (layer as { value?: { type?: string } }).value;
-          if (!g || typeof g !== "object" || !g.type) throw new Error(`createCanvas: bgLayers[${i}].value must be a gradient object with type.`);
-        }
-        if (layer.type === "image" || layer.type === "pattern") {
-          const src = (layer as { source?: unknown }).source;
-          if (typeof src !== "string" || !src.trim()) throw new Error(`createCanvas: bgLayers[${i}].source must be a non-empty string.`);
-        }
-        if (layer.type === "presetPattern") {
-          const pat = (layer as { pattern?: unknown }).pattern;
-          if (!pat || typeof pat !== "object" || !("type" in (pat as object)) || typeof (pat as { type?: unknown }).type !== "string") {
-            throw new Error(`createCanvas: bgLayers[${i}].pattern must be a procedural PatternOptions object with string type.`);
-          }
-        }
-        if (layer.type === "noise") {
-          const intensity = (layer as { intensity?: unknown }).intensity;
-          if (intensity !== undefined && (typeof intensity !== "number" || intensity < 0 || intensity > 1)) {
-            throw new Error(`createCanvas: bgLayers[${i}].intensity must be between 0 and 1.`);
-          }
-        }
-      }
-    }
-  }
-
   private async resolveCanvasDimensions(canvas: CanvasConfig): Promise<void> {
     if (canvas.customBg?.inherit) {
-      const p = resolveMediaPath(canvas.customBg.source);
       try {
-        const img = await loadImageCached(p);
+        const img = await loadImageCached(canvas.customBg.source);
+        validateInheritedCanvasDimensions(img.width, img.height);
         canvas.width = img.width;
         canvas.height = img.height;
-      } catch (error: unknown) {
+      } catch (error) {
         if (error instanceof ApexifyError) throw error;
-        throw new ApexifyDecodeError("createCanvas: failed to load image for inherit sizing.", { cause: error });
+        throw new ApexifyDecodeError("createCanvas: failed to inspect inherited background dimensions.", { cause: error });
       }
     }
 
@@ -126,10 +69,10 @@ export class CanvasCreator {
           canvas.videoBg.format ?? "jpg",
           canvas.videoBg.quality ?? 2
         );
-        if (frameBuffer) {
+        if (frameBuffer?.length) {
           const img = await loadImageCached(frameBuffer);
-          if (!canvas.width) canvas.width = img.width;
-          if (!canvas.height) canvas.height = img.height;
+          if (canvas.width === undefined) canvas.width = img.width;
+          if (canvas.height === undefined) canvas.height = img.height;
         }
       } catch (error) {
         if (error instanceof ApexifyError) throw error;
@@ -149,9 +92,7 @@ export class CanvasCreator {
     for (const layer of canvas.bgLayers ?? []) {
       if ((layer.type === "image" || layer.type === "pattern") && layer.source) sources.push(layer.source);
     }
-    for (const source of sources) {
-      await loadImageCached(resolveMediaPath(source));
-    }
+    await Promise.all([...new Set(sources)].map((source) => loadImageCached(source)));
   }
 
   private async decodeVideoFrame(frameBuffer: Buffer) {
@@ -179,89 +120,95 @@ export class CanvasCreator {
       blur,
     } = canvas;
 
-    const bgSources = [canvas.colorBg ? "colorBg" : null, canvas.gradientBg ? "gradientBg" : null, canvas.customBg ? "customBg" : null].filter(Boolean);
-    if (bgSources.length > 1) {
-      throw new Error(`createCanvas: only one of colorBg, gradientBg, or customBg can be used. You provided: ${bgSources.join(", ")}`);
+    const baseBackgrounds = [
+      canvas.colorBg !== undefined ? "colorBg" : undefined,
+      gradientBg !== undefined ? "gradientBg" : undefined,
+      customBg !== undefined ? "customBg" : undefined,
+    ].filter((value): value is string => value !== undefined);
+    if (baseBackgrounds.length > 1) {
+      throw new ApexifyInputError(`createCanvas: only one of colorBg, gradientBg, or customBg may be used; received ${baseBackgrounds.join(", ")}.`);
     }
 
-    ctx.globalAlpha = opacity;
     ctx.save();
-    applyRotation(ctx, rotation, x, y, width, height);
-    buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-    ctx.clip();
-    applyCanvasZoom(ctx, width, height, zoom);
-    ctx.translate(x, y);
-    if (typeof blendMode === "string") ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
+    try {
+      ctx.globalAlpha = opacity;
+      applyRotation(ctx, rotation, x, y, width, height);
+      buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
+      ctx.clip();
+      applyCanvasZoom(ctx, width, height, zoom);
+      ctx.translate(x, y);
+      if (typeof blendMode === "string") ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
 
-    if (videoBg && this.extractVideoFrame) {
-      try {
-        const frameBuffer = await this.extractVideoFrame(
-          videoBg.source,
-          videoBg.frame ?? 0,
-          videoBg.time,
-          videoBg.format ?? "jpg",
-          videoBg.quality ?? 2
-        );
-        if (!frameBuffer?.length) throw new Error("Frame extraction returned empty buffer");
-        const videoImg = await this.decodeVideoFrame(frameBuffer);
-        if (!videoImg || videoImg.width <= 0 || videoImg.height <= 0) {
-          throw new Error(`Extracted video frame has invalid dimensions: ${videoImg?.width}x${videoImg?.height}`);
+      if (videoBg && this.extractVideoFrame) {
+        try {
+          const frameBuffer = await this.extractVideoFrame(
+            videoBg.source,
+            videoBg.frame ?? 0,
+            videoBg.time,
+            videoBg.format ?? "jpg",
+            videoBg.quality ?? 2
+          );
+          if (!frameBuffer?.length) throw new ApexifyDecodeError("createCanvas: video frame extraction returned no image data.");
+          const videoImg = await this.decodeVideoFrame(frameBuffer);
+          ctx.globalAlpha = opacity * (videoBg.opacity ?? 1);
+          ctx.drawImage(videoImg, 0, 0, width, height);
+          ctx.globalAlpha = opacity;
+        } catch (error) {
+          if (error instanceof ApexifyError) throw error;
+          throw new ApexifyDecodeError("createCanvas: video background extraction failed.", { cause: error });
         }
-        ctx.globalAlpha = videoBg.opacity ?? 1;
-        ctx.drawImage(videoImg, 0, 0, width, height);
-        ctx.globalAlpha = opacity;
-      } catch (error: unknown) {
-        if (error instanceof ApexifyError) throw error;
-        const errorMsg = error instanceof Error ? error.message : "Unknown error";
-        if (errorMsg.includes("FFMPEG NOT FOUND") || errorMsg.includes("FFmpeg")) throw error;
-        throw new ApexifyDecodeError(`createCanvas: videoBg extraction failed: ${errorMsg}`, { cause: error });
-      }
-    } else if (customBg) {
-      const customBgOpacity = customBg.opacity ?? 1;
-      if (customBg.filters && customBg.filters.length > 0) {
-        const tempCanvas = createCanvas(width, height);
-        const tempCtx = tempCanvas.getContext("2d") as SKRSContext2D;
-        if (tempCtx) {
+      } else if (customBg) {
+        const customBgOpacity = customBg.opacity ?? 1;
+        if (customBg.filters?.length) {
+          const tempCanvas = createCanvas(width, height);
+          const tempCtx = tempCanvas.getContext("2d") as SKRSContext2D;
           await customBackground(tempCtx, { ...canvas, x: 0, y: 0, opacity: 1, blur });
           await applyContextImageFilters(tempCtx, customBg.filters, width, height);
           ctx.globalAlpha = opacity * customBgOpacity;
           ctx.drawImage(tempCanvas, 0, 0);
           ctx.globalAlpha = opacity;
+        } else {
+          ctx.globalAlpha = opacity * customBgOpacity;
+          await customBackground(ctx, { ...canvas, blur });
+          ctx.globalAlpha = opacity;
         }
-      } else {
-        ctx.globalAlpha = opacity * customBgOpacity;
-        await customBackground(ctx, { ...canvas, blur });
-        ctx.globalAlpha = opacity;
+      } else if (gradientBg) {
+        await drawBackgroundGradient(ctx, { ...canvas, blur });
+      } else if (canvas.colorBg !== undefined) {
+        await drawBackgroundColor(ctx, { ...canvas, blur });
+      } else if (canvas.transparentBase !== true) {
+        await drawBackgroundColor(ctx, { ...canvas, blur, colorBg: "#000" });
       }
-    } else if (gradientBg) {
-      await drawBackgroundGradient(ctx, { ...canvas, blur });
-    } else if (canvas.colorBg !== undefined) {
-      await drawBackgroundColor(ctx, { ...canvas, blur });
-    } else if (canvas.transparentBase !== true) {
-      await drawBackgroundColor(ctx, { ...canvas, blur, colorBg: "#000" });
-    }
 
-    if (canvas.bgLayers?.length) await drawBackgroundLayers(ctx, { ...canvas, width, height });
-    if (patternBg) await EnhancedPatternRenderer.renderPattern(ctx, { width, height }, patternBg);
-    if (noiseBg) applyNoise(ctx, width, height, noiseBg.intensity ?? 0.05);
-    ctx.restore();
+      if (canvas.bgLayers?.length) await drawBackgroundLayers(ctx, { ...canvas, width, height });
+      if (patternBg) await EnhancedPatternRenderer.renderPattern(ctx, { width, height }, patternBg);
+      if (noiseBg) applyNoise(ctx, width, height, noiseBg.intensity ?? 0.05);
+    } finally {
+      ctx.restore();
+    }
 
     if (shadow) {
       ctx.save();
-      buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-      applyShadow(ctx, shadow, x, y, width, height);
-      ctx.restore();
+      try {
+        buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
+        applyShadow(ctx, shadow, x, y, width, height);
+      } finally {
+        ctx.restore();
+      }
     }
     if (stroke) {
       ctx.save();
-      buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-      applyStroke(ctx, stroke, x, y, width, height);
-      ctx.restore();
+      try {
+        buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
+        applyStroke(ctx, stroke, x, y, width, height);
+      } finally {
+        ctx.restore();
+      }
     }
   }
 
   async composeCanvasForScene(canvas: CanvasConfig): Promise<{ cv: Canvas; width: number; height: number }> {
-    this.validateCanvasConfig(canvas);
+    validateCanvasConfig(canvas);
     await this.resolveCanvasDimensions(canvas);
     const width = canvas.width ?? 500;
     const height = canvas.height ?? 500;
@@ -273,7 +220,7 @@ export class CanvasCreator {
   }
 
   async paintCanvasOntoExisting(targetCv: Canvas, canvas: CanvasConfig): Promise<void> {
-    this.validateCanvasConfig(canvas);
+    validateCanvasConfig(canvas);
     const work: CanvasConfig = { ...canvas };
     await this.resolveCanvasDimensions(work);
     const width = work.width ?? 500;
@@ -281,7 +228,7 @@ export class CanvasCreator {
     assertCanvasResourceLimits(width, height);
     await this.preflightCanvasImageSources(work);
     if (targetCv.width !== width || targetCv.height !== height) {
-      throw new Error(`paintCanvasOntoExisting: target is ${targetCv.width}×${targetCv.height} but config resolves to ${width}×${height}.`);
+      throw new ApexifyInputError(`paintCanvasOntoExisting: target is ${targetCv.width}×${targetCv.height} but config resolves to ${width}×${height}.`);
     }
     await this.paintConfiguredCanvasSurface(targetCv, work, width, height);
   }
