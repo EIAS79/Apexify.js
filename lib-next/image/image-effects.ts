@@ -1,4 +1,5 @@
 import type { SKRSContext2D } from '@napi-rs/canvas';
+import { createDeterministicRandom, rasterSeed } from '../render/deterministic-random';
 
 /**
  * Applies vignette effect to the canvas
@@ -33,9 +34,9 @@ export function applyVignette(
       const vignetteAmount = Math.min(1, (distance - vignetteRadius) / (maxDistance - vignetteRadius));
       const darken = 1 - (vignetteAmount * intensity);
 
-pixels[i] = Math.round(pixels[i] * darken);
-pixels[i + 1] = Math.round(pixels[i + 1] * darken);
-pixels[i + 2] = Math.round(pixels[i + 2] * darken);
+      pixels[i] = Math.round(pixels[i] * darken);
+      pixels[i + 1] = Math.round(pixels[i + 1] * darken);
+      pixels[i + 2] = Math.round(pixels[i + 2] * darken);
     }
   }
 
@@ -115,28 +116,19 @@ export function applyChromaticAberration(
   const pixels = imageData.data;
   const newImageData = ctx.createImageData(width, height);
   const newPixels = newImageData.data;
-  
-  // Increased offset for more visible effect (0-1 intensity maps to 0-15 pixels)
+
   const offset = Math.round(intensity * 15);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4;
-
-      // Red channel shifted left
       const redX = Math.max(0, Math.min(width - 1, x - offset));
       const redIdx = (y * width + redX) * 4;
       newPixels[idx] = pixels[redIdx];
-
-      // Green channel stays in place
       newPixels[idx + 1] = pixels[idx + 1];
-
-      // Blue channel shifted right
       const blueX = Math.max(0, Math.min(width - 1, x + offset));
       const blueIdx = (y * width + blueX) * 4;
-      newPixels[idx + 2] = pixels[blueIdx];
-
-      // Alpha channel unchanged
+      newPixels[idx + 2] = pixels[blueIdx + 2];
       newPixels[idx + 3] = pixels[idx + 3];
     }
   }
@@ -145,11 +137,8 @@ export function applyChromaticAberration(
 }
 
 /**
- * Applies film grain effect
- * @param ctx - Canvas 2D context
- * @param intensity - Grain intensity (0-1)
- * @param width - Canvas width
- * @param height - Canvas height
+ * Applies reproducible film grain. Identical pixels/dimensions/intensity produce
+ * identical output, which makes render results cacheable and golden-testable.
  */
 export function applyFilmGrain(
   ctx: SKRSContext2D,
@@ -159,21 +148,17 @@ export function applyFilmGrain(
 ): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
-  
-  // Clamp intensity to valid range and increase grain amount for more visible effect
   const clampedIntensity = Math.max(0, Math.min(1, intensity));
-  const grainAmount = clampedIntensity * 40; // Increased from 30 for more visible grain
+  if (clampedIntensity === 0) return;
 
+  const grainAmount = clampedIntensity * 40;
+  const random = createDeterministicRandom(rasterSeed(width, height, clampedIntensity, 0x46494c4d));
   for (let i = 0; i < pixels.length; i += 4) {
-    // Apply random grain to RGB channels (not alpha)
-    const grain = (Math.random() - 0.5) * grainAmount;
-
-    pixels[i] = Math.max(0, Math.min(255, Math.round(pixels[i] + grain)));     // Red
-    pixels[i + 1] = Math.max(0, Math.min(255, Math.round(pixels[i + 1] + grain))); // Green
-    pixels[i + 2] = Math.max(0, Math.min(255, Math.round(pixels[i + 2] + grain))); // Blue
-    // Alpha channel (i + 3) remains unchanged
+    const grain = (random() - 0.5) * grainAmount;
+    pixels[i] = Math.max(0, Math.min(255, Math.round(pixels[i] + grain)));
+    pixels[i + 1] = Math.max(0, Math.min(255, Math.round(pixels[i + 1] + grain)));
+    pixels[i + 2] = Math.max(0, Math.min(255, Math.round(pixels[i + 2] + grain)));
   }
 
   ctx.putImageData(imageData, 0, 0);
 }
-
