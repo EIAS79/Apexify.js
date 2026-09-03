@@ -1,3 +1,4 @@
+export { ApexPainter } from "../lib-next/index";
 export { inspectImageSource, decodeImageSource } from "../lib-next/image/image-source-validation";
 export {
   loadImageCached,
