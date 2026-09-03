@@ -41,12 +41,9 @@ function lineAndSnippet(text, index) {
 }
 
 const nativeDecodeAllowlist = new Set([
-  // This module is the authoritative image metadata/decode boundary.
   'lib-next/image/image-source-validation.ts',
 ]);
 const rawMediaResolverAllowlist = new Set([
-  // Raster callers must go through inspectImageSource/decodeImageSource instead of
-  // bypassing decoded-dimension/SVG policy with the generic media resolver.
   'lib-next/image/image-source-validation.ts',
 ]);
 
@@ -67,6 +64,9 @@ for (const file of walk(SOURCE)) {
   if (!rawMediaResolverAllowlist.has(rel) && /\bresolveMediaInput\s*\(/.test(text)) {
     failures.push(`${rel}: direct resolveMediaInput bypasses authoritative image metadata/decode preflight`);
   }
+  if (/\baxios\b/.test(text) || /\bfetch\s*\(/.test(text)) {
+    failures.push(`${rel}: direct network transport remains in raster code; use shared media/network policy`);
+  }
   if (/\b(?:readFileSync|writeFileSync|existsSync|mkdirSync|rmSync)\s*\(/.test(text)) {
     failures.push(`${rel}: synchronous filesystem call remains on a raster/render path`);
   }
@@ -77,13 +77,16 @@ for (const file of walk(SOURCE)) {
     failures.push(`${rel}: unfinished raster marker remains`);
   }
 
-  // Phase 5 specifically requires explicit zero coordinates to survive defaulting.
-  // Limit this gate to coordinate fields and literal fallbacks so boolean conditions
-  // and intentionally-positive dimensions/sizes do not become false positives.
   const suspiciousCoordinateDefault = /\.(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY)\s*\|\|\s*[-+]?\d+(?:\.\d+)?\b/g;
   for (const match of text.matchAll(suspiciousCoordinateDefault)) {
     const location = lineAndSnippet(text, match.index ?? 0);
     failures.push(`${rel}:${location.line}: zero coordinate is overwritten by || fallback: ${location.snippet}`);
+  }
+
+  const suspiciousValueDefault = /\.(?:opacity|rotation|scale|blur|intensity|value|angle|radius|threshold|globalAlpha)\s*\|\|\s*[-+]?\d+(?:\.\d+)?\b/g;
+  for (const match of text.matchAll(suspiciousValueDefault)) {
+    const location = lineAndSnippet(text, match.index ?? 0);
+    failures.push(`${rel}:${location.line}: explicit zero is overwritten by || fallback: ${location.snippet}`);
   }
 }
 
