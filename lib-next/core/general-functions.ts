@@ -357,8 +357,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
       .map(([key, count]) => ({
         color: `${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}`,
         frequency: ((count / totalPixels) * 100).toFixed(2),
-      }))
-      .filter(({ frequency }) => Number(frequency) >= 0.1);
+      }));
   } catch {
     emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });
     return [];
