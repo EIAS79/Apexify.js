@@ -1,4 +1,4 @@
-import type { CanvasConfig } from "../types";
+import type { CanvasConfig, PatternOptions } from "../types";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertWithinLimit } from "../runtime/limits";
 import {
@@ -10,6 +10,28 @@ import {
 const FIT = ["fill", "contain", "cover"] as const;
 const ALIGN = ["center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"] as const;
 const BG_TYPES = ["color", "gradient", "image", "pattern", "presetPattern", "noise"] as const;
+
+const PATTERN_TYPES = ["grid", "dots", "diagonal", "stripes", "waves", "crosses", "hexagons", "checkerboard", "diamonds", "triangles", "stars", "polka", "custom"] as const;
+const PATTERN_REPEAT = ["repeat", "repeat-x", "repeat-y", "no-repeat"] as const;
+
+export function validatePatternOptions(pattern: PatternOptions, name = "pattern"): void {
+  assertRecord(pattern, name);
+  assertEnum(pattern.type, `${name}.type`, PATTERN_TYPES);
+  assertOpacity(pattern.opacity, `${name}.opacity`);
+  assertOptionalFiniteNumber(pattern.size, `${name}.size`, { min: 0, exclusiveMin: true });
+  assertOptionalFiniteNumber(pattern.spacing, `${name}.spacing`, { min: 0 });
+  assertOptionalFiniteNumber(pattern.rotation, `${name}.rotation`);
+  assertOptionalFiniteNumber(pattern.scale, `${name}.scale`, { min: 0, exclusiveMin: true });
+  assertOptionalFiniteNumber(pattern.offsetX, `${name}.offsetX`);
+  assertOptionalFiniteNumber(pattern.offsetY, `${name}.offsetY`);
+  assertOptionalEnum(pattern.repeat, `${name}.repeat`, PATTERN_REPEAT);
+  if (pattern.color !== undefined) assertNonEmptyString(pattern.color, `${name}.color`, 512);
+  if (pattern.secondaryColor !== undefined) assertNonEmptyString(pattern.secondaryColor, `${name}.secondaryColor`, 512);
+  if (pattern.type === "custom") {
+    assertNonEmptyString(pattern.customPatternImage, `${name}.customPatternImage`, 16_384);
+  }
+  assertFiniteNumericLeaves(pattern, name);
+}
 
 function validateFilters(filters: unknown, name: string): void {
   if (filters === undefined) return;
@@ -38,8 +60,7 @@ function validateBackgroundLayer(layer: unknown, index: number): void {
     assertOptionalEnum(layer.repeat, `${name}.repeat`, ["repeat", "repeat-x", "repeat-y", "no-repeat"] as const);
   }
   if (layer.type === "presetPattern") {
-    assertRecord(layer.pattern, `${name}.pattern`);
-    assertFiniteNumericLeaves(layer.pattern, `${name}.pattern`);
+    validatePatternOptions(layer.pattern as PatternOptions, `${name}.pattern`);
   }
   if (layer.type === "noise") assertOptionalFiniteNumber(layer.intensity, `${name}.intensity`, { min: 0, max: 1 });
 }
@@ -85,8 +106,7 @@ export function validateCanvasConfig(canvas: CanvasConfig): void {
   }
   assertGradient(canvas.gradientBg, "canvas.gradientBg");
   if (canvas.patternBg !== undefined) {
-    assertRecord(canvas.patternBg, "canvas.patternBg");
-    assertFiniteNumericLeaves(canvas.patternBg, "canvas.patternBg");
+    validatePatternOptions(canvas.patternBg, "canvas.patternBg");
   }
   if (canvas.noiseBg !== undefined) {
     assertRecord(canvas.noiseBg, "canvas.noiseBg");
