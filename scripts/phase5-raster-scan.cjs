@@ -27,6 +27,7 @@ function isRasterRelevant(rel) {
   ].some((prefix) => rel.startsWith(prefix)) || [
     'lib-next/core/general-functions.ts',
     'lib-next/output/compression.ts',
+    'lib-next/output/convert.ts',
     'lib-next/output/stitch.ts',
   ].includes(rel);
 }
@@ -43,6 +44,11 @@ const nativeDecodeAllowlist = new Set([
   // This module is the authoritative image metadata/decode boundary.
   'lib-next/image/image-source-validation.ts',
 ]);
+const rawMediaResolverAllowlist = new Set([
+  // Raster callers must go through inspectImageSource/decodeImageSource instead of
+  // bypassing decoded-dimension/SVG policy with the generic media resolver.
+  'lib-next/image/image-source-validation.ts',
+]);
 
 for (const file of walk(SOURCE)) {
   const rel = path.relative(ROOT, file).replace(/\\/g, '/');
@@ -57,6 +63,9 @@ for (const file of walk(SOURCE)) {
   }
   if (!nativeDecodeAllowlist.has(rel) && /\bloadImage\b/.test(text) && /@napi-rs\/canvas/.test(text)) {
     failures.push(`${rel}: native loadImage must delegate to the authoritative image decoder/cache`);
+  }
+  if (!rawMediaResolverAllowlist.has(rel) && /\bresolveMediaInput\s*\(/.test(text)) {
+    failures.push(`${rel}: direct resolveMediaInput bypasses authoritative image metadata/decode preflight`);
   }
   if (/\b(?:readFileSync|writeFileSync|existsSync|mkdirSync|rmSync)\s*\(/.test(text)) {
     failures.push(`${rel}: synchronous filesystem call remains on a raster/render path`);
