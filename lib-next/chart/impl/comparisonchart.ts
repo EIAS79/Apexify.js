@@ -1,7 +1,8 @@
 import { emitDiagnostic } from "../../runtime/diagnostics";
-import { createCanvas, SKRSContext2D, loadImage, Image } from "@napi-rs/canvas";
+import { createCanvas, type SKRSContext2D, type Image } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
+import { decodeImageSource } from "../../image/image-source-validation";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "../helpers/chartBackground";
 import type { PieSlice, PieChartOptions } from "./piechart";
 import type { BarChartData, BarChartOptions } from "./barchart";
@@ -18,9 +19,6 @@ import { createScatterChart } from './scatterchart';
 import { createRadarChart } from './radarchart';
 import { createPolarAreaChart } from './polarareachart';
 
-/**
- * Chart type for comparison charts
- */
 export type ComparisonChartType =
   | 'pie'
   | 'bar'
@@ -31,9 +29,6 @@ export type ComparisonChartType =
   | 'radar'
   | 'polarArea';
 
-/**
- * Chart data for comparison (union type)
- */
 export type ComparisonChartData =
   | PieSlice[]
   | BarChartData[]
@@ -43,9 +38,6 @@ export type ComparisonChartData =
   | RadarSeries[]
   | PolarAreaSlice[];
 
-/**
- * Chart options for individual charts in comparison (union type)
- */
 export type IndividualChartOptions =
   | PieChartOptions
   | BarChartOptions
@@ -55,9 +47,6 @@ export type IndividualChartOptions =
   | RadarChartOptions
   | PolarAreaChartOptions;
 
-/**
- * Enhanced text styling for comparison chart title
- */
 export interface EnhancedTextStyle {
   fontPath?: string;
   fontName?: string;
@@ -84,14 +73,8 @@ export interface EnhancedTextStyle {
   };
 }
 
-/**
- * Layout options for comparison charts
- */
 export type ComparisonLayout = 'sideBySide' | 'topBottom';
 
-/**
- * Individual chart configuration in comparison
- */
 export interface ComparisonChartConfig {
   type: ComparisonChartType;
   data: ComparisonChartData;
@@ -103,18 +86,12 @@ export interface ComparisonChartConfig {
     gradient?: gradient;
     textStyle?: EnhancedTextStyle;
   };
-
   barType?: 'standard' | 'grouped' | 'stacked' | 'lollipop' | 'waterfall';
-
   lineStyle?: 'solid' | 'dashed' | 'dotted' | 'dashdot' | 'longdash' | 'shortdash' | 'dashdotdot' | 'step' | 'stepline';
   lineSmoothness?: 'none' | 'bezier' | 'spline';
 }
 
-/**
- * Comparison chart options
- */
 export interface ComparisonChartOptions {
-
   dimensions?: {
     width?: number;
     height?: number;
@@ -125,13 +102,10 @@ export interface ComparisonChartOptions {
       left?: number;
     };
   };
-
-layout?: ComparisonLayout;
-spacing?: number;
-
+  layout?: ComparisonLayout;
+  spacing?: number;
   /** Same background options as standalone charts (`customBg`, `bgLayers`, `patternBg`, `noiseBg`, etc.). */
   appearance?: ChartAppearanceExtended;
-
   generalTitle?: {
     text: string;
     fontSize?: number;
@@ -139,14 +113,10 @@ spacing?: number;
     gradient?: gradient;
     textStyle?: EnhancedTextStyle;
   };
-
   chart1: ComparisonChartConfig;
   chart2: ComparisonChartConfig;
 }
 
-/**
- * Helper function to render enhanced text
- */
 async function renderEnhancedText(
   ctx: SKRSContext2D,
   text: string,
@@ -162,7 +132,7 @@ async function renderEnhancedText(
   const savedTextAlign = ctx.textAlign;
   const savedTextBaseline = ctx.textBaseline;
 
-  const effectiveFontSize = fontSize || style?.fontSize || 16;
+  const effectiveFontSize = fontSize ?? style?.fontSize ?? 16;
   const fontFamily = style?.fontFamily || style?.fontName || 'Arial';
   let fontString = '';
 
@@ -171,7 +141,6 @@ async function renderEnhancedText(
   fontString += `${effectiveFontSize}px "${fontFamily}"`;
 
   ctx.font = fontString;
-
   ctx.textAlign = savedTextAlign;
   ctx.textBaseline = savedTextBaseline;
 
@@ -189,9 +158,9 @@ async function renderEnhancedText(
 
   if (style?.shadow) {
     ctx.shadowColor = style.shadow.color || 'rgba(0,0,0,0.5)';
-    ctx.shadowOffsetX = style.shadow.offsetX || 2;
-    ctx.shadowOffsetY = style.shadow.offsetY || 2;
-    ctx.shadowBlur = style.shadow.blur || 4;
+    ctx.shadowOffsetX = style.shadow.offsetX ?? 2;
+    ctx.shadowOffsetY = style.shadow.offsetY ?? 2;
+    ctx.shadowBlur = style.shadow.blur ?? 4;
     if (style.shadow.opacity !== undefined) {
       ctx.globalAlpha = style.shadow.opacity;
     }
@@ -210,7 +179,7 @@ async function renderEnhancedText(
 
   if (style?.stroke) {
     ctx.strokeStyle = style.stroke.color || '#000000';
-    ctx.lineWidth = style.stroke.width || 1;
+    ctx.lineWidth = style.stroke.width ?? 1;
     if (style.stroke.gradient) {
       const metrics = ctx.measureText(text);
       ctx.strokeStyle = createGradientFill(ctx, style.stroke.gradient, {
@@ -229,7 +198,6 @@ async function renderEnhancedText(
   ctx.restore();
 }
 
-/** Uniform scale + center so chart buffers are not stretched in their cells. */
 function drawChartImageContain(
   ctx: SKRSContext2D,
   img: Image,
@@ -249,10 +217,6 @@ function drawChartImageContain(
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-/**
- * Padding inside each cell scales with cell size (avoids huge inner margins that shrink plots,
- * and avoids the old 0.7× heuristic that still forced large minimums).
- */
 function paddingForCell(
   original: { top?: number; right?: number; bottom?: number; left?: number } | undefined,
   cellW: number,
@@ -274,7 +238,6 @@ function paddingForCell(
   };
 }
 
-/** Merge panel `appearance` into a sub-chart so backgrounds/axis styling inherit when omitted. */
 function mergeInheritedChartAppearance(
   parent: ChartAppearanceExtended | undefined,
   child: IndividualChartOptions
@@ -298,13 +261,9 @@ function mergeInheritedChartAppearance(
   };
 }
 
-/**
- * Creates a comparison chart with two charts side by side or top/bottom
- */
 export async function createComparisonChart(
   options: ComparisonChartOptions
 ): Promise<Buffer> {
-
   const width = options.dimensions?.width ?? 2400;
   const height = options.dimensions?.height ?? 1200;
   const padding = options.dimensions?.padding || {};
@@ -353,7 +312,6 @@ export async function createComparisonChart(
   let chart2X: number, chart2Y: number;
 
   if (layout === 'sideBySide') {
-
     chart1Width = (availableWidth - spacing) / 2;
     chart1Height = availableHeight;
     chart2Width = (availableWidth - spacing) / 2;
@@ -364,7 +322,6 @@ export async function createComparisonChart(
     chart2X = paddingLeft + chart1Width + spacing;
     chart2Y = paddingTop + generalTitleHeight;
   } else {
-
     chart1Width = availableWidth;
     chart1Height = (availableHeight - spacing) / 2;
     chart2Width = availableWidth;
@@ -407,7 +364,6 @@ export async function createComparisonChart(
       ...options.chart1.options.dimensions,
       width: chart1Width,
       height: chart1Height,
-
       padding: paddingForCell(options.chart1.options.dimensions?.padding, chart1Width, chart1Height)
     },
     labels: {
@@ -421,9 +377,7 @@ export async function createComparisonChart(
           ?? options.generalTitle?.textStyle
       }
     },
-
     ...getLegendProps(options.chart1.type, options.chart1.options),
-
     appearance: mergeInheritedChartAppearance(options.appearance, options.chart1.options)
   };
 
@@ -433,7 +387,6 @@ export async function createComparisonChart(
 
   if (options.chart1.type === 'line') {
     if (options.chart1.lineStyle && chart1Options.labels) {
-
       const lineData = options.chart1.data as LineSeries[];
       if (lineData && Array.isArray(lineData)) {
         lineData.forEach(series => {
@@ -454,7 +407,6 @@ export async function createComparisonChart(
       ...options.chart2.options.dimensions,
       width: chart2Width,
       height: chart2Height,
-
       padding: paddingForCell(options.chart2.options.dimensions?.padding, chart2Width, chart2Height)
     },
     labels: {
@@ -468,9 +420,7 @@ export async function createComparisonChart(
           ?? options.generalTitle?.textStyle
       }
     },
-
     ...getLegendProps(options.chart2.type, options.chart2.options),
-
     appearance: mergeInheritedChartAppearance(options.appearance, options.chart2.options)
   };
 
@@ -480,7 +430,6 @@ export async function createComparisonChart(
 
   if (options.chart2.type === 'line') {
     if (options.chart2.lineStyle && chart2Options.labels) {
-
       const lineData = options.chart2.data as LineSeries[];
       if (lineData && Array.isArray(lineData)) {
         lineData.forEach(series => {
@@ -497,13 +446,14 @@ export async function createComparisonChart(
 
   switch (options.chart1.type) {
     case 'pie':
-    case 'donut':
+    case 'donut': {
       const pieOptions1 = chart1Options as PieChartOptions;
       if (options.chart1.type === 'donut') {
         pieOptions1.type = 'donut';
       }
       chart1Buffer = await createPieChart(options.chart1.data as PieSlice[], pieOptions1);
       break;
+    }
     case 'bar':
       chart1Buffer = await createBarChart(options.chart1.data as BarChartData[], chart1Options as BarChartOptions);
       break;
@@ -528,13 +478,14 @@ export async function createComparisonChart(
 
   switch (options.chart2.type) {
     case 'pie':
-    case 'donut':
+    case 'donut': {
       const pieOptions2 = chart2Options as PieChartOptions;
       if (options.chart2.type === 'donut') {
         pieOptions2.type = 'donut';
       }
       chart2Buffer = await createPieChart(options.chart2.data as PieSlice[], pieOptions2);
       break;
+    }
     case 'bar':
       chart2Buffer = await createBarChart(options.chart2.data as BarChartData[], chart2Options as BarChartOptions);
       break;
@@ -557,12 +508,17 @@ export async function createComparisonChart(
       throw new Error(`Unsupported chart type for chart 2: ${options.chart2.type}`);
   }
 
-  const chart1Image = await loadImage(chart1Buffer);
-  const chart2Image = await loadImage(chart2Buffer);
+  const chart1Image = await decodeImageSource(chart1Buffer, {
+    label: "comparison chart 1 buffer",
+    requireCanvasBudget: true,
+  });
+  const chart2Image = await decodeImageSource(chart2Buffer, {
+    label: "comparison chart 2 buffer",
+    requireCanvasBudget: true,
+  });
 
   drawChartImageContain(ctx, chart1Image, chart1X, chart1Y, chart1Width, chart1Height);
   drawChartImageContain(ctx, chart2Image, chart2X, chart2Y, chart2Width, chart2Height);
 
   return canvas.toBuffer('image/png');
 }
-

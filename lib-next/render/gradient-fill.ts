@@ -1,5 +1,7 @@
-import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import type { SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient as GradientType } from "../types";
+import { ApexifyInputError } from "../runtime/errors";
+import { createRepeatingGradientPattern } from "./repeating-gradient-pattern";
 
 function rotatePoint(x: number, y: number, px: number, py: number, deg = 0): [number, number] {
   if (!deg) return [x, y];
@@ -9,27 +11,38 @@ function rotatePoint(x: number, y: number, px: number, py: number, deg = 0): [nu
   return [px + dx * Math.cos(a) - dy * Math.sin(a), py + dx * Math.sin(a) + dy * Math.cos(a)];
 }
 
-function createRepeatingGradientPattern(
-  ctx: SKRSContext2D,
-  grad: CanvasGradient,
-  repeat: "repeat" | "reflect",
-  width: number,
-  height: number
-): CanvasPattern {
-  const patternCanvas = createCanvas(width, height);
-  const patternCtx = patternCanvas.getContext("2d") as SKRSContext2D;
-  patternCtx.fillStyle = grad;
-  patternCtx.fillRect(0, 0, width, height);
-  const pattern = ctx.createPattern(patternCanvas, repeat === "reflect" ? "repeat" : "repeat");
-  if (!pattern) {
-    throw new Error("Failed to create repeating gradient pattern");
+function addStops(grad: CanvasGradient, colors: GradientType["colors"]): void {
+  if (!Array.isArray(colors) || colors.length < 2) {
+    throw new ApexifyInputError("Gradient colors must contain at least two stops.");
   }
-  return pattern;
+
+  const ordered = colors.map((stop, index) => {
+    if (!stop || !Number.isFinite(stop.stop) || stop.stop < 0 || stop.stop > 1) {
+      throw new ApexifyInputError(`Gradient colors[${index}].stop must be a finite number between 0 and 1.`);
+    }
+    if (typeof stop.color !== "string" || stop.color.trim().length === 0) {
+      throw new ApexifyInputError(`Gradient colors[${index}].color must be a non-empty color string.`);
+    }
+    return stop;
+  }).sort((a, b) => a.stop - b.stop);
+
+  for (const cs of ordered) grad.addColorStop(cs.stop, cs.color);
 }
 
-/**
- * Build a gradient in **rect-local coordinates** (same contract as legacy `createGradientFill`).
- */
+function assertLinearGeometry(sx: number, sy: number, ex: number, ey: number): void {
+  if (sx === ex && sy === ey) {
+    throw new ApexifyInputError("Linear gradient start and end points must not be identical.");
+  }
+}
+
+function assertRadialGeometry(sx: number, sy: number, sr: number, ex: number, ey: number, er: number): void {
+  if (sr < 0 || er < 0) throw new ApexifyInputError("Radial gradient radii must be non-negative.");
+  if (sx === ex && sy === ey && sr === er) {
+    throw new ApexifyInputError("Radial gradient start and end circles must not be identical.");
+  }
+}
+
+/** Build a gradient in rect-local coordinates. Explicit zero coordinates are preserved. */
 export function createGradientFill(
   ctx: SKRSContext2D,
   g: GradientType,
@@ -52,15 +65,11 @@ export function createGradientFill(
 
     const [sx, sy] = rotatePoint(startX, startY, pivotX, pivotY, rotate);
     const [ex, ey] = rotatePoint(endX, endY, pivotX, pivotY, rotate);
+    assertLinearGeometry(sx, sy, ex, ey);
 
     const grad = ctx.createLinearGradient(x + sx, y + sy, x + ex, y + ey);
-    colors.forEach((cs) => grad.addColorStop(cs.stop, cs.color));
-
-    if (repeat !== "no-repeat") {
-      return createRepeatingGradientPattern(ctx, grad, repeat, w, h);
-    }
-
-    return grad;
+    addStops(grad, colors);
+    return repeat === "no-repeat" ? grad : createRepeatingGradientPattern(ctx, grad, repeat, w, h);
   }
 
   if (g.type === "radial") {
@@ -80,15 +89,11 @@ export function createGradientFill(
 
     const [sx, sy] = rotatePoint(startX, startY, pivotX, pivotY, rotate);
     const [ex, ey] = rotatePoint(endX, endY, pivotX, pivotY, rotate);
+    assertRadialGeometry(sx, sy, startRadius, ex, ey, endRadius);
 
     const grad = ctx.createRadialGradient(x + sx, y + sy, startRadius, x + ex, y + ey, endRadius);
-    colors.forEach((cs) => grad.addColorStop(cs.stop, cs.color));
-
-    if (repeat !== "no-repeat") {
-      return createRepeatingGradientPattern(ctx, grad, repeat, w, h);
-    }
-
-    return grad;
+    addStops(grad, colors);
+    return repeat === "no-repeat" ? grad : createRepeatingGradientPattern(ctx, grad, repeat, w, h);
   }
 
   if (g.type === "conic") {
@@ -104,11 +109,10 @@ export function createGradientFill(
 
     const [cx, cy] = rotatePoint(centerX, centerY, pivotX, pivotY, conicRotate);
     const angleRad = ((startAngle + conicRotate) * Math.PI) / 180;
-
     const grad = ctx.createConicGradient(angleRad, x + cx, y + cy);
-    colors.forEach((cs) => grad.addColorStop(cs.stop, cs.color));
+    addStops(grad, colors);
     return grad;
   }
 
-  throw new Error(`createGradientFill: unsupported gradient type ${(g as { type?: string }).type}`);
+  throw new ApexifyInputError(`Unsupported gradient type ${(g as { type?: string }).type ?? "unknown"}.`);
 }

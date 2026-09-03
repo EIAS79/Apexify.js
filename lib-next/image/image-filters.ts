@@ -1,5 +1,6 @@
 import { SKRSContext2D } from "@napi-rs/canvas";
 import type { ImageFilter } from "../types";
+import { createDeterministicRandom, rasterSeed } from "../render/deterministic-random";
 
 /**
  * Applies image filters to a canvas context
@@ -21,28 +22,28 @@ export function applyImageFilters(
   for (const filter of filters) {
     switch (filter.type) {
       case 'gaussianBlur':
-        applyGaussianBlur(ctx, filter.intensity || 0);
+        applyGaussianBlur(ctx, filter.intensity ?? 0);
         break;
       case 'motionBlur':
-        applyMotionBlur(ctx, filter.intensity || 0, filter.angle || 0);
+        applyMotionBlur(ctx, filter.intensity ?? 0, filter.angle ?? 0);
         break;
       case 'radialBlur':
-        applyRadialBlur(ctx, filter.intensity || 0, filter.centerX || width/2, filter.centerY || height/2);
+        applyRadialBlur(ctx, filter.intensity ?? 0, filter.centerX ?? width / 2, filter.centerY ?? height / 2);
         break;
       case 'sharpen':
-        applySharpen(ctx, filter.intensity || 0);
+        applySharpen(ctx, filter.intensity ?? 0);
         break;
       case 'noise':
-        applyNoise(ctx, filter.intensity || 0.1);
+        applyNoise(ctx, filter.intensity ?? 0.1);
         break;
       case 'grain':
-        applyGrain(ctx, filter.intensity || 0.05);
+        applyGrain(ctx, filter.intensity ?? 0.05);
         break;
       case 'edgeDetection':
-        applyEdgeDetection(ctx, filter.intensity || 1);
+        applyEdgeDetection(ctx, filter.intensity ?? 1);
         break;
       case 'emboss':
-        applyEmboss(ctx, filter.intensity || 1);
+        applyEmboss(ctx, filter.intensity ?? 1);
         break;
       case 'invert':
         applyInvert(ctx);
@@ -54,22 +55,22 @@ export function applyImageFilters(
         applySepia(ctx);
         break;
       case 'pixelate':
-        applyPixelate(ctx, filter.size || 10);
+        applyPixelate(ctx, filter.size ?? 10);
         break;
       case 'brightness':
-        applyBrightness(ctx, filter.value || 0);
+        applyBrightness(ctx, filter.value ?? 0);
         break;
       case 'contrast':
-        applyContrast(ctx, filter.value || 0);
+        applyContrast(ctx, filter.value ?? 0);
         break;
       case 'saturation':
-        applySaturation(ctx, filter.value || 0);
+        applySaturation(ctx, filter.value ?? 0);
         break;
       case 'hueShift':
-        applyHueShift(ctx, filter.value || 0);
+        applyHueShift(ctx, filter.value ?? 0);
         break;
       case 'posterize':
-        applyPosterize(ctx, filter.levels || 4);
+        applyPosterize(ctx, filter.levels ?? 4);
         break;
     }
   }
@@ -140,9 +141,10 @@ function applyNoise(ctx: SKRSContext2D, intensity: number): void {
   if (intensity > 0) {
     const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     const data = imageData.data;
+    const random = createDeterministicRandom(rasterSeed(ctx.canvas.width, ctx.canvas.height, intensity, 0x4e4f4953));
 
     for (let i = 0; i < data.length; i += 4) {
-      const noise = (Math.random() - 0.5) * intensity * 255;
+      const noise = (random() - 0.5) * intensity * 255;
 data[i] = Math.max(0, Math.min(255, data[i] + noise));
 data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise));
 data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
@@ -156,9 +158,10 @@ function applyGrain(ctx: SKRSContext2D, intensity: number): void {
   if (intensity > 0) {
     const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     const data = imageData.data;
+    const random = createDeterministicRandom(rasterSeed(ctx.canvas.width, ctx.canvas.height, intensity, 0x47524149));
 
     for (let i = 0; i < data.length; i += 4) {
-      const grain = (Math.random() - 0.5) * intensity * 100;
+      const grain = (random() - 0.5) * intensity * 100;
 data[i] = Math.max(0, Math.min(255, data[i] + grain));
 data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + grain));
 data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + grain));

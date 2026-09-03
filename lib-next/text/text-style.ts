@@ -1,4 +1,4 @@
-import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import type { SKRSContext2D } from "@napi-rs/canvas";
 import type {
   TextGlowStyle,
   TextHighlightStyle,
@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import { resolveTextDecorations, resolveTextEffects, resolveTextFill } from "../types";
 import type { gradient } from "../types";
+import { createRepeatingGradientPattern } from "../render/repeating-gradient-pattern";
 import { TEXT_MIDDLE_TO_ALPHABETIC } from "./text-layout";
 
 export function createTextGradient(
@@ -23,8 +24,8 @@ export function createTextGradient(
   }
 
   let grad: CanvasGradient;
-  const width = Math.abs(endX - startX) || 100;
-  const height = Math.abs(endY - startY) || 100;
+  const width = Math.max(1, Math.abs(endX - startX));
+  const height = Math.max(1, Math.abs(endY - startY));
 
   if (gradientOptions.type === "linear") {
     grad = ctx.createLinearGradient(startX, startY, endX, endY);
@@ -41,12 +42,12 @@ export function createTextGradient(
 
   if (gradientOptions.type === "radial") {
     grad = ctx.createRadialGradient(
-      gradientOptions.startX || startX,
-      gradientOptions.startY || startY,
-      gradientOptions.startRadius || 0,
-      gradientOptions.endX || endX,
-      gradientOptions.endY || endY,
-      gradientOptions.endRadius || 0
+      gradientOptions.startX ?? startX,
+      gradientOptions.startY ?? startY,
+      gradientOptions.startRadius ?? 0,
+      gradientOptions.endX ?? endX,
+      gradientOptions.endY ?? endY,
+      gradientOptions.endRadius ?? 0
     );
     for (const colorStop of gradientOptions.colors) {
       grad.addColorStop(colorStop.stop, colorStop.color);
@@ -83,18 +84,7 @@ export function createTextRepeatingGradientPattern(
   width: number,
   height: number
 ): CanvasPattern {
-  const patternCanvas = createCanvas(width, height);
-  const patternCtx = patternCanvas.getContext("2d") as SKRSContext2D;
-
-  patternCtx.fillStyle = grad;
-  patternCtx.fillRect(0, 0, width, height);
-
-  const pattern = ctx.createPattern(patternCanvas, repeat === "reflect" ? "repeat" : "repeat");
-  if (!pattern) {
-    throw new Error("Failed to create repeating gradient pattern");
-  }
-
-  return pattern;
+  return createRepeatingGradientPattern(ctx, grad, repeat, width, height);
 }
 
 export function darkenTextColor(color: string, factor: number): string {
@@ -184,7 +174,7 @@ export function renderComplexTextStroke(
       if (grad) {
         ctx.strokeStyle = createTextGradient(ctx, grad, gx0, y, gx1, y);
       } else {
-        ctx.strokeStyle = darkenTextColor(color || "#000000", 0.3);
+        ctx.strokeStyle = darkenTextColor(color ?? "#000000", 0.3);
       }
       ctx.strokeText(text, x, y);
 
@@ -192,7 +182,7 @@ export function renderComplexTextStroke(
       if (grad) {
         ctx.strokeStyle = createTextGradient(ctx, grad, gx0, y, gx1, y);
       } else {
-        ctx.strokeStyle = lightenTextColor(color || "#000000", 0.3);
+        ctx.strokeStyle = lightenTextColor(color ?? "#000000", 0.3);
       }
       ctx.strokeText(text, x, y);
       break;
@@ -203,7 +193,7 @@ export function renderComplexTextStroke(
       if (grad) {
         ctx.strokeStyle = createTextGradient(ctx, grad, gx0, y, gx1, y);
       } else {
-        ctx.strokeStyle = lightenTextColor(color || "#000000", 0.3);
+        ctx.strokeStyle = lightenTextColor(color ?? "#000000", 0.3);
       }
       ctx.strokeText(text, x, y);
 
@@ -211,7 +201,7 @@ export function renderComplexTextStroke(
       if (grad) {
         ctx.strokeStyle = createTextGradient(ctx, grad, gx0, y, gx1, y);
       } else {
-        ctx.strokeStyle = darkenTextColor(color || "#000000", 0.3);
+        ctx.strokeStyle = darkenTextColor(color ?? "#000000", 0.3);
       }
       ctx.strokeText(text, x, y);
       break;
@@ -222,7 +212,7 @@ export function renderComplexTextStroke(
       if (grad) {
         ctx.strokeStyle = createTextGradient(ctx, grad, gx0, y, gx1, y);
       } else {
-        ctx.strokeStyle = color || "#000000";
+        ctx.strokeStyle = color ?? "#000000";
       }
       ctx.strokeText(text, x, y);
 
@@ -230,7 +220,7 @@ export function renderComplexTextStroke(
       if (grad) {
         ctx.strokeStyle = createTextGradient(ctx, grad, gx0, y, gx1, y);
       } else {
-        ctx.strokeStyle = color || "#000000";
+        ctx.strokeStyle = color ?? "#000000";
       }
       ctx.strokeText(text, x, y);
       break;
@@ -247,13 +237,13 @@ export function renderTextHighlight(
 ): void {
   ctx.save();
 
-  const opacity = highlight.opacity !== undefined ? highlight.opacity : 0.3;
+  const opacity = highlight.opacity ?? 0.3;
   ctx.globalAlpha = opacity;
 
   if (highlight.gradient) {
     ctx.fillStyle = createTextGradient(ctx, highlight.gradient, x, y, x + width, y + height);
   } else {
-    ctx.fillStyle = highlight.color || "#ffff00";
+    ctx.fillStyle = highlight.color ?? "#ffff00";
   }
 
   const highlightY = y - height * 0.8;
@@ -272,8 +262,8 @@ export function renderTextGlow(
 ): void {
   ctx.save();
 
-  const intensity = glow.intensity || 10;
-  const opacity = glow.opacity !== undefined ? glow.opacity : 0.8;
+  const intensity = glow.intensity ?? 10;
+  const opacity = glow.opacity ?? 0.8;
   const w = ctx.measureText(text).width;
   const gx0 = centerGlyph ? x - w / 2 : x;
   const gx1 = centerGlyph ? x + w / 2 : x + w;
@@ -289,7 +279,7 @@ export function renderTextGlow(
     ctx.fillStyle = createTextGradient(ctx, glow.gradient, gx0, y, gx1, y);
     ctx.fillText(text, x, y);
   } else {
-    ctx.shadowColor = glow.color || "#ffffff";
+    ctx.shadowColor = glow.color ?? "#ffffff";
     ctx.shadowBlur = intensity;
     ctx.globalAlpha = opacity;
     ctx.fillText(text, x, y);
@@ -308,21 +298,21 @@ export function renderTextShadow(
 ): void {
   ctx.save();
 
-  const blur = shadow.blur || 4;
-  const opacity = shadow.opacity !== undefined ? shadow.opacity : 1;
+  const blur = shadow.blur ?? 4;
+  const opacity = shadow.opacity ?? 1;
   const w = ctx.measureText(text).width;
   const gx0 = centerGlyph ? x - w / 2 : x;
   const gx1 = centerGlyph ? x + w / 2 : x + w;
 
-  ctx.shadowOffsetX = shadow.offsetX || 2;
-  ctx.shadowOffsetY = shadow.offsetY || 2;
+  ctx.shadowOffsetX = shadow.offsetX ?? 2;
+  ctx.shadowOffsetY = shadow.offsetY ?? 2;
 
   if (shadow.gradient) {
     const gradientFill = createTextGradient(ctx, shadow.gradient, gx0, y, gx1, y);
 
     const shadowTint =
-      (shadow.gradient.colors && shadow.gradient.colors[0] && shadow.gradient.colors[0].color) ||
-      shadow.color ||
+      shadow.gradient.colors?.[0]?.color ??
+      shadow.color ??
       "rgba(0, 0, 0, 0.5)";
 
     ctx.fillStyle = gradientFill;
@@ -331,12 +321,9 @@ export function renderTextShadow(
     ctx.globalAlpha = opacity;
     ctx.fillText(text, x, y);
   } else {
-    ctx.shadowColor = shadow.color || "rgba(0, 0, 0, 0.5)";
+    ctx.shadowColor = shadow.color ?? "rgba(0, 0, 0, 0.5)";
     ctx.shadowBlur = blur;
-    if (shadow.opacity !== undefined) {
-      ctx.globalAlpha = shadow.opacity;
-    }
-
+    ctx.globalAlpha = opacity;
     ctx.fillText(text, x, y);
   }
 
@@ -359,8 +346,8 @@ export function renderTextStroke(
 ): void {
   ctx.save();
 
-  const strokeWidth = stroke.width || 1;
-  const strokeStyle = stroke.style || "solid";
+  const strokeWidth = stroke.width ?? 1;
+  const strokeStyle = stroke.style ?? "solid";
   const w = ctx.measureText(text).width;
   const gx0 = centerGlyph ? x - w / 2 : x;
   const gx1 = centerGlyph ? x + w / 2 : x + w;
@@ -370,7 +357,7 @@ export function renderTextStroke(
   if (stroke.gradient) {
     ctx.strokeStyle = createTextGradient(ctx, stroke.gradient, gx0, y, gx1, y);
   } else {
-    ctx.strokeStyle = stroke.color || "#000000";
+    ctx.strokeStyle = stroke.color ?? "#000000";
   }
 
   if (stroke.opacity !== undefined) {
@@ -406,7 +393,7 @@ export function renderTextFill(
   if (fill.gradient) {
     ctx.fillStyle = createTextGradient(ctx, fill.gradient, gx0, y, gx1, y);
   } else {
-    ctx.fillStyle = fill.color || "#000000";
+    ctx.fillStyle = fill.color ?? "#000000";
   }
 
   ctx.fillText(text, x, y);
@@ -431,8 +418,8 @@ export function renderTextDecorations(
 
   ctx.save();
 
-  const fontSize = textProps.font?.size || textProps.fontSize || 16;
-  const defaultColor = resolveTextFill(textProps).color || "#000000";
+  const fontSize = textProps.font?.size ?? textProps.fontSize ?? 16;
+  const defaultColor = resolveTextFill(textProps).color ?? "#000000";
 
   const renderDecorationLine = (
     decorationY: number,
@@ -447,8 +434,8 @@ export function renderTextDecorations(
     let decorationWidth = Math.max(1, fontSize * 0.05);
 
     if (typeof decoration === "object") {
-      decorationColor = decoration.color || defaultColor;
-      decorationWidth = decoration.width || decorationWidth;
+      decorationColor = decoration.color ?? defaultColor;
+      decorationWidth = decoration.width ?? decorationWidth;
 
       if (decoration.gradient) {
         ctx.strokeStyle = createTextGradient(ctx, decoration.gradient, x, decorationY, x + width, decorationY);
@@ -500,13 +487,13 @@ export function renderTextHighlightLocal(
 
   ctx.save();
 
-  const opacity = highlight.opacity !== undefined ? highlight.opacity : 0.3;
+  const opacity = highlight.opacity ?? 0.3;
   ctx.globalAlpha = opacity;
 
   if (highlight.gradient) {
     ctx.fillStyle = createTextGradient(ctx, highlight.gradient, left, top, left + width, top + height);
   } else {
-    ctx.fillStyle = highlight.color || "#ffff00";
+    ctx.fillStyle = highlight.color ?? "#ffff00";
   }
 
   ctx.fillRect(left, top, width, height);
@@ -529,7 +516,7 @@ export function renderTextDecorationsLocal(
   const baseline = fontSize * TEXT_MIDDLE_TO_ALPHABETIC;
   const xLeft = -width / 2;
   const xRight = width / 2;
-  const defaultColor = resolveTextFill(textProps).color || "#000000";
+  const defaultColor = resolveTextFill(textProps).color ?? "#000000";
 
   ctx.save();
 
@@ -545,8 +532,8 @@ export function renderTextDecorationsLocal(
     let decorationWidth = Math.max(1, fontSize * 0.05);
 
     if (typeof decoration === "object") {
-      decorationColor = decoration.color || defaultColor;
-      decorationWidth = decoration.width || decorationWidth;
+      decorationColor = decoration.color ?? defaultColor;
+      decorationWidth = decoration.width ?? decorationWidth;
 
       if (decoration.gradient) {
         ctx.strokeStyle = createTextGradient(ctx, decoration.gradient, xLeft, decorationY, xRight, decorationY);
@@ -595,7 +582,7 @@ export function renderEnhancedTextLine(
 ): void {
   const metrics = ctx.measureText(text);
   const textWidth = metrics.width;
-  const fontSize = textProps.font?.size || textProps.fontSize || 16;
+  const fontSize = textProps.font?.size ?? textProps.fontSize ?? 16;
   const textHeight = fontSize;
   const effects = resolveTextEffects(textProps);
 

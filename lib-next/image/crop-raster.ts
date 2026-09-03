@@ -4,17 +4,7 @@ import { getCanvasContext } from "../core/errors";
 import { loadImageCached } from "./image-properties";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits } from "../runtime/limits";
-
-function validateCropOptions(options: cropOptions): void {
-  if (!options) throw new ApexifyInputError("cropImage: options object is required.");
-  if (!options.imageSource) throw new ApexifyInputError("cropImage: imageSource is required.");
-  if (!options.coordinates || !Array.isArray(options.coordinates) || options.coordinates.length < 3) {
-    throw new ApexifyInputError("cropImage: coordinates array with at least 3 points is required.");
-  }
-  if (options.crop !== "outer" && options.crop !== "inner") {
-    throw new ApexifyInputError("cropImage: crop must be either 'inner' or 'outer'.");
-  }
-}
+import { validateCropInputs } from "./image-utils-validation";
 
 async function cropInner(options: cropOptions): Promise<Buffer> {
   const image = await loadImageCached(options.imageSource);
@@ -32,6 +22,9 @@ async function cropInner(options: cropOptions): Promise<Buffer> {
   const height = maxY - minY;
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     throw new ApexifyInputError("cropImage: coordinates must define a positive crop area.");
+  }
+  if (maxX > image.width || maxY > image.height) {
+    throw new ApexifyInputError(`cropImage: crop bounds ${maxX}×${maxY} exceed source ${image.width}×${image.height}.`);
   }
   assertCanvasResourceLimits(width, height);
 
@@ -55,6 +48,11 @@ async function cropInner(options: cropOptions): Promise<Buffer> {
 
 async function cropOuter(options: cropOptions): Promise<Buffer> {
   const image = await loadImageCached(options.imageSource);
+  const maxX = Math.max(...options.coordinates.flatMap((coordinate) => [coordinate.from.x, coordinate.to.x]));
+  const maxY = Math.max(...options.coordinates.flatMap((coordinate) => [coordinate.from.y, coordinate.to.y]));
+  if (maxX > image.width || maxY > image.height) {
+    throw new ApexifyInputError(`cropImage: crop bounds ${maxX}×${maxY} exceed source ${image.width}×${image.height}.`);
+  }
   assertCanvasResourceLimits(image.width, image.height);
   const canvas = createCanvas(image.width, image.height);
   const ctx = getCanvasContext(canvas);
@@ -80,9 +78,9 @@ async function cropOuter(options: cropOptions): Promise<Buffer> {
   return canvas.toBuffer("image/png");
 }
 
-/** Polygon inner/outer crop routed through the authoritative media source and decoded-image budget. */
+/** Polygon inner/outer crop routed through shared validation and the authoritative image source/cache. */
 export async function cropRasterImage(options: cropOptions): Promise<Buffer> {
-  validateCropOptions(options);
+  validateCropInputs(options);
   try {
     return options.crop === "outer" ? await cropOuter(options) : await cropInner(options);
   } catch (error) {

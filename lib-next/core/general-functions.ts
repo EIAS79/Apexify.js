@@ -1,12 +1,14 @@
-import { createCanvas, loadImage, type Canvas, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Canvas, type SKRSContext2D } from "@napi-rs/canvas";
 import sharp from "sharp";
-import type { GradientConfig, ImageFilter } from "../types";
+import type { GradientConfig, ImageFilter, gradient } from "../types";
 import { getCanvasContext } from "./errors";
-import { resolveMediaBuffer, resolveMediaInput } from "../media/source";
 import { fetchRemoteMedia } from "../media/remote-fetch";
 import { applyContextImageFilters } from "../render/context-image-filters";
-import { ApexifyDecodeError, ApexifyInputError } from "../runtime/errors";
+import { createGradientFill } from "../render/gradient-fill";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { emitDiagnostic } from "../runtime/diagnostics";
+import { inspectImageSource } from "../image/image-source-validation";
+import { loadImageCached } from "../image/image-properties";
 
 type LegacyImageFilter = {
   type: "flip" | "rotate" | "brightness" | "contrast" | "invert" | "greyscale" | "sepia" | "blur" | "posterize" | "pixelate";
@@ -23,7 +25,7 @@ type LegacyImageFilter = {
   h?: number;
 };
 
-/** Apply a solid color or gradient overlay to a resolved image source. */
+/** Apply a solid color or shared gradient overlay to a preflighted image source. */
 export async function applyColorFilters(
   imagePath: string,
   gradientOptions?: string | GradientConfig,
@@ -33,16 +35,17 @@ export async function applyColorFilters(
     throw new ApexifyInputError("applyColorFilters: gradientOptions must be a string or GradientConfig object.");
   }
   try {
-    const input = await resolveMediaInput(imagePath, { kind: "image" });
-    const image = sharp(input);
-    const metadata = await image.metadata();
-    if (!metadata.width || !metadata.height) throw new ApexifyDecodeError("Image dimensions could not be determined.");
+    const inspected = await inspectImageSource(imagePath, {
+      label: "color filter source",
+      requireCanvasBudget: true,
+    });
+    const image = sharp(inspected.resolved).rotate();
     const overlay = typeof gradientOptions === "string"
-      ? createSolidOverlay(metadata.width, metadata.height, gradientOptions, opacity)
-      : createGradientOverlay(metadata.width, metadata.height, gradientOptions, opacity);
+      ? createSolidOverlay(inspected.width, inspected.height, gradientOptions, opacity)
+      : createGradientOverlay(inspected.width, inspected.height, gradientOptions, opacity);
     return image.composite([{ input: overlay, blend: "over" }]).toBuffer();
   } catch (cause) {
-    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    if (cause instanceof ApexifyError) throw cause;
     throw new ApexifyDecodeError("Failed to apply color filter.", { cause });
   }
 }
@@ -59,51 +62,14 @@ function createSolidOverlay(width: number, height: number, color: string, opacit
 function createGradientOverlay(width: number, height: number, options: GradientConfig, opacity: number): Buffer {
   const canvas = createCanvas(width, height);
   const ctx = getCanvasContext(canvas);
-  let gradient: CanvasGradient;
-  if (options.type === "linear") {
-    gradient = ctx.createLinearGradient(
-      options.startX ?? 0,
-      options.startY ?? 0,
-      options.endX ?? width,
-      options.endY ?? height
-    );
-  } else if (options.type === "radial") {
-    gradient = ctx.createRadialGradient(
-      options.startX ?? width / 2,
-      options.startY ?? height / 2,
-      options.startRadius ?? 0,
-      options.endX ?? width / 2,
-      options.endY ?? height / 2,
-      options.endRadius ?? Math.max(width, height)
-    );
-  } else if (options.type === "conic") {
-    gradient = ctx.createConicGradient(
-      ((options.startAngle ?? 0) * Math.PI) / 180,
-      options.centerX ?? width / 2,
-      options.centerY ?? height / 2
-    );
-  } else {
-    throw new ApexifyInputError(`Unsupported gradient type: ${String(options.type)}`);
-  }
-  options.colors.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
   ctx.globalAlpha = opacity;
-  if ((options.type === "linear" || options.type === "radial") && options.repeat && options.repeat !== "no-repeat") {
-    const patternCanvas = createCanvas(width, height);
-    const patternCtx = getCanvasContext(patternCanvas);
-    patternCtx.fillStyle = gradient;
-    patternCtx.fillRect(0, 0, width, height);
-    const pattern = ctx.createPattern(patternCanvas, "repeat");
-    if (!pattern) throw new ApexifyDecodeError("Failed to create repeating gradient pattern.");
-    ctx.fillStyle = pattern;
-  } else {
-    ctx.fillStyle = gradient;
-  }
+  ctx.fillStyle = createGradientFill(ctx, options as gradient, { x: 0, y: 0, w: width, h: height });
   ctx.fillRect(0, 0, width, height);
   return canvas.toBuffer("image/png");
 }
 
 /**
- * Apply image effects after resolving the source through the central media boundary.
+ * Apply image effects after resolving the source through the central image boundary.
  *
  * The legacy imperative effect names retain their historical pixel semantics while
  * the typed ImageFilter surface is delegated to the shared context-filter pipeline.
@@ -116,7 +82,7 @@ export async function imgEffects(
     throw new ApexifyInputError("imgEffects: filters must be an array.");
   }
   try {
-    const image = await loadImage(await resolveMediaBuffer(imagePath, { kind: "image" }));
+    const image = await loadImageCached(imagePath);
     const canvas = createCanvas(image.width, image.height);
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(image, 0, 0);
@@ -146,7 +112,12 @@ export async function imgEffects(
           applySepia(ctx);
           break;
         case "blur":
-          applyBlur(ctx, filter.radius ?? 0);
+          await applyContextImageFilters(
+            ctx,
+            [{ type: "gaussianBlur", intensity: Math.min(100, Math.max(0, filter.radius ?? 0)) }],
+            image.width,
+            image.height
+          );
           break;
         case "posterize":
           posterize(ctx, filter.levels ?? 4);
@@ -188,7 +159,7 @@ export async function imgEffects(
     }
     return canvas.toBuffer("image/png");
   } catch (cause) {
-    if (cause instanceof ApexifyInputError || cause instanceof ApexifyDecodeError) throw cause;
+    if (cause instanceof ApexifyError) throw cause;
     throw new ApexifyDecodeError("imgEffects failed.", { cause });
   }
 }
@@ -285,37 +256,6 @@ function applySepia(ctx: SKRSContext2D): void {
   ctx.putImageData(imageData, 0, 0);
 }
 
-function applyBlur(ctx: SKRSContext2D, radius: number): void {
-  if (radius <= 0) return;
-  const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-  const pixels = imageData.data;
-  const width = ctx.canvas.width;
-  const height = ctx.canvas.height;
-  const blurSize = Math.floor(radius);
-  for (let y = blurSize; y < height - blurSize; y++) {
-    for (let x = blurSize; x < width - blurSize; x++) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let count = 0;
-      for (let dy = -blurSize; dy <= blurSize; dy++) {
-        for (let dx = -blurSize; dx <= blurSize; dx++) {
-          const index = ((y + dy) * width + (x + dx)) * 4;
-          r += pixels[index];
-          g += pixels[index + 1];
-          b += pixels[index + 2];
-          count += 1;
-        }
-      }
-      const index = (y * width + x) * 4;
-      pixels[index] = r / count;
-      pixels[index + 1] = g / count;
-      pixels[index + 2] = b / count;
-    }
-  }
-  ctx.putImageData(imageData, 0, 0);
-}
-
 function posterize(ctx: SKRSContext2D, levels: number): void {
   if (levels < 2 || levels > 255) return;
   const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -375,39 +315,61 @@ function pixelate(
   ctx.putImageData(imageData, startX, startY);
 }
 
-/** Return exact visible colors and their frequency, retaining historical response shape. */
+/**
+ * Return a bounded, useful visible-color palette while retaining the historical
+ * { color: "r,g,b", frequency: "N.NN" } response shape. Large inputs are
+ * metadata-preflighted, downsampled before pixel access, quantized, and capped.
+ */
 export async function detectColors(imagePath: string): Promise<Array<{ color: string; frequency: string }>> {
   try {
-    const image = await loadImage(await resolveMediaBuffer(imagePath, { kind: "image" }));
-    const canvas = createCanvas(image.width, image.height);
-    const ctx = getCanvasContext(canvas);
-    ctx.drawImage(image, 0, 0);
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const counts = new Map<string, number>();
-    const totalPixels = canvas.width * canvas.height;
+    const inspected = await inspectImageSource(imagePath, { label: "color analysis source" });
+    const { data } = await sharp(inspected.resolved, {
+      page: 0,
+      pages: 1,
+      limitInputPixels: false,
+      sequentialRead: true,
+    })
+      .rotate()
+      .resize({ width: 160, height: 160, fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const counts = new Map<number, number>();
+    const totalPixels = data.length / 4;
+    let visiblePixels = 0;
+    const quantize = (channel: number) => Math.min(255, Math.round(channel / 4) * 4);
+
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] < 50) continue;
-      const key = `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      visiblePixels += 1;
+      const r = quantize(data[i]);
+      const g = quantize(data[i + 1]);
+      const b = quantize(data[i + 2]);
+      const key = (r << 16) | (g << 8) | b;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    if (totalPixels === 0) return [];
+
+    if (visiblePixels === 0) return [];
     return [...counts.entries()]
-      .map(([color, frequency]) => ({ color, frequency: ((frequency / totalPixels) * 100).toFixed(2) }))
-      .filter(({ frequency }) => Number(frequency) >= 0.1)
-      .sort((a, b) => Number(b.frequency) - Number(a.frequency));
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+      .slice(0, 16)
+      .map(([key, count]) => ({
+        color: `${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}`,
+        frequency: ((count / totalPixels) * 100).toFixed(2),
+      }));
   } catch {
     emitDiagnostic({ level: "warn", code: "COLOR_ANALYSIS_FAILED", message: "Color analysis failed." });
     return [];
   }
 }
-
 /** Remove one exact RGB color from a resolved image. */
 export async function removeColor(
   inputImagePath: string,
   colorToRemove: { red: number; green: number; blue: number }
 ): Promise<Buffer | undefined> {
   try {
-    const image = await loadImage(await resolveMediaBuffer(inputImagePath, { kind: "image" }));
+    const image = await loadImageCached(inputImagePath);
     const canvas = createCanvas(image.width, image.height);
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(image, 0, 0);

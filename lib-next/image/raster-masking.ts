@@ -1,34 +1,11 @@
 import { createCanvas } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
 import type { MaskOptions } from "../types";
-import { getCanvasContext, getErrorMessage } from "../core/errors";
+import { getCanvasContext } from "../core/errors";
 import { loadImageCached } from "./image-properties";
 import { assertCanvasResourceLimits } from "../runtime/limits";
-
-function validateMaskingInputs(
-  source: string | Buffer | PathLike | Uint8Array,
-  maskSource: string | Buffer | PathLike | Uint8Array,
-  options: MaskOptions
-): void {
-  if (!source) {
-    throw new Error("masking: source is required.");
-  }
-  if (!maskSource) {
-    throw new Error("masking: maskSource is required.");
-  }
-  if (options.type && !["alpha", "grayscale", "color"].includes(options.type)) {
-    throw new Error("masking: type must be 'alpha', 'grayscale', or 'color'.");
-  }
-  if (options.type === "color" && !options.colorKey) {
-    throw new Error("masking: colorKey is required when type is 'color'.");
-  }
-  if (
-    options.threshold !== undefined &&
-    (typeof options.threshold !== "number" || options.threshold < 0 || options.threshold > 255)
-  ) {
-    throw new Error("masking: threshold must be a number between 0 and 255.");
-  }
-}
+import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
+import { validateMaskInputs } from "./image-utils-validation";
 
 /**
  * Apply a separate mask image’s alpha / luminance / chroma key to a source raster (PNG out).
@@ -39,7 +16,7 @@ export async function applyRasterMask(
   options: MaskOptions = { type: "alpha" }
 ): Promise<Buffer> {
   try {
-    validateMaskingInputs(source, maskSource, options);
+    validateMaskInputs(source, maskSource, options);
 
     const img = await loadImageCached(source);
     const mask = await loadImageCached(maskSource);
@@ -74,13 +51,13 @@ export async function applyRasterMask(
       }
 
       if (options.invert) alphaValue = 255 - alphaValue;
-
       imgData.data[i + 3] = alphaValue;
     }
 
     ctx.putImageData(imgData, 0, 0);
     return canvas.toBuffer("image/png");
   } catch (error) {
-    throw new Error(`masking failed: ${getErrorMessage(error)}`, { cause: error });
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError("masking: raster mask could not be applied.", { cause: error });
   }
 }

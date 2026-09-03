@@ -5,10 +5,10 @@ import type { CanvasConfig, gradient } from "../../types";
 import type { ChartAppearanceExtended } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
 import { applyContextImageFilters } from "../../render/context-image-filters";
+import { ApexifyError } from "../../runtime/errors";
 import {
   customBackground,
   drawBackgroundLayers,
-  resolveMediaPath,
   applyNoise,
 } from "../../canvas/background-renderer";
 import { EnhancedPatternRenderer } from "../../canvas/pattern-renderer";
@@ -23,19 +23,16 @@ function fillWithGradientOrColor(
   rect?: { x: number; y: number; w: number; h: number }
 ): void {
   if (grad && rect) {
-    ctx.fillStyle = createGradientFill(ctx, grad, rect) as CanvasGradient;
+    ctx.fillStyle = createGradientFill(ctx, grad, rect);
   } else {
-    ctx.fillStyle = color || defaultColor;
+    ctx.fillStyle = color ?? defaultColor;
   }
 }
 
-/**
- * Paints the full chart canvas background using the same building blocks as `CanvasCreator`
- * (custom image, gradient/color, layers, pattern overlay, noise).
- */
+/** Paint a chart background without ever filtering or re-rendering target content. */
 export async function paintChartCanvasBackground(
   ctx: SKRSContext2D,
-  canvas: Canvas,
+  _canvas: Canvas,
   width: number,
   height: number,
   appearance: ChartAppearanceExtended | undefined
@@ -44,36 +41,29 @@ export async function paintChartCanvasBackground(
   const rect = { x: 0, y: 0, w: width, h: height };
 
   if (a.customBg) {
-    const cfg: CanvasConfig = {
-      width,
-      height,
-      customBg: a.customBg,
-      blur: a.blur,
-    };
-    await customBackground(ctx, cfg);
-
-    if (a.customBg.filters && a.customBg.filters.length > 0) {
+    const cfg: CanvasConfig = { width, height, customBg: a.customBg, blur: a.blur };
+    const needsIsolatedPass = Boolean(a.customBg.filters?.length) || (a.customBg.opacity ?? 1) !== 1;
+    if (needsIsolatedPass) {
       const tempCanvas = createCanvas(width, height);
       const tempCtx = tempCanvas.getContext("2d") as SKRSContext2D;
-      if (tempCtx) {
-        tempCtx.drawImage(canvas, 0, 0);
+      await customBackground(tempCtx, cfg);
+      if (a.customBg.filters?.length) {
         await applyContextImageFilters(tempCtx, a.customBg.filters, width, height);
-        ctx.clearRect(0, 0, width, height);
-        ctx.globalAlpha = a.customBg.opacity ?? 1;
-        ctx.drawImage(tempCanvas, 0, 0);
-        ctx.globalAlpha = 1;
       }
-    } else if (a.customBg.opacity !== undefined && a.customBg.opacity !== 1) {
-      ctx.globalAlpha = a.customBg.opacity;
+      ctx.save();
+      ctx.globalAlpha = a.customBg.opacity ?? 1;
+      ctx.drawImage(tempCanvas, 0, 0);
+      ctx.restore();
+    } else {
       await customBackground(ctx, cfg);
-      ctx.globalAlpha = 1;
     }
   } else if (a.backgroundImage) {
     try {
-      const bgImage = await loadImageCached(resolveMediaPath(a.backgroundImage));
+      const bgImage = await loadImageCached(a.backgroundImage);
       ctx.drawImage(bgImage, 0, 0, width, height);
     } catch (error) {
-      emitDiagnostic({ level: "warn", code: "APEXIFY_CHARTBACKGROUND_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/chart/helpers/chartBackground.ts." });
+      if (error instanceof ApexifyError) throw error;
+      emitDiagnostic({ level: "warn", code: "APEXIFY_CHARTBACKGROUND_WARN", message: "Chart background image failed; using configured color/gradient fallback." });
       fillWithGradientOrColor(ctx, a.backgroundGradient, a.backgroundColor ?? "#FFFFFF", "#FFFFFF", rect);
       ctx.fillRect(0, 0, width, height);
     }
@@ -82,19 +72,9 @@ export async function paintChartCanvasBackground(
     ctx.fillRect(0, 0, width, height);
   }
 
-  if (a.bgLayers && a.bgLayers.length > 0) {
-    await drawBackgroundLayers(ctx, {
-      width,
-      height,
-      bgLayers: a.bgLayers,
-    } as CanvasConfig);
+  if (a.bgLayers?.length) {
+    await drawBackgroundLayers(ctx, { width, height, bgLayers: a.bgLayers } as CanvasConfig);
   }
-
-  if (a.patternBg) {
-    await EnhancedPatternRenderer.renderPattern(ctx, { width, height }, a.patternBg);
-  }
-
-  if (a.noiseBg) {
-    applyNoise(ctx, width, height, a.noiseBg.intensity ?? 0.05);
-  }
+  if (a.patternBg) await EnhancedPatternRenderer.renderPattern(ctx, { width, height }, a.patternBg);
+  if (a.noiseBg) applyNoise(ctx, width, height, a.noiseBg.intensity ?? 0.05);
 }

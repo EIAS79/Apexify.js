@@ -1,16 +1,19 @@
-import { loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
+import type { Image, SKRSContext2D } from "@napi-rs/canvas";
+import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
 import path from "node:path";
-import sharp from "sharp";
+import { fileURLToPath } from "node:url";
 import type { AlignMode, FitMode, BoxBackground } from "../types";
 import { buildPath } from "../render/clip-path";
 import { createGradientFill } from "../render/gradient-fill";
-import { resolveMediaInput, type MediaSource } from "../media/source";
+import type { MediaSource } from "../media/source";
 import { BoundedCache } from "../media/cache";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
-import { ApexifyDecodeError, ApexifyError, ApexifyResourceLimitError } from "../runtime/errors";
+import { decodeImageSource } from "./image-source-validation";
 
 let imageCache: BoundedCache<string, Image> | undefined;
 let imageCacheSignature = "";
+const inFlightDecodes = new Map<string, Promise<Image>>();
 
 function getImageCache(): BoundedCache<string, Image> {
   const runtime = getDefaultApexifyRuntimeConfig();
@@ -18,7 +21,13 @@ function getImageCache(): BoundedCache<string, Image> {
   const signature = JSON.stringify({
     cache: [config.enabled, config.ttlMs, config.maxEntries, config.maxBytes],
     network: [runtime.network.allowedProtocols, runtime.network.trustedNetworkAccess, runtime.network.allowedHosts],
-    limits: [runtime.limits.maxRemoteImageBytes, runtime.limits.maxDecodedImagePixels],
+    limits: [
+      runtime.limits.maxRemoteImageBytes,
+      runtime.limits.maxImageSourceBytes,
+      runtime.limits.maxDecodedImagePixels,
+      runtime.limits.maxDecodedImageFrames,
+      runtime.limits.maxSvgElements,
+    ],
   });
   if (!imageCache || signature !== imageCacheSignature) {
     imageCache = new BoundedCache<string, Image>({
@@ -33,8 +42,32 @@ function getImageCache(): BoundedCache<string, Image> {
   return imageCache;
 }
 
+function digestCacheKey(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function sourceCacheKey(src: MediaSource): Promise<string | undefined> {
+  const raw = src instanceof URL
+    ? (src.protocol === "file:" ? fileURLToPath(src) : src.toString())
+    : src;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (/^https?:\/\//i.test(trimmed)) return `remote:${digestCacheKey(trimmed)}`;
+  if (/^data:/i.test(trimmed)) return `data:${digestCacheKey(trimmed)}`;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return `url:${digestCacheKey(trimmed)}`;
+
+  const absolute = path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
+  try {
+    const stat = await fs.stat(absolute);
+    return `file:${digestCacheKey(`${absolute}\0${stat.size}\0${stat.mtimeMs}`)}`;
+  } catch {
+    return `file:${digestCacheKey(absolute)}`;
+  }
+}
+
 export function clearDecodedImageCache(): void {
   imageCache?.clear();
+  inFlightDecodes.clear();
 }
 
 export function getDecodedImageCacheStats() {
@@ -84,37 +117,33 @@ export function fitInto(
   return { dx, dy, dw, dh, sx, sy, sw, sh };
 }
 
-async function resolveToCanvasImage(src: MediaSource): Promise<Image> {
-  try {
-    const resolved = await resolveMediaInput(src, { kind: "image" });
-    const metadata = await sharp(resolved).metadata();
-    const limits = getDefaultApexifyRuntimeConfig().limits;
-    const pixels = (metadata.width ?? 0) * (metadata.height ?? 0);
-    if (pixels > limits.maxDecodedImagePixels) {
-      throw new ApexifyResourceLimitError("maxDecodedImagePixels", limits.maxDecodedImagePixels, pixels);
-    }
-    const png = await sharp(resolved).png().toBuffer();
-    return await loadImage(png);
-  } catch (cause) {
-    if (cause instanceof ApexifyError) throw cause;
-    throw new ApexifyDecodeError("Image source could not be decoded.", { cause });
-  }
-}
-
+/** Authoritative canvas-image decoder with bounded global LRU/TTL caching and in-flight deduplication. */
 export async function loadImageCached(src: MediaSource): Promise<Image> {
-  if (typeof src !== "string") return resolveToCanvasImage(src);
-  const key = /^https?:\/\//i.test(src) ? src : path.resolve(process.cwd(), src);
+  const key = await sourceCacheKey(src);
+  if (key === undefined) return decodeImageSource(src, { label: "image source" });
+
   const cache = getImageCache();
   const cached = cache.get(key);
   if (cached) return cached;
-  try {
-    const image = await resolveToCanvasImage(src);
-    cache.set(key, image);
-    return image;
-  } catch (error) {
-    cache.delete(key);
-    throw error;
-  }
+
+  const existing = inFlightDecodes.get(key);
+  if (existing) return existing;
+
+  const decode = decodeImageSource(src, { label: "image source" })
+    .then((image) => {
+      cache.set(key, image);
+      return image;
+    })
+    .catch((error) => {
+      cache.delete(key);
+      throw error;
+    })
+    .finally(() => {
+      inFlightDecodes.delete(key);
+    });
+
+  inFlightDecodes.set(key, decode);
+  return decode;
 }
 
 /** Optional “box background” under the bitmap, inside the image clip. */
@@ -139,10 +168,4 @@ export function drawBoxBackground(
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   }
   ctx.restore();
-}
-
-/** Load a raster via Sharp from a Buffer, URL, data URL, or cwd-relative/absolute path. */
-export async function loadImages(imagePath: string) {
-  const resolved = await resolveMediaInput(imagePath, { kind: "image" });
-  return sharp(resolved);
 }

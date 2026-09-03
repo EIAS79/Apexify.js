@@ -1,5 +1,6 @@
 import { SKRSContext2D } from '@napi-rs/canvas';
 import type { PatternOptions, PatternViewport, RenderPatternStackOptions } from "../types";
+import { validatePatternOptions } from "./canvas-validation";
 import { loadImageCached } from "../image/image-properties";
 import { emitDiagnostic } from "../runtime/diagnostics";
 
@@ -19,6 +20,7 @@ export class EnhancedPatternRenderer {
     stack?: RenderPatternStackOptions
   ): Promise<void> {
     if (!patternOptions || !patternOptions.type) return;
+    validatePatternOptions(patternOptions, "pattern");
 
     const cw = viewport.width;
     const ch = viewport.height;
@@ -46,8 +48,8 @@ export class EnhancedPatternRenderer {
         ctx.translate(-centerX, -centerY);
       }
 
-      if (patternOptions.offsetX || patternOptions.offsetY) {
-        ctx.translate(patternOptions.offsetX || 0, patternOptions.offsetY || 0);
+      if (patternOptions.offsetX !== undefined || patternOptions.offsetY !== undefined) {
+        ctx.translate(patternOptions.offsetX ?? 0, patternOptions.offsetY ?? 0);
       }
 
       switch (patternOptions.type) {
@@ -104,8 +106,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderGridPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
     const secondary =
       options.secondaryColor !== undefined && options.secondaryColor !== 'transparent'
@@ -134,8 +136,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderDotsPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.fillStyle = color;
@@ -153,8 +155,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderDiagonalPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.strokeStyle = color;
@@ -171,8 +173,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderStripesPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
     const secondary =
       options.secondaryColor !== undefined && options.secondaryColor !== 'transparent'
@@ -188,8 +190,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderWavesPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.strokeStyle = color;
@@ -209,8 +211,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderCrossesPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
     const secondary =
       options.secondaryColor !== undefined && options.secondaryColor !== 'transparent'
@@ -239,8 +241,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderHexagonsPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.strokeStyle = color;
@@ -257,9 +259,9 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderCheckerboardPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
+    const size = options.size ?? 20;
     const color = options.color || '#ffffff';
-    const secondaryColor = options.secondaryColor || 'transparent';
+    const secondaryColor = options.secondaryColor ?? 'transparent';
 
     for (let x = 0; x <= cw; x += size) {
       for (let y = 0; y <= ch; y += size) {
@@ -271,8 +273,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderDiamondsPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.strokeStyle = color;
@@ -286,8 +288,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderTrianglesPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.strokeStyle = color;
@@ -301,8 +303,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderStarsPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.fillStyle = color;
@@ -315,8 +317,8 @@ export class EnhancedPatternRenderer {
   }
 
   private static renderPolkaPattern(ctx: SKRSContext2D, cw: number, ch: number, options: PatternOptions): void {
-    const size = options.size || 20;
-    const spacing = options.spacing || 10;
+    const size = options.size ?? 20;
+    const spacing = options.spacing ?? 10;
     const color = options.color || '#ffffff';
 
     ctx.fillStyle = color;
@@ -335,8 +337,8 @@ export class EnhancedPatternRenderer {
 
     try {
       const image = await loadImageCached(options.customPatternImage);
-      const scale = options.scale || 1;
-      const repeat = options.repeat || 'repeat';
+      const scale = options.scale ?? 1;
+      const repeat = options.repeat ?? 'repeat';
 
       const scaledWidth = image.width * scale;
       const scaledHeight = image.height * scale;

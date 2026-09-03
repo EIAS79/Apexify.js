@@ -1,10 +1,12 @@
-import { createCanvas, loadImage, Image, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions, StrokeOptions } from "../types";
 import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
 import { isShapeSource, drawShape, createShapePath } from "./shapes/shapes";
 import { loadImageCached, fitInto, drawBoxBackground } from "./image-properties";
+import { decodeImageSource } from "./image-source-validation";
+import { ApexifyError } from "../runtime/errors";
 import { buildPath, applyRotation } from "../render/clip-path";
 import { applyShadow } from "../render/shadow-renderer";
 import { applyStroke } from "../render/stroke-renderer";
@@ -398,7 +400,6 @@ export class ImageCreator {
       await applyContextImageFilters(ctx, options.filters, width, height);
     }
 
-    // Pass ALL shape properties including points, angles, centers
     drawShape(ctx, shapeType, x, y, width, height, {
       fill: options.fill,
       color: options.color,
@@ -416,7 +417,6 @@ export class ImageCreator {
 
     ctx.restore();
 
-    /** Outline follows the actual geometry from {@link createShapePath}, not the image bounding box. */
     if (options.stroke) {
       const shapeStrokeProps = this.collectShapeStrokeProps(options);
       this.applyShapeStroke(ctx, shapeType, x, y, width, height, options.stroke, shapeStrokeProps);
@@ -427,10 +427,6 @@ export class ImageCreator {
     ctx.restore();
   }
 
-  /**
-   * Geometry passed to {@link createShapePath} for stroking — must match what {@link drawShape} uses for fills.
-   * @private
-   */
   private collectShapeStrokeProps(options: {
       radius?: number;
       sides?: number;
@@ -456,12 +452,6 @@ export class ImageCreator {
     };
   }
 
-  /**
-   * Draws a single bitmap or shape with independent shadow & stroke.
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param ip - Image properties
-   */
   private async drawImageBitmap(ctx: SKRSContext2D, ip: ImageProperties): Promise<void> {
     const {
       source, x, y,
@@ -540,11 +530,9 @@ export class ImageCreator {
     if ((blur ?? 0) > 0) ctx.filter = `blur(${blur}px)`;
 
     if (filters && filters.length > 0 && filterOrder === 'pre') {
-      // For pre-filters, draw image to temp canvas first, then apply filters
       const tempCanvas = createCanvas(dw, dh);
       const tempCtx = getCanvasContext(tempCanvas);
       tempCtx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
-      
       const adjustedFilters = filters.map(f => ({
         ...f,
         intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
@@ -552,9 +540,6 @@ export class ImageCreator {
         radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
       }));
       await applyContextImageFilters(tempCtx, adjustedFilters, dw, dh);
-      
-      // Draw the filtered result to main canvas
-      // CRITICAL: Reset filter before drawing to prevent duplication
       ctx.filter = "none";
       ctx.drawImage(tempCanvas, dx, dy);
       ctx.filter = "none";
@@ -620,7 +605,6 @@ export class ImageCreator {
         }));
         await applyContextImageFilters(tempCtx, adjustedFilters, box.w, box.h);
         ctx.clearRect(box.x, box.y, box.w, box.h);
-        // CRITICAL: Reset filter before drawing to prevent duplication
         ctx.filter = 'none';
         ctx.drawImage(tempCanvas, box.x, box.y);
         ctx.filter = 'none';
@@ -666,15 +650,6 @@ export class ImageCreator {
     ctx.restore();
   }
 
-  /**
-   * Paints one or more images/shapes onto an existing 2D context. The context must already
-   * reflect the destination pixels (e.g. background drawn). Used by {@link createImage} and scene rendering.
-   *
-   * @param ctx - Target context (same dimensions as canvasSize)
-   * @param images - Image properties (single or array)
-   * @param canvasSize - Width/height of the target surface (replaces reading from a base bitmap)
-   * @param options - Optional grouped drawing options
-   */
   async paintImageLayersOntoContext(
     ctx: SKRSContext2D,
     images: ImageProperties | ImageProperties[],
@@ -690,9 +665,6 @@ export class ImageCreator {
     const groupTransform = options?.groupTransform;
 
     if (isGrouped && groupTransform) {
-        // GROUPED MODE: Apply transformations and effects to all elements together
-        
-        // Calculate group bounding box (before transformations)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const ip of list) {
           const w = ip.width ?? 100;
@@ -708,59 +680,43 @@ export class ImageCreator {
           w: maxX - minX,
           h: maxY - minY
         };
-        
         const pivotX = groupTransform.pivotX ?? (groupBox.x + groupBox.w / 2);
         const pivotY = groupTransform.pivotY ?? (groupBox.y + groupBox.h / 2);
 
-        // Save context state for group
         ctx.save();
 
         if (groupTransform.blendMode) {
           ctx.globalCompositeOperation = groupTransform.blendMode;
         }
-
-        // Apply group opacity
         if (groupTransform.opacity !== undefined) {
           ctx.globalAlpha = groupTransform.opacity;
         }
-
-        // Apply group blur
         if (groupTransform.blur && groupTransform.blur > 0) {
           ctx.filter = `blur(${groupTransform.blur}px)`;
         }
-
-        // Apply group box background (before transformations)
         if (groupTransform.boxBackground) {
-          drawBoxBackground(ctx, groupBox, groupTransform.boxBackground, 
+          drawBoxBackground(ctx, groupBox, groupTransform.boxBackground,
             groupTransform.borderRadius, groupTransform.borderPosition);
         }
-
-        // Apply group shadow (before transformations, if pre-shadow)
         if (groupTransform.shadow) {
           applyShadow(ctx, groupBox, groupTransform.shadow);
         }
-
-        // Apply group clip path or border radius
         if (groupTransform.clipPath && groupTransform.clipPath.length >= 3) {
           applyClipPath(ctx, groupTransform.clipPath);
           ctx.clip();
         } else if (groupTransform.borderRadius) {
-          buildPath(ctx, groupBox.x, groupBox.y, groupBox.w, groupBox.h, 
+          buildPath(ctx, groupBox.x, groupBox.y, groupBox.w, groupBox.h,
             groupTransform.borderRadius, groupTransform.borderPosition ?? 'all');
           ctx.clip();
         }
 
-        // Apply pre-filters if specified
-        if (groupTransform.filters && groupTransform.filters.length > 0 && 
+        if (groupTransform.filters && groupTransform.filters.length > 0 &&
             groupTransform.filterOrder === 'pre') {
           const tempCanvas = createCanvas(groupBox.w, groupBox.h);
           const tempCtx = getCanvasContext(tempCanvas);
-          
-          // Draw group elements to temp canvas first
           tempCtx.save();
           for (const ip of list) {
             const ipWithoutRotation = { ...ip, rotation: 0 };
-            // Adjust coordinates relative to group box
             const adjustedIp = {
               ...ipWithoutRotation,
               x: ipWithoutRotation.x - groupBox.x,
@@ -769,25 +725,20 @@ export class ImageCreator {
             await this.drawImageBitmap(tempCtx, adjustedIp);
           }
           tempCtx.restore();
-          
-          // Apply filters
           const adjustedFilters = groupTransform.filters.map(f => ({
             ...f,
-            intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) : 
+            intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) :
                      (f.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
             value: f.value !== undefined ? f.value * (groupTransform.filterIntensity ?? 1) : f.value,
             radius: f.radius !== undefined ? f.radius * (groupTransform.filterIntensity ?? 1) : f.radius
           }));
           await applyContextImageFilters(tempCtx, adjustedFilters, groupBox.w, groupBox.h);
-          
-          // Draw filtered result to main canvas
           ctx.drawImage(tempCanvas, groupBox.x, groupBox.y);
           ctx.filter = "none";
           ctx.restore();
           return;
         }
 
-        // Apply group transformations
         ctx.translate(pivotX, pivotY);
         if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
           ctx.rotate((groupTransform.rotation * Math.PI) / 180);
@@ -800,28 +751,21 @@ export class ImageCreator {
         }
         ctx.translate(-pivotX, -pivotY);
 
-        // Draw all elements (individual rotation removed, but all other properties preserved)
         for (const ip of list) {
           const ipWithoutRotation = { ...ip, rotation: 0 };
           await this.drawImageBitmap(ctx, ipWithoutRotation);
         }
 
-        // Save state before applying post-effects (transformations are still active)
         ctx.save();
-        
-        // Apply post-filters and effects after drawing all elements (in transformed space)
-        if (groupTransform.filters && groupTransform.filters.length > 0 && 
+
+        if (groupTransform.filters && groupTransform.filters.length > 0 &&
             groupTransform.filterOrder !== 'pre') {
-          // Get image data from transformed group area
-          // Calculate transformed bounding box corners
           const corners = [
             { x: groupBox.x, y: groupBox.y },
             { x: groupBox.x + groupBox.w, y: groupBox.y },
             { x: groupBox.x + groupBox.w, y: groupBox.y + groupBox.h },
             { x: groupBox.x, y: groupBox.y + groupBox.h }
           ];
-          
-          // Transform corners to get actual bounds
           let tMinX = Infinity, tMinY = Infinity, tMaxX = -Infinity, tMaxY = -Infinity;
           for (const corner of corners) {
             const dx = corner.x - pivotX;
@@ -833,23 +777,19 @@ export class ImageCreator {
             const sin = Math.sin(rot);
             const tx = groupTransform.translateX ?? 0;
             const ty = groupTransform.translateY ?? 0;
-            
             const tX = pivotX + (dx * scaleX * cos - dy * scaleY * sin) + tx;
             const tY = pivotY + (dx * scaleX * sin + dy * scaleY * cos) + ty;
-            
             tMinX = Math.min(tMinX, tX);
             tMinY = Math.min(tMinY, tY);
             tMaxX = Math.max(tMaxX, tX);
             tMaxY = Math.max(tMaxY, tY);
           }
-          
           const tBox = {
             x: Math.max(0, Math.floor(tMinX)),
             y: Math.max(0, Math.floor(tMinY)),
             w: Math.min(cw, Math.ceil(tMaxX)) - Math.max(0, Math.floor(tMinX)),
             h: Math.min(ch, Math.ceil(tMaxY)) - Math.max(0, Math.floor(tMinY))
           };
-          
           if (tBox.w > 0 && tBox.h > 0) {
             const imageData = ctx.getImageData(tBox.x, tBox.y, tBox.w, tBox.h);
             const tempCanvas = createCanvas(tBox.w, tBox.h);
@@ -858,7 +798,7 @@ export class ImageCreator {
               tempCtx.putImageData(imageData, 0, 0);
               const adjustedFilters = groupTransform.filters.map(f => ({
                 ...f,
-                intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) : 
+                intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) :
                          (f.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
                 value: f.value !== undefined ? f.value * (groupTransform.filterIntensity ?? 1) : f.value,
                 radius: f.radius !== undefined ? f.radius * (groupTransform.filterIntensity ?? 1) : f.radius
@@ -870,9 +810,7 @@ export class ImageCreator {
           }
         }
 
-        // Apply group effects (in transformed space)
         if (groupTransform.effects) {
-          // For effects, use the original group box but account for transformations
           const scaleX = groupTransform.scaleX ?? 1;
           const scaleY = groupTransform.scaleY ?? 1;
           const effectBox = {
@@ -881,14 +819,13 @@ export class ImageCreator {
             w: groupBox.w * scaleX,
             h: groupBox.h * scaleY
           };
-          
           if (groupTransform.effects.vignette) {
-            applyVignette(ctx, groupTransform.effects.vignette.intensity, 
+            applyVignette(ctx, groupTransform.effects.vignette.intensity,
               groupTransform.effects.vignette.size, effectBox.w, effectBox.h);
           }
           if (groupTransform.effects.lensFlare) {
-            applyLensFlare(ctx, effectBox.x + groupTransform.effects.lensFlare.x, 
-              effectBox.y + groupTransform.effects.lensFlare.y, 
+            applyLensFlare(ctx, effectBox.x + groupTransform.effects.lensFlare.x,
+              effectBox.y + groupTransform.effects.lensFlare.y,
               groupTransform.effects.lensFlare.intensity, effectBox.w, effectBox.h);
           }
           if (groupTransform.effects.chromaticAberration) {
@@ -897,7 +834,7 @@ export class ImageCreator {
             const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
             if (tempCtx) {
               tempCtx.putImageData(imageData, 0, 0);
-              applyChromaticAberration(tempCtx, groupTransform.effects.chromaticAberration.intensity, 
+              applyChromaticAberration(tempCtx, groupTransform.effects.chromaticAberration.intensity,
                 effectBox.w, effectBox.h);
               ctx.clearRect(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
               ctx.drawImage(tempCanvas, effectBox.x, effectBox.y);
@@ -915,17 +852,15 @@ export class ImageCreator {
             }
           }
         }
-        
-        ctx.restore(); // Restore from post-effects save
+
+        ctx.restore();
         ctx.filter = "none";
         ctx.globalAlpha = 1;
-        ctx.restore(); // Restore from main group save
+        ctx.restore();
 
-        // Apply group stroke (after all drawing, outside the transform context)
         if (groupTransform.stroke) {
           ctx.save();
-          // Need to apply transformations to stroke path if group is transformed
-          if (groupTransform.rotation || groupTransform.scaleX || groupTransform.scaleY || 
+          if (groupTransform.rotation || groupTransform.scaleX || groupTransform.scaleY ||
               groupTransform.translateX || groupTransform.translateY) {
             ctx.translate(pivotX, pivotY);
             if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
@@ -943,21 +878,12 @@ export class ImageCreator {
           ctx.restore();
         }
       } else {
-        // NON-GROUPED MODE: Draw elements individually
         for (const ip of list) {
           await this.drawImageBitmap(ctx, ip);
         }
       }
   }
 
-  /**
-   * Draws one or more images (or shapes) on an existing canvas buffer.
-   *
-   * @param images - Single ImageProperties object or array of ImageProperties
-   * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
-   * @param options - Optional options for grouped drawing
-   * @returns Promise<Buffer> - Updated canvas buffer in PNG format
-   */
   async createImage(
     images: ImageProperties | ImageProperties[],
     canvasBuffer: CanvasResults | Buffer,
@@ -970,14 +896,16 @@ export class ImageCreator {
       this.validateImageArray(images);
 
       const list = Array.isArray(images) ? images : [images];
-
-      const base: Image = Buffer.isBuffer(canvasBuffer)
-        ? await loadImage(canvasBuffer)
-        : await loadImage((canvasBuffer as CanvasResults).buffer);
+      const sourceBuffer = Buffer.isBuffer(canvasBuffer)
+        ? canvasBuffer
+        : (canvasBuffer as CanvasResults).buffer;
+      const base: Image = await decodeImageSource(sourceBuffer, {
+        label: "createImage canvasBuffer",
+        requireCanvasBudget: true,
+      });
 
       const cv = createCanvas(base.width, base.height);
       const ctx = getCanvasContext(cv);
-
       ctx.drawImage(base, 0, 0);
 
       await this.paintImageLayersOntoContext(
@@ -989,8 +917,8 @@ export class ImageCreator {
 
       return assignCanvasResultsBuffer(canvasBuffer, cv.toBuffer("image/png"));
     } catch (error) {
+      if (error instanceof ApexifyError) throw error;
       throw new Error(`createImage failed: ${getErrorMessage(error)}`);
     }
   }
 }
-
