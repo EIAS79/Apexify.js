@@ -339,7 +339,7 @@ async function renderEnhancedText(
     ctx.shadowColor = style.shadow.color || 'rgba(0,0,0,0.5)';
     ctx.shadowOffsetX = style.shadow.offsetX ?? 2;
     ctx.shadowOffsetY = style.shadow.offsetY ?? 2;
-    ctx.shadowBlur = style.shadow.blur || 4;
+    ctx.shadowBlur = style.shadow.blur ?? 4;
     if (style.shadow.opacity !== undefined) {
       ctx.globalAlpha = style.shadow.opacity;
     }

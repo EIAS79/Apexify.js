@@ -335,7 +335,7 @@ export class EnhancedPatternRenderer {
 
     try {
       const image = await loadImageCached(options.customPatternImage);
-      const scale = options.scale || 1;
+      const scale = options.scale ?? 1;
       const repeat = options.repeat || 'repeat';
 
       const scaledWidth = image.width * scale;
