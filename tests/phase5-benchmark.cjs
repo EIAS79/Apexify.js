@@ -153,7 +153,9 @@ async function main() {
   assert.equal((await sharp(measured.value).metadata()).width, 1200);
   measurements.push({ ...measured, value: undefined, outputBytes: measured.value.length });
 
-  measured = await measure('crop-800x600-to-400x300', () => api.cropRasterImage(rectCrop(mediumUri, 0, 0, 400, 300)), 3);
+  // Use the Buffer source here intentionally: public source-string validation caps
+  // huge data URLs, and the benchmark is measuring crop rather than string parsing.
+  measured = await measure('crop-800x600-to-400x300', () => api.cropRasterImage(rectCrop(mediumJpeg, 0, 0, 400, 300)), 3);
   assert.equal((await sharp(measured.value).metadata()).width, 400);
   measurements.push({ ...measured, value: undefined, outputBytes: measured.value.length });
 
