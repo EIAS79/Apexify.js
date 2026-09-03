@@ -163,10 +163,10 @@ export function validateCropInputs(options: cropOptions): void {
     assertRecord(coordinate, `image.cropImage.options.coordinates[${i}]`);
     assertRecord(coordinate.from, `image.cropImage.options.coordinates[${i}].from`);
     assertRecord(coordinate.to, `image.cropImage.options.coordinates[${i}].to`);
-    assertFiniteNumber(coordinate.from.x, `image.cropImage.options.coordinates[${i}].from.x`);
-    assertFiniteNumber(coordinate.from.y, `image.cropImage.options.coordinates[${i}].from.y`);
-    assertFiniteNumber(coordinate.to.x, `image.cropImage.options.coordinates[${i}].to.x`);
-    assertFiniteNumber(coordinate.to.y, `image.cropImage.options.coordinates[${i}].to.y`);
+    assertFiniteNumber(coordinate.from.x, `image.cropImage.options.coordinates[${i}].from.x`, { min: 0 });
+    assertFiniteNumber(coordinate.from.y, `image.cropImage.options.coordinates[${i}].from.y`, { min: 0 });
+    assertFiniteNumber(coordinate.to.x, `image.cropImage.options.coordinates[${i}].to.x`, { min: 0 });
+    assertFiniteNumber(coordinate.to.y, `image.cropImage.options.coordinates[${i}].to.y`, { min: 0 });
     assertOptionalFiniteNumber(coordinate.tension, `image.cropImage.options.coordinates[${i}].tension`);
   });
   assertEnum(options.crop, "image.cropImage.options.crop", ["inner", "outer"] as const);
