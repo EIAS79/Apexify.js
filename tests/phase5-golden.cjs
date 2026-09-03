@@ -44,13 +44,14 @@ async function main() {
   assertPixelsNear([...ctx.getImageData(0, 0, 2, 2).data], expected, 1, 'invert+posterize golden');
 
   // A second reference combines a renderer opacity edge case with a native filter.
-  // The transparent background must stay transparent when opacity is explicitly zero.
+  // Explicit opacity zero must stay fully transparent. Canvas canonicalizes fully
+  // transparent pixels to transparent black, so RGB is expected to remain zero too.
   const transparent = createCanvas(3, 3);
   const transparentCtx = transparent.getContext('2d');
   api.drawBar(transparentCtx, 0, 0, 3, 3, '#ff00ff', undefined, 0);
   await api.applyContextImageFilters(transparentCtx, [{ type: 'invert' }], 3, 3);
   const transparentRaster = [...transparentCtx.getImageData(0, 0, 3, 3).data];
-  const expectedTransparent = Array.from({ length: 9 }, () => [255, 255, 255, 0]).flat();
+  const expectedTransparent = Array.from({ length: 9 }, () => [0, 0, 0, 0]).flat();
   assertPixelsNear(transparentRaster, expectedTransparent, 0, 'opacity-zero golden');
 
   console.log('phase5-golden: deterministic reference rasters passed.');
