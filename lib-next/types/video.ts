@@ -11,16 +11,21 @@ export interface ExtractFramesOptions {
 
 export interface ResizeOptions {
   /**
-   * Raster bytes (`Buffer`), `http(s):` URL (fetched), `data:image/...;base64,...`
-   * (decoded), or filesystem path (absolute or relative to `process.cwd()`).
+   * Raster bytes (`Buffer`), `http(s):` URL (fetched through shared network policy),
+   * `data:image/...;base64,...`, or filesystem path. Every source is metadata-
+   * preflighted against the configured image limits before decode.
    */
   imagePath: string | Buffer;
+  /** Target pixel dimensions. Positive integers only; omitted axes default to 500. */
   size?: {
     width?: number;
     height?: number;
   };
+  /** `true` uses contain/inside semantics; `false` fills the exact requested size. */
   maintainAspectRatio?: boolean;
+  /** Encoder quality, integer 1–100. */
   quality?: number;
+  /** Output encoding. Defaults to PNG. */
   outputFormat?: "png" | "jpeg";
 }
 
