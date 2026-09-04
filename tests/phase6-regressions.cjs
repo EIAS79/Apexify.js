@@ -21,8 +21,19 @@ async function main() {
   );
   assert.equal(assets.resolve('theme.primary'), '#fff', 'failed replacement must not mutate the registry');
 
-  // Scene-to-video validation must be structured and must reject bad configuration before raster work.
   const painter = new api.ApexPainter();
+
+  // Components with canvas-aware placement must reject invalid or impossible geometry.
+  assert.throws(
+    () => painter.components.watermark.toLayers({ text: 'mark', canvasWidth: 80, canvasHeight: 40, position: 'outside' }),
+    api.ApexifyInputError
+  );
+  assert.throws(
+    () => painter.components.watermark.toLayers({ text: 'watermark-too-wide', canvasWidth: 20, canvasHeight: 20, fontSize: 20, margin: 0 }),
+    api.ApexifyInputError
+  );
+
+  // Scene-to-video validation must be structured and must reject bad configuration before raster work.
   await assert.rejects(
     painter.renderSceneToVideoFrames(
       { width: 1, height: 1, layers: [] },
@@ -44,7 +55,7 @@ async function main() {
     api.ApexifyInputError
   );
 
-  console.log('phase6-regressions: replacement validation and structured scene-video errors passed.');
+  console.log('phase6-regressions: replacement validation, component bounds, and structured scene-video errors passed.');
 }
 
 main().catch((error) => {
