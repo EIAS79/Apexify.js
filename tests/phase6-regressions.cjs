@@ -12,10 +12,12 @@ async function main() {
     api.ApexifyInputError,
     'replacePalette must reject non-string palette values at runtime'
   );
+  const unsafePalette = Object.create(null);
+  unsafePalette.__proto__ = '#000';
   assert.throws(
-    () => assets.replacePalette('theme', { __proto__: '#000' }),
-    api.ApexifyInputError,
-    'replacePalette must reject non-plain/unsafe palette objects'
+    () => assets.replacePalette('theme', unsafePalette),
+    api.ApexifyAssetError,
+    'replacePalette must reject unsafe palette keys'
   );
   assert.equal(assets.resolve('theme.primary'), '#fff', 'failed replacement must not mutate the registry');
 
