@@ -5,7 +5,9 @@ export type ApexifyErrorCode =
   | "APEXIFY_REMOTE_FETCH"
   | "APEXIFY_DECODE"
   | "APEXIFY_PROCESS"
-  | "APEXIFY_EXTERNAL_SERVICE";
+  | "APEXIFY_EXTERNAL_SERVICE"
+  | "APEXIFY_ASSET"
+  | "APEXIFY_PLUGIN";
 
 export interface ApexifyErrorOptions {
   code: ApexifyErrorCode;
@@ -84,6 +86,18 @@ export class ApexifyProcessError extends ApexifyError {
 export class ApexifyExternalServiceError extends ApexifyError {
   constructor(message: string, options: Omit<ApexifyErrorOptions, "code"> = {}) {
     super(message, { ...options, code: "APEXIFY_EXTERNAL_SERVICE" });
+  }
+}
+
+export class ApexifyAssetError extends ApexifyError {
+  constructor(message: string, options: Omit<ApexifyErrorOptions, "code"> = {}) {
+    super(message, { ...options, code: "APEXIFY_ASSET" });
+  }
+}
+
+export class ApexifyPluginError extends ApexifyError {
+  constructor(message: string, options: Omit<ApexifyErrorOptions, "code"> = {}) {
+    super(message, { ...options, code: "APEXIFY_PLUGIN" });
   }
 }
 
