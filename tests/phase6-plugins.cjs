@@ -63,12 +63,34 @@ async function main() {
   );
   assert.equal(painter.plugins.has('asyncPartial'), false);
 
+  // Rollback is scoped to mutations performed in the failing plugin's async context.
+  // Unrelated application registry writes that interleave while the plugin awaits must survive.
+  painter.plugins.use('preexistingApi', { version: 1 });
+  let releaseFailure;
+  const failureGate = new Promise((resolve) => { releaseFailure = resolve; });
+  const isolatedFailure = painter.use({
+    name: 'isolated-rollback',
+    async install(host) {
+      host.plugins.use('transactionApi', { temporary: true });
+      host.plugins.remove('preexistingApi');
+      await failureGate;
+      throw new Error('transaction failure');
+    },
+  });
+  await delay(0);
+  painter.plugins.use('externalConcurrentApi', { keep: true });
+  releaseFailure();
+  await assert.rejects(isolatedFailure, api.ApexifyPluginError);
+  assert.equal(painter.plugins.has('transactionApi'), false, 'plugin-created API must roll back');
+  assert.equal(painter.plugins.get('preexistingApi').version, 1, 'plugin-removed API must be restored');
+  assert.equal(painter.plugins.get('externalConcurrentApi').keep, true, 'unrelated concurrent registry write must survive rollback');
+
   // Same-name concurrent install is rejected while the first is pending.
   const slow = painter.use({ name: 'slow-plugin', async install() { await delay(15); } });
   await assert.rejects(painter.use({ name: 'slow-plugin', install() {} }), api.ApexifyPluginError);
   await slow;
 
-  // Different installs are serialized so rollback cannot erase another concurrently completing plugin.
+  // Different installs are serialized so plugin transactions cannot overlap.
   const order = [];
   const first = painter.use({
     name: 'order-a',
@@ -105,7 +127,7 @@ async function main() {
   assert.equal(painter.plugins.remove('stableApi'), true);
   assert.equal(painter.plugins.has('stableApi'), false);
 
-  console.log('phase6-plugins: async lifecycle, duplicate, ordering, rejection, rollback and registry semantics passed.');
+  console.log('phase6-plugins: async lifecycle, duplicate, ordering, rejection, isolated rollback and registry semantics passed.');
 }
 
 main().catch((error) => {
