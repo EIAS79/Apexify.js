@@ -6,14 +6,10 @@ import type { CustomOptions } from "./path";
 import type { GIFInputFrame } from "./gif";
 import type { PathCommand } from "./pathCommands";
 import type { Path2DDrawOptions } from "./path2d-draw";
-/**
- * Final scene render output is always a PNG raster.
- */
-export type SceneRenderResult = Buffer;
 
-/**
- * Where and how a nested {@link SceneLayer} of type `"surface"` is composited onto its parent.
- */
+export type SceneRenderResult = Buffer;
+export type SceneBackground = Omit<CanvasConfig, "width" | "height">;
+
 export interface SceneSurfacePlacement {
   x: number;
   y: number;
@@ -35,15 +31,10 @@ export type SceneChartType =
   | "radar"
   | "polarArea";
 
-/** GIF frame with optional repeat expansion for scene helpers. */
 export type SceneGifInputFrame = GIFInputFrame & { repeat?: number };
-
 export type SceneVideoFrameSlot = string | Buffer | { source: string | Buffer; repeat?: number };
 
-/**
- * One drawable item in paint order (bottom → top) for scene rendering.
- * Comparison / combo chart `options` are validated at runtime by chart creators.
- */
+/** One drawable item in deterministic paint order (array index 0 is bottom, final index is top). */
 export type SceneLayer =
   | { type: "image"; images: ImageProperties | ImageProperties[]; options?: CreateImageOptions }
   | { type: "text"; texts: TextProperties | TextProperties[] }
@@ -87,53 +78,38 @@ export type SceneLayer =
       height?: number;
       opacity?: number;
     }
-  | {
-      type: "customLines";
-      lines: CustomOptions | CustomOptions[];
-    }
+  | { type: "customLines"; lines: CustomOptions | CustomOptions[] }
   | {
       type: "surface";
       placement: SceneSurfacePlacement;
-      background?: Omit<CanvasConfig, "width" | "height"> & Partial<Pick<CanvasConfig, "width" | "height">>;
+      /** Child background paint only; dimensions are always taken from `placement`. */
+      background?: SceneBackground;
+      /** Child layers are clipped to the child surface canvas before parent transforms/opacity are applied. */
       layers: SceneLayer[];
     };
 
 export interface SceneRenderInput {
   width: number;
   height: number;
-  background?: Omit<CanvasConfig, "width" | "height"> & Partial<Pick<CanvasConfig, "width" | "height">>;
+  /** Root paint configuration only; root dimensions are always `width`/`height`. */
+  background?: SceneBackground;
   layers: SceneLayer[];
 }
 
-/**
- * Optional flags for {@link SceneCreator.render}, {@link SceneBuilder.render}, and `SceneCreate.renderScene`.
- */
 export interface SceneRenderOptions {
   /**
-   * When true (default), validates dimensions and nested `surface` depth before allocating the root canvas.
-   * Set `false` only for trusted hot paths.
+   * @deprecated Safety validation is mandatory and this option is ignored. It remains only for source compatibility.
    */
   validate?: boolean;
-  /** Max nesting depth for `surface` layers during validation (default from validation util). */
+  /** Optional stricter surface depth cap. It may not exceed the configured runtime `maxSceneDepth`. */
   maxSurfaceDepth?: number;
-  /**
-   * When true, resolves **`$name`** / **`$palette.key`** in string leaves via {@link AssetManager} before painting.
-   * {@link ApexPainter.renderScene} defaults this to **true**; {@link SceneBuilder.render} defaults to **false** (opt-in).
-   */
+  /** Resolve `$name`/`$value.path` asset tokens before painting. */
   resolveAssetRefs?: boolean;
 }
 
-/**
- * Injectable services for {@link SceneCreator} / {@link SceneBuilder}.
- * Shapes match the ApexPainter service implementations; chart options stay `unknown` at the type level.
- */
 export interface SceneCreatorDeps {
   canvasCreator: {
-    composeCanvasForScene(canvas: CanvasConfig): Promise<{
-      cv: Canvas;
-      width: number;
-      height: number;
-    }>;
+    composeCanvasForScene(canvas: CanvasConfig): Promise<{ cv: Canvas; width: number; height: number }>;
   };
   imageCreator: {
     paintImageLayersOntoContext(
@@ -160,4 +136,3 @@ export interface SceneCreatorDeps {
     createComboChart(options: unknown): Promise<Buffer>;
   };
 }
-
