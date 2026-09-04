@@ -21,6 +21,30 @@ async function main() {
   );
   assert.equal(assets.resolve('theme.primary'), '#fff', 'failed replacement must not mutate the registry');
 
+  // AssetValue runtime validation must match the public TypeScript contract for JavaScript callers.
+  assert.throws(
+    () => assets.loadValue('unsupportedDate', new Date()),
+    api.ApexifyInputError,
+    'loadValue must reject opaque unsupported registered objects'
+  );
+  assert.throws(
+    () => assets.loadValue('unsupportedUndefined', undefined),
+    api.ApexifyInputError,
+    'loadValue must reject undefined values'
+  );
+  const cyclicValue = [];
+  cyclicValue.push(cyclicValue);
+  assert.throws(
+    () => assets.loadValue('cyclicValue', cyclicValue),
+    api.ApexifyInputError,
+    'loadValue must reject cyclic registered values'
+  );
+
+  // The generic deep resolver deliberately preserves opaque runtime objects by reference while walking JSON-like data.
+  const opaque = new Date(0);
+  const deepResolved = api.resolveAssetRefsDeep({ opaque }, (ref) => assets.resolve(ref));
+  assert.equal(deepResolved.opaque, opaque, 'opaque runtime objects in generic configs must be preserved by reference');
+
   const painter = new api.ApexPainter();
 
   // Components with canvas-aware placement must reject invalid or impossible geometry.
@@ -55,7 +79,7 @@ async function main() {
     api.ApexifyInputError
   );
 
-  console.log('phase6-regressions: replacement validation, component bounds, and structured scene-video errors passed.');
+  console.log('phase6-regressions: asset runtime contract, replacement validation, component bounds, and structured scene-video errors passed.');
 }
 
 main().catch((error) => {
