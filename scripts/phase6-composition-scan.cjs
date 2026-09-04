@@ -76,13 +76,22 @@ if (!/applyInsertions/.test(template) || !/unknown layer id/.test(template) || !
   failures.push('resolve-template.ts: insertion/override/unique-id validation incomplete');
 }
 
-const publicPainter = fs.readFileSync(path.join(ROOT, 'lib-next/apex-painter/public-main.ts'), 'utf8');
+const painter = fs.readFileSync(path.join(ROOT, 'lib-next/apex-painter/main.ts'), 'utf8');
 const painterIndex = fs.readFileSync(path.join(ROOT, 'lib-next/apex-painter/index.ts'), 'utf8');
-if (!/await\s+this\.plugins\.install\(plugin, this\)/.test(publicPainter) || !/Promise<this>/.test(publicPainter)) {
-  failures.push('public-main.ts: exported plugin lifecycle is not truthfully async');
+if (!/async\s+use\([^)]*\)[\s\S]*?Promise<this>[\s\S]*?await\s+this\.plugins\.install\(plugin, this\)/.test(painter)) {
+  failures.push('apex-painter/main.ts: plugin lifecycle is not truthfully async');
 }
-if (!/from\s+["']\.\/public-main["']/.test(painterIndex)) {
-  failures.push('apex-painter/index.ts: public export bypasses Phase 6 async plugin lifecycle');
+if (/void\s+plugin\.install\s*\(/.test(painter) || /_installedPluginNames/.test(painter)) {
+  failures.push('apex-painter/main.ts: stale synchronous plugin lifecycle remains');
+}
+if (/\bthrow\s+new\s+Error\s*\(/.test(painter)) {
+  failures.push('apex-painter/main.ts: generic composition error remains');
+}
+if (!/from\s+["']\.\/main["']/.test(painterIndex)) {
+  failures.push('apex-painter/index.ts: public export bypasses the authoritative ApexPainter implementation');
+}
+if (fs.existsSync(path.join(ROOT, 'lib-next/apex-painter/public-main.ts'))) {
+  failures.push('lib-next/apex-painter/public-main.ts: obsolete compatibility wrapper remains');
 }
 
 const cache = fs.readFileSync(path.join(ROOT, 'lib-next/image/image-properties.ts'), 'utf8');
