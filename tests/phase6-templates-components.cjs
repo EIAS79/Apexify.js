@@ -84,7 +84,8 @@ async function main() {
 
   const data = { position: { x: 0 }, flag: false, empty: '', showHidden: false, person: { name: 'Ada' } };
   const firstPromise = handle.toRenderInput(data, {
-    overrides: { box: { images: { width: 30, shape: { color: '#ff0000' } } } },
+    // Overrides target the same template-layer shape users authored; shorthand image/text is normalized afterward.
+    overrides: { box: { width: 30, shape: { color: '#ff0000' } } },
     insertions: [{
       targetId: 'nested',
       position: 'before',
@@ -121,6 +122,10 @@ async function main() {
   await assert.rejects(handle.toRenderInput({ position: { x: 0 }, flag: true, empty: '', showHidden: false, person: { name: 'A' } }, {
     insertions: [{ targetId: 'unknown', position: 'after', layers: { type: 'text', text: 'x', x: 0, y: 10, fontSize: 10 } }],
   }), api.TemplateResolveError);
+  await assert.rejects(
+    handle.toRenderInput({ position: { x: 0 }, flag: true, empty: '', showHidden: true, person: { name: 'A' } }),
+    (error) => error instanceof api.TemplateResolveError && /missingWithoutDefault/.test(error.message)
+  );
 
   const duplicate = painter.createTemplate({
     width: 20,
