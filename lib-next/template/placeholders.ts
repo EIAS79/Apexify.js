@@ -1,26 +1,43 @@
-const PLACEHOLDER = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}]*?))?\s*\}\}/g;
-
 import type { PlaceholderResolveContext } from "../types";
 
 export type { PlaceholderResolveContext };
 
-/**
- * Returns value for `key` from dotted paths (`a.b`).
- */
+const PLACEHOLDER = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}]*?))?\s*\}\}/g;
+const WHOLE_PLACEHOLDER = /^\{\{\s*([^}|]+?)\s*(?:\|\s*([^}]*?))?\s*\}\}$/;
+const UNSAFE_PATH_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
+
+/** Own-property dotted lookup. Missing/null intermediates return undefined. */
 export function lookupData(data: Record<string, unknown>, key: string): unknown {
   const parts = key.trim().split(".").filter(Boolean);
-  let cur: unknown = data;
-  for (const p of parts) {
-    if (cur === null || cur === undefined) return undefined;
-    if (typeof cur !== "object") return undefined;
-    cur = (cur as Record<string, unknown>)[p];
+  let current: unknown = data;
+  for (const part of parts) {
+    if (UNSAFE_PATH_SEGMENTS.has(part)) return undefined;
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    if (!Object.prototype.hasOwnProperty.call(current, part)) return undefined;
+    current = (current as Record<string, unknown>)[part];
   }
-  return cur;
+  return current;
 }
 
-/**
- * Replaces `{{key}}` and `{{key | default}}` in a string. Throws if a key is missing and no default.
- */
+export function resolvePlaceholderValue(
+  input: string,
+  ctx: PlaceholderResolveContext,
+  onMissing: (token: string) => never
+): unknown {
+  const whole = WHOLE_PLACEHOLDER.exec(input.trim());
+  if (whole) {
+    const key = whole[1]!.trim();
+    const value = lookupData(ctx.data, key);
+    if (value === undefined || value === null) {
+      if (whole[2] !== undefined) return whole[2].trim();
+      return onMissing(key);
+    }
+    return value;
+  }
+  return resolvePlaceholdersInString(input, ctx, onMissing);
+}
+
+/** Embedded placeholders stringify values; nullish values use the explicit default or throw. */
 export function resolvePlaceholdersInString(
   input: string,
   ctx: PlaceholderResolveContext,
@@ -28,23 +45,18 @@ export function resolvePlaceholdersInString(
 ): string {
   return input.replace(PLACEHOLDER, (_full, rawKey: string, rawDefault: string | undefined) => {
     const key = String(rawKey).trim();
-    const v = lookupData(ctx.data, key);
-    if (v === undefined || v === null) {
-      if (rawDefault !== undefined) {
-        return String(rawDefault).trim();
-      }
+    const value = lookupData(ctx.data, key);
+    if (value === undefined || value === null) {
+      if (rawDefault !== undefined) return String(rawDefault).trim();
       onMissing(key);
     }
-    return String(v);
+    return String(value);
   });
 }
 
-/**
- * Coerces post-placeholder strings to boolean for **`visible`** (and similar).
- */
-export function coerceVisibleString(s: string): boolean {
-  const t = s.trim().toLowerCase();
-  if (t === "true" || t === "1" || t === "yes") return true;
-  if (t === "false" || t === "0" || t === "no" || t === "") return false;
-  return Boolean(s);
+export function coerceVisibleString(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "") return false;
+  return Boolean(value);
 }
