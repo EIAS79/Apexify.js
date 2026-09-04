@@ -42,7 +42,7 @@ function getImageCache(): BoundedCache<string, Image> {
   return imageCache;
 }
 
-function digestCacheKey(value: string): string {
+function digestCacheKey(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -50,6 +50,7 @@ async function sourceCacheKey(src: MediaSource): Promise<string | undefined> {
   const raw = src instanceof URL
     ? (src.protocol === "file:" ? fileURLToPath(src) : src.toString())
     : src;
+  if (Buffer.isBuffer(raw)) return `buffer:${raw.length}:${digestCacheKey(raw)}`;
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
   if (/^https?:\/\//i.test(trimmed)) return `remote:${digestCacheKey(trimmed)}`;
@@ -117,7 +118,7 @@ export function fitInto(
   return { dx, dy, dw, dh, sx, sy, sw, sh };
 }
 
-/** Authoritative canvas-image decoder with bounded global LRU/TTL caching and in-flight deduplication. */
+/** Authoritative canvas-image decoder with bounded LRU/TTL caching and in-flight deduplication. */
 export async function loadImageCached(src: MediaSource): Promise<Image> {
   const key = await sourceCacheKey(src);
   if (key === undefined) return decodeImageSource(src, { label: "image source" });
@@ -146,7 +147,6 @@ export async function loadImageCached(src: MediaSource): Promise<Image> {
   return decode;
 }
 
-/** Optional “box background” under the bitmap, inside the image clip. */
 export function drawBoxBackground(
   ctx: SKRSContext2D,
   rect: { x: number; y: number; w: number; h: number },
