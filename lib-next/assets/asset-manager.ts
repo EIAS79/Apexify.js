@@ -22,6 +22,18 @@ function validatePathSegment(segment: string, refPath: string): void {
   }
 }
 
+function validatePalette(name: string, colors: Record<string, string>, method: string): void {
+  if (!isPlainCompositionObject(colors)) {
+    throw new ApexifyInputError(`AssetManager.${method}: colors must be a plain object.`);
+  }
+  for (const [key, value] of Object.entries(colors)) {
+    validatePathSegment(key, `${name}.${key}`);
+    if (typeof value !== "string") {
+      throw new ApexifyInputError(`AssetManager.${method}: ${key} must be a string.`);
+    }
+  }
+}
+
 /**
  * Named asset registry used by scenes, templates, and opt-in imperative composition.
  * Registrations reject duplicate root names by default; use explicit `replace*` methods when replacement is intended.
@@ -71,20 +83,12 @@ export class AssetManager {
   }
 
   loadPalette(name: string, colors: Record<string, string>): this {
-    if (!isPlainCompositionObject(colors)) {
-      throw new ApexifyInputError("AssetManager.loadPalette: colors must be a plain object.");
-    }
-    for (const [key, value] of Object.entries(colors)) {
-      validatePathSegment(key, `${name}.${key}`);
-      if (typeof value !== "string") throw new ApexifyInputError(`AssetManager.loadPalette: ${key} must be a string.`);
-    }
+    validatePalette(name, colors, "loadPalette");
     return this.register(name, "palette", colors, false);
   }
 
   replacePalette(name: string, colors: Record<string, string>): this {
-    if (!isPlainCompositionObject(colors)) {
-      throw new ApexifyInputError("AssetManager.replacePalette: colors must be a plain object.");
-    }
+    validatePalette(name, colors, "replacePalette");
     return this.register(name, "palette", colors, true);
   }
 
