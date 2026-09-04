@@ -18,6 +18,8 @@ export {
   ApexifyDecodeError,
   ApexifyProcessError,
   ApexifyExternalServiceError,
+  ApexifyAssetError,
+  ApexifyPluginError,
 } from "./runtime";
 export type {
   ApexifyRuntimeConfig,
