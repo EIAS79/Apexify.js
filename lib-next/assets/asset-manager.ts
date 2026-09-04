@@ -34,6 +34,42 @@ function validatePalette(name: string, colors: Record<string, string>, method: s
   }
 }
 
+function validateAssetValue(value: unknown, label: string): asserts value is AssetValue {
+  const active = new WeakSet<object>();
+
+  const visit = (current: unknown, path: string): void => {
+    if (current === null || typeof current === "string" || typeof current === "number" || typeof current === "boolean") return;
+    if (Buffer.isBuffer(current)) return;
+    if (typeof current !== "object") {
+      throw new ApexifyInputError(`${path} must contain only JSON-like values or Buffers.`);
+    }
+    if (!Array.isArray(current) && !isPlainCompositionObject(current)) {
+      throw new ApexifyInputError(`${path} contains an unsupported object; only arrays, plain records, and Buffers are allowed.`);
+    }
+    if (active.has(current)) {
+      throw new ApexifyInputError(`${path} contains a cyclic object graph.`);
+    }
+
+    active.add(current);
+    try {
+      if (Array.isArray(current)) {
+        current.forEach((item, index) => visit(item, `${path}[${index}]`));
+      } else {
+        for (const [key, child] of Object.entries(current)) {
+          if (key === "__proto__" || key === "prototype" || key === "constructor") {
+            throw new ApexifyInputError(`${path} contains unsafe key "${key}".`);
+          }
+          visit(child, `${path}.${key}`);
+        }
+      }
+    } finally {
+      active.delete(current);
+    }
+  };
+
+  visit(value, label);
+}
+
 /**
  * Named asset registry used by scenes, templates, and opt-in imperative composition.
  * Registrations reject duplicate root names by default; use explicit `replace*` methods when replacement is intended.
@@ -92,12 +128,14 @@ export class AssetManager {
     return this.register(name, "palette", colors, true);
   }
 
-  /** Register arbitrary JSON-like composition data (including text, colors, template fragments, arrays, and Buffers). */
+  /** Register JSON-like composition data (including scalars, arrays, plain records, and Buffers). */
   loadValue(name: string, value: AssetValue): this {
+    validateAssetValue(value, `AssetManager.loadValue(${name})`);
     return this.register(name, "value", value, false);
   }
 
   replaceValue(name: string, value: AssetValue): this {
+    validateAssetValue(value, `AssetManager.replaceValue(${name})`);
     return this.register(name, "value", value, true);
   }
 
