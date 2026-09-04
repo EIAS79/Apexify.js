@@ -6,7 +6,7 @@
 
 **Programmatic visual generation for Node.js.**
 
-Create images, charts, text effects, shapes, GIFs, MP4/video, **`videoPipeline`** edits, procedural **SFX** (`createAudio`), **scenes**, **templates**, and composed layouts from JavaScript or TypeScript.
+Create images, charts, styled text, GIFs, video, procedural SFX, scenes, templates, and reusable composition systems from JavaScript or TypeScript.
 
 [![npm version](https://badge.fury.io/js/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
 [![npm downloads](https://img.shields.io/npm/dt/apexify.js.svg)](https://www.npmjs.com/package/apexify.js)
@@ -25,27 +25,23 @@ Create images, charts, text effects, shapes, GIFs, MP4/video, **`videoPipeline`*
 
 ## What is Apexify.js?
 
-**Apexify.js** is a TypeScript-first Node.js rendering library for generating visual assets from code.
+Apexify.js is a TypeScript-first, server-side Node.js rendering library. It combines:
 
-It is built for developers who need to create images, charts, banners, cards, reports, GIFs, or video-related outputs without manually designing every asset.
-
-Apexify.js combines:
-
-- canvas rendering
-- image composition
-- text rendering
-- shape drawing
-- chart generation
+- canvas and image composition
+- styled text and custom fonts
+- shapes, paths, pixels, and hit testing
+- charts
 - GIF creation
-- video processing (encode, trim, splice, **`addTextOverlay`**, **`videoPipeline`**, **`mixAudio`**, frame export)
-- procedural audio / SFX (`createAudio` — presets, layers, sequences, compose)
-- layered **scenes** and **templates** (`renderScene`, placeholders, **`$`** assets)
-- lightweight **components** (**`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`** → **`SceneLayer[]`**)
-- **plugins** (**`PluginHost`** + **`ApexPainter.use`**)
-- batch / chain helpers and batch output utilities
-- pixel/path/hit-testing APIs
+- FFmpeg-backed video processing and `videoPipeline`
+- procedural WAV/SFX generation with `createAudio`
+- layered scenes and nested surfaces
+- immutable templates with placeholders, layout, visibility, overrides, and insertions
+- named composition assets (`$name`, dotted paths, palettes, Buffers, arbitrary values)
+- preset scene components (`badge`, `progressBar`, `avatar`, `card`, `watermark`)
+- asynchronous transactional plugins
+- batch/chain and output utilities
 
-under one programmable workflow.
+The public package is intended for Node.js/server-side workloads.
 
 ---
 
@@ -55,24 +51,16 @@ under one programmable workflow.
 npm install apexify.js
 ```
 
-```bash
-yarn add apexify.js
-```
-
-```bash
-pnpm add apexify.js
-```
-
 ### Requirements
 
 - Node.js 22.x, 24.x, or 26.x
-- npm 10+ (repository and release tooling is pinned to npm 11.19.1)
+- npm 10+ (repository/release tooling is pinned to npm 11.19.1)
 - TypeScript recommended
-- FFmpeg required only for video features
+- FFmpeg/ffprobe only for video features
 
-### Module formats and exports
+### ESM and CommonJS
 
-Apexify.js 6 is a genuine dual package. The installed package has separate ESM and CommonJS runtime entrypoints and matching declaration modes.
+Apexify.js 6 is a dual package with separate ESM/CommonJS runtimes and matching declaration modes.
 
 ```js
 // ESM
@@ -82,13 +70,11 @@ import { ApexPainter } from "apexify.js";
 const { ApexPainter } = require("apexify.js");
 ```
 
-The supported package-root **runtime** export is `ApexPainter`. TypeScript types are re-exported from the package root, and advanced type-only imports may use `apexify.js/types`. The `apexify.js/types` subpath is type-only and has no runtime JavaScript target.
+`ApexPainter` is the main runtime façade. The package root also exposes supported runtime policy/configuration functions and structured Apexify error classes. Public TypeScript types are re-exported from the package root; advanced type-only imports may use `apexify.js/types`. The `apexify.js/types` subpath has no runtime JavaScript target.
 
 ---
 
-## Quick Start
-
-Create a canvas, draw text on it, and save the result.
+## Quick start
 
 ```ts
 import { writeFileSync } from "node:fs";
@@ -121,15 +107,6 @@ const output = await painter.createText(
     decorations: { bold: true },
     fill: { color: "#ffffff" },
     placement: { textAlign: "center", textBaseline: "middle" },
-    effects: {
-      shadow: {
-        color: "rgba(0,0,0,0.35)",
-        offsetX: 0,
-        offsetY: 14,
-        blur: 28,
-        opacity: 1,
-      },
-    },
   },
   base
 );
@@ -139,102 +116,228 @@ writeFileSync("output.png", output);
 
 ---
 
-## Named assets (`$name`, `$palette.key`)
+# Composition architecture
 
-Register images, fonts, and color palettes on **`painter.assets`**.
+## Named assets (`painter.assets`)
 
-- **Scenes** (`renderScene`, `renderSceneToGIF`, `renderSceneToVideoFrames`): `$refs` in strings are resolved **by default** (use `{ resolveAssetRefs: false }` to skip).
-- **Templates**: resolved when you call **`TemplateHandle.render`**.
-- **`SceneBuilder.render`**: opt in with **`{ resolveAssetRefs: true }`**.
-
-**Imperative** APIs (`createCanvas`, `createImage`, `createText`, `measureText`, chart methods, `createGIF`, `animate`, `createVideo`, `videoPipeline`) leave **`$refs`** unchanged unless you pass **`{ resolveAssetRefs: true }`** on the trailing options argument (where supported), or preprocess once with **`painter.prepareForRender(config)`**. **`batch`** and **`chain`** accept **`{ resolveAssetRefs: true }`** (and optional **`resolve`**) to resolve each batch **`config`** or each chained **`args`** value.
-
-Minimal example:
+`AssetManager` is a single named registry for images, font paths, palettes, and arbitrary JSON-like composition values.
 
 ```ts
-painter.assets.loadPalette("brand", { primary: "#6366f1", ink: "#0f172a" });
-await painter.createCanvas(
-  { width: 400, height: 200, colorBg: "$brand.primary" },
-  { resolveAssetRefs: true }
-);
-// or build config first:
+painter.assets.loadImage("logo", "./brand/logo.png");
+painter.assets.loadFont("heading", "./fonts/Inter-Bold.ttf");
+painter.assets.loadPalette("brand", {
+  primary: "#6366f1",
+  ink: "#0f172a",
+});
+painter.assets.loadValue("copy", {
+  hero: { title: "Apexify.js" },
+  spacing: [8, 16, 24],
+});
+```
+
+Root names are unique across the registry. Duplicate `load*` calls throw `ApexifyAssetError`; replacement must be explicit with `replaceImage`, `replaceFont`, `replacePalette`, or `replaceValue`. Replacement of an unknown name also throws.
+
+Reference rules:
+
+- `$logo` — whole asset value
+- `$brand.primary` — dotted own-property path
+- `$copy.spacing.1` — array-index path
+- `color=$brand.primary` — embedded scalar reference
+- `$$brand.primary` — literal `$brand.primary`
+
+Whole-field references may resolve to structured data or Buffers where the target field accepts them. Embedded references must resolve to string/number/boolean scalars. Unknown/unsafe paths, unsupported embedded structured values, and cyclic composition graphs fail with structured errors.
+
+Asset registrations and resolutions are cloned so caller mutation does not silently mutate registry storage.
+
+### Where `$` resolution happens
+
+- `renderScene`, `renderSceneToGIF`, `renderSceneToVideoFrames`: **on by default**; pass `resolveAssetRefs: false` to skip.
+- templates: resolved during `TemplateHandle.toRenderInput()` / `render()`.
+- `SceneBuilder.render()`: **off by default**; opt in with `{ resolveAssetRefs: true }`.
+- imperative APIs: opt in using the supported trailing `{ resolveAssetRefs: true }` option or preprocess with `painter.prepareForRender(value)`.
+- `batch` / `chain`: accept `{ resolveAssetRefs: true }` and an optional custom resolver.
+
+```ts
 const cfg = painter.prepareForRender({
   width: 400,
   height: 200,
   colorBg: "$brand.primary",
 });
+
 await painter.createCanvas(cfg);
 ```
 
 ---
 
-## Scenes, templates, and components
+## Scenes
 
-**Scenes** — Layered compositions (**`SceneLayer[]`**: image, text, path, chart, nested **`surface`**, …).
+A scene is a validated ordered `SceneLayer[]` graph. Array order is deterministic bottom → top.
 
-- **`createScene`** returns **`SceneBuilder`**: **`addLayers`**, stack editing (**`insertLayer`**, **`moveLayer`**, …), **`toRenderInput()`**, **`render()`**. Use **`render({ resolveAssetRefs: true })`** when layers contain **`$…`** asset strings (same rules as **`renderScene`** if the builder was created via **`createScene`**).
-- **`renderScene`**, **`renderSceneToGIF`**, **`renderSceneToVideoFrames`** — PNG / GIF / video; string **`$refs`** resolve **by default** (pass **`{ resolveAssetRefs: false }`** on the matching options bag to skip).
-- **`validateSceneRenderInput`** — checks dimensions and nested **`surface`** depth for untrusted payloads.
+```ts
+const scene = painter
+  .createScene(640, 360)
+  .setBackground({ colorBg: "#0f172a" })
+  .addLayers([
+    {
+      type: "text",
+      texts: { text: "Scene", x: 48, y: 80, fontSize: 36, color: "#f8fafc" },
+    },
+  ]);
 
-**Templates** — **`createTemplate(definition, options?)`** returns **`TemplateHandle`**: placeholders **`{{key}}`** / **`{{key \| default}}`**, **`$`** assets, flex **`layout`**, **`visible`**, layer **`id`** + render **`overrides`**.
-
-**Components** — **`painter.components`**: **`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`**; each **`toLayers(options)`** returns **`SceneLayer[]`** for **`renderScene`** or **`SceneBuilder.addLayers`**.
-
-**Plugins** — **`painter.plugins.use(name, api)`** registers a named API object; **`painter.use(plugin)`** installs an **`ApexifyPlugin`** once per **`plugin.name`** (**`plugin.install(this)`**).
-
----
-
-## Core Workflow
-
-Typical flows:
-
-```txt
-Imperative → createCanvas → createText / createImage / … → Buffer → save()
-Scenes     → renderScene | createTemplate().render() | SceneBuilder.render()
+const png = await scene.render();
 ```
 
-Classic buffer pipeline:
+`SceneBuilder` supports `addLayer(s)`, `insertLayer(s)`, `insertBefore`, `insertAfter`, `replaceLayer(s)`, `moveLayer`, `removeLayer`, `clearLayers`, and `toRenderInput()`.
 
-```txt
-createCanvas()
-     ↓
-createText() / createImage() / createChart() / createScene()…
-     ↓
-save() / outPut() / return Buffer
+Builder inputs are copied on ingress. `toRenderInput()` and render operations use isolated snapshots, so later caller mutation cannot change an already-created composition.
+
+Nested `surface` layers render to child canvases and composite directly into the parent; they are not PNG-encoded and decoded at every nesting boundary.
+
+### Scene validation
+
+Scene safety validation is mandatory. The deprecated `SceneRenderOptions.validate` property is retained only for source compatibility and does not disable validation.
+
+Validation enforces root/surface dimensions, aggregate scene pixel budget, total layers, surface depth/count, image/text/chart counts, total text content, remote assets, domain-specific image/text validation, finite transforms/opacities, and configured runtime limits. `maxSurfaceDepth` may make one render stricter but cannot raise the global limit.
+
+```ts
+painter.validateSceneRenderInput({
+  width: 1200,
+  height: 630,
+  layers: [],
+});
 ```
 
-Most drawing APIs return a **`Buffer`**; **`createCanvas`** returns **`CanvasResults`** (`buffer` plus metadata). Results can be saved, streamed, chained, or passed into **`renderScene`**, GIF/video helpers, or **`batch`** / **`chain`**.
+---
+
+## Templates
+
+`createTemplate(definition, options?)` captures an immutable definition and returns a `TemplateHandle`.
+
+Supported behavior includes:
+
+- required `{{key}}` placeholders
+- nullish-only defaults: `{{key | default}}`
+- native whole-placeholder values (`0`, `false`, and `""` are preserved)
+- dotted placeholder paths
+- `visible`
+- `$` asset resolution
+- unique layer `id` values
+- deep render-time overrides
+- deterministic insertions before/after ids
+- flex and grid layout nodes
+- final scene validation
+- immutable definition/data snapshots across asynchronous layout work
+
+```ts
+const card = painter.createTemplate({
+  width: 560,
+  height: 220,
+  background: { colorBg: "$brand.primary" },
+  layers: [
+    {
+      id: "title",
+      type: "text",
+      text: "{{title}}",
+      x: 32,
+      y: 48,
+      fontSize: 28,
+      color: "#ffffff",
+    },
+    {
+      id: "details",
+      type: "text",
+      visible: "{{showDetails}}",
+      text: "{{details | No details}}",
+      x: 32,
+      y: 100,
+      fontSize: 16,
+      color: "#ffffff",
+    },
+  ],
+});
+
+const png = await card.render({
+  title: "Build complete",
+  showDetails: false,
+});
+```
+
+Template resolution is deterministic: insertions → id validation → overrides → visibility → placeholders → assets → numeric/layout normalization → scene validation. Hidden subtrees are removed before their other missing placeholders/assets are resolved.
 
 ---
 
-## Why Use Apexify.js?
+## Components
 
-Apexify.js is useful when your application needs to generate visuals automatically.
+`painter.components` exposes static factories that return ordinary `SceneLayer[]`:
 
-Examples:
+- `badge.toLayers(options)`
+- `progressBar.toLayers(options)`
+- `avatar.toLayers(options)`
+- `card.toLayers(options)`
+- `watermark.toLayers(options)`
 
-- dynamic Open Graph images
-- social media banners
-- Discord welcome cards
-- product cards
-- certificates
-- reports and chart images
-- dashboard snapshots
-- animated GIFs
-- procedural game/UI sound effects (WAV buffers, no asset files)
-- video thumbnails
-- frame-based videos with muxed SFX
-- batch-generated marketing assets
+Built-ins validate finite/positive geometry and relevant limits. Watermark placement is canvas-aware and rejects impossible position/margin/text-fit combinations.
 
-Instead of designing every asset manually, you define the visual structure in code and generate outputs on demand.
+These are rendering helpers, not DOM widgets; generated layers do not carry ARIA/alt semantics. Provide accessible names/descriptions in the HTML/UI that displays the generated image.
+
+```ts
+const layers = [
+  ...painter.components.badge.toLayers({ text: "NEW", x: 20, y: 20 }),
+  ...painter.components.progressBar.toLayers({
+    x: 20,
+    y: 64,
+    width: 300,
+    height: 18,
+    value: 72,
+    max: 100,
+    showLabel: true,
+  }),
+];
+
+await painter.renderScene({
+  width: 380,
+  height: 130,
+  background: { colorBg: "#020617" },
+  layers,
+});
+```
 
 ---
 
-## Main Features
+## Plugins
 
-### Canvas & Backgrounds
+There are two extension surfaces:
 
-Create base canvases with solid colors, gradients, images, layered backgrounds, patterns, noise, shadows, borders, and transformations.
+- `painter.plugins.use(name, api)` registers a named API object.
+- `await painter.use(plugin)` installs an `ApexifyPlugin` once per plugin name.
+
+**Always await `painter.use(plugin)`.** `plugin.install(host)` may be asynchronous. Plugin installs are serialized, same-name installed/pending duplicates are rejected, and `ApexPainter.use()` resolves only after installation completes.
+
+PluginHost registry mutations performed inside a failing plugin's own async installation context are rolled back. Pre-existing APIs removed by the failing plugin are restored; unrelated application registry writes that happen concurrently are preserved. A failed plugin name may be retried. The current lifecycle is install-only—there is no automatic teardown hook, and Apexify.js cannot roll back arbitrary external side effects performed by plugin code.
+
+```ts
+await painter.use({
+  name: "watermark-kit",
+  async install(host) {
+    await Promise.resolve();
+    host.plugins.use("watermark-kit", {
+      layers(text: string) {
+        return host.components.watermark.toLayers({
+          text,
+          canvasWidth: 640,
+          canvasHeight: 360,
+        });
+      },
+    });
+  },
+});
+```
+
+---
+
+# Main rendering features
+
+## Canvas & backgrounds
 
 ```ts
 const { buffer } = await painter.createCanvas({
@@ -244,22 +347,9 @@ const { buffer } = await painter.createCanvas({
 });
 ```
 
-Supported background tools include:
+Backgrounds include solid colors, linear/radial/conic gradients, image/video-frame backgrounds, layered backgrounds, patterns, noise, borders, shadows, and transforms.
 
-- solid colors
-- linear, radial, and conic gradients
-- image backgrounds
-- video frame backgrounds
-- layered backgrounds with `bgLayers`
-- pattern overlays
-- noise effects
-- borders and shadows
-
----
-
-### Text Rendering
-
-Render styled text with layout control, gradients, shadows, strokes, glow effects, decorations, wrapping, custom fonts, rotation, and curved text.
+## Text
 
 ```ts
 const output = await painter.createText(
@@ -276,26 +366,9 @@ const output = await painter.createText(
 );
 ```
 
-Text capabilities include:
+Text supports fonts, wrapping, spacing, gradients, opacity, shadows, strokes, glow, line decorations, rotation, curved text, and metrics.
 
-- font size and family
-- custom fonts
-- bold and italic
-- alignment and baseline control
-- wrapping
-- gradients
-- shadows
-- strokes
-- glows
-- underline, overline, strikethrough
-- curved text
-- text metrics
-
----
-
-### Images & Shapes
-
-Draw images or vector-style shapes on top of an existing canvas.
+## Images & shapes
 
 ```ts
 const output = await painter.createImage(
@@ -305,203 +378,76 @@ const output = await painter.createImage(
     y: 100,
     width: 400,
     height: 220,
-    shape: {
-      fill: true,
-      color: "#ffffff",
-    },
+    shape: { fill: true, color: "#ffffff" },
     borderRadius: 32,
-    shadow: {
-      color: "rgba(0,0,0,0.25)",
-      offsetX: 0,
-      offsetY: 16,
-      blur: 32,
-    },
   },
   canvasBuffer
 );
 ```
 
-Image and shape features include:
+Image workflows include bitmap drawing, shape drawing, resize, crop, mask, clip, rotation, opacity, shadows, strokes, blend modes, filters, groups, perspective, and distortion tools.
 
-- bitmap drawing
-- shape drawing
-- resizing
-- cropping
-- masking
-- clipping
-- rotation
-- opacity
-- shadows
-- strokes
-- blend modes
-- filters
-- group transforms
-- perspective and distortion tools
-
----
-
-### Charts
-
-Generate static chart images directly from data.
+## Charts
 
 ```ts
 const chart = await painter.createChart(
   "line",
-  [
-    {
-      label: "Revenue",
-      data: [
-        { x: 1, y: 12 },
-        { x: 2, y: 18 },
-        { x: 3, y: 24 },
-        { x: 4, y: 31 },
-        { x: 5, y: 42 },
-      ],
-      color: "#7c3aed",
-    },
-  ],
-  {
-    dimensions: { width: 900, height: 500 },
-    labels: {
-      title: { text: "Revenue growth", fontSize: 18, color: "#0f172a" },
-    },
-  }
+  [{ label: "Revenue", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }], color: "#7c3aed" }],
+  { dimensions: { width: 900, height: 500 } }
 );
 ```
 
-Supported chart types include:
+Supported families include pie/donut, bar, horizontal bar, line, scatter, radar, polar area, comparison, and combo charts.
 
-- pie
-- donut
-- bar
-- horizontal bar
-- line
-- scatter
-- radar
-- polar area
-- comparison charts
-- combo charts
-
----
-
-### GIF Creation
-
-Create animated GIFs from frames, buffers, image paths, or programmatic frame generation.
+## GIF
 
 ```ts
-const gif = await painter.createGIF(undefined, {
-  width: 600,
-  height: 600,
-  frameCount: 30,
-  delay: 40,
-  outputFormat: "buffer",
-  async onStart(frameCountHint, _painter) {
-    const frames: { buffer: Buffer; duration: number }[] = [];
-
-    for (let i = 0; i < frameCountHint; i++) {
-      const canvas = await painter.createCanvas({
-        width: 600,
-        height: 600,
-        colorBg: "#111827",
-      });
-
-      const frame = await painter.createText(
-        {
-          text: `Frame ${i + 1}`,
-          x: 300,
-          y: 300,
-          font: { size: 48, family: "Arial" },
-          fill: { color: "#ffffff" },
-          placement: { textAlign: "center", textBaseline: "middle" },
-        },
-        canvas
-      );
-
-      frames.push({
-        buffer: frame,
-        duration: 40,
-      });
-    }
-
-    return frames;
-  },
-});
+const gif = await painter.createGIF(
+  [
+    { buffer: frameA, duration: 80 },
+    { buffer: frameB, duration: 80 },
+  ],
+  { width: 600, height: 600, outputFormat: "buffer" }
+);
 ```
 
-GIF features include:
+Scene compositions can also feed `renderSceneToGIF`.
 
-- frame-based animation
-- custom frame duration
-- programmatic frame generation
-- transparent color support
-- per-frame disposal
-- watermark support
-- buffer, file, base64, and attachment outputs
-
----
-
-### Procedural audio (`createAudio`)
-
-Synthesize 16-bit PCM **WAV `Buffer`s** on the server — presets, custom multi-layer sounds, timelines, and mixes. No external sound files required. Pairs with **`createVideo({ mixAudio })`** for frame-based video + SFX.
+## Procedural audio (`createAudio`)
 
 ```ts
-const painter = new ApexPainter({ type: "buffer" });
-
 const laser = painter.createAudio.preset("laser");
 
 const sfx = painter.createAudio.sequence({
   events: [
     { at: 0, preset: "coin" },
     { at: 0.15, preset: "laser", gain: 0.9 },
-    { at: 0.4, preset: "explosionSmall" },
   ],
   tail: 0.2,
 });
-
-await painter.createAudio.save(sfx, "./sfx.wav");
 ```
 
-`createAudio` capabilities include:
+`createAudio` produces WAV Buffers and provides presets, custom synthesis, sequences, composition, mixing, saving, and preset discovery.
 
-- **39** built-in presets (`laser`, `explosion`, `coin`, `jump`, `whoosh`, …)
-- **`preset()`**, **`synth()`** / **`custom()`** (waveforms, ADSR, sweeps, vibrato, filters)
-- **`sequence({ events })`** — timed preset/custom events
-- **`compose({ clips })`** — overlapping timeline clips with pitch, pan, fades, quality
-- **`mix()`**, **`save()`**, **`listPresets()`**
-- Low-level synthesis helpers are internal implementation details; the supported public audio surface is **`painter.createAudio`**.
+## Video
+
+Video operations require FFmpeg/ffprobe.
 
 ```ts
-await painter.createVideo({
-  source: silentMp4Path,
-  mixAudio: {
-    outputPath: "./final.mp4",
-    overlays: [{ source: sfx, startTime: 0 }],
-    keepOriginalAudio: false,
-  },
+const info = await painter.createVideo({
+  source: "./input.mp4",
+  getInfo: true,
 });
 ```
 
----
+`createVideo` covers one-off operations such as trim, conversion, frame-based encoding, text overlays, transitions, and audio mixing.
 
-### Video pipeline (`videoPipeline`)
-
-Declarative **layer stack** for editor-style workflows — trim, splice B-roll, **`createText`**-parity captions, and **file + synth** audio in fewer internal passes than chaining many `createVideo` calls.
-
-Layers use optional **`id`**: same **`id`** **replaces** the layer (safe for undo/redo); **`text`** / **`audio`** layers with the same **`id`** **merge** overlays or tracks.
+### `videoPipeline`
 
 ```ts
 const result = await painter
   .videoPipeline("./uploads/user.mp4")
   .trim(0, 60, "trim")
-  .splice(
-    {
-      targetStartTime: 10,
-      targetEndTime: 15,
-      replacementVideo: "./uploads/b-roll.mp4",
-      replacementDuration: 5,
-    },
-    "broll"
-  )
   .text(
     {
       text: "Chapter 1",
@@ -511,298 +457,121 @@ const result = await painter
       endTime: 10,
       font: { size: 42, family: "Arial" },
       fill: { color: "#ffffff" },
-      transitionIn: { type: "fade", duration: 0.3 },
     },
     "titles"
   )
-  .audio(
-    [
-      { type: "file", source: "./music.mp3", startTime: 0, volume: 0.35 },
-      { type: "preset", preset: "whoosh", startTime: 9.8, gain: 1.1 },
-    ],
-    { keepOriginalAudio: true, originalVolume: 0.85 },
-    "sound"
-  )
   .render({ outputPath: "./out/final.mp4" });
 
-console.log("FFmpeg passes:", result.passes);
+console.log(result.passes);
 ```
 
-Also available as **`painter.video.videoPipeline()`**. Types: **`VideoPipelineLayer`**, **`VideoPipelineAudioTrack`** from **`apexify.js/types`**. Snapshot: **`pipeline.toJSON()`** / **`VideoPipeline.fromJSON()`** for saved editor projects.
-
-Single-operation **`createVideo({ trim | replaceSegment | addTextOverlay | mixAudio | … })`** remains for scripts and one-off tasks.
+Also available as `painter.video.videoPipeline()`.
 
 ---
 
-### Video text overlays (`addTextOverlay`)
+# Advanced APIs
 
-Timed captions with the same **`TextProperties`** as **`createText`** (gradients, glow, shadow, stroke, wrap, curved text). Multiple overlays can share the same time range at different **`x`** / **`y`**.
+Apexify.js also exposes grouped APIs on:
 
-```ts
-await painter.createVideo({
-  source: "./clip.mp4",
-  addTextOverlay: {
-    outputPath: "./captioned.mp4",
-    overlays: [
-      {
-        text: "Hello",
-        x: 80,
-        y: 120,
-        startTime: 1,
-        endTime: 6,
-        font: { size: 56, family: "Arial" },
-        decorations: { bold: true },
-        fill: { color: "#fff" },
-        effects: { shadow: { offsetY: 4, blur: 12, color: "rgba(0,0,0,0.5)" } },
-        transitionIn: { type: "slideLeft", duration: 0.4 },
-        transitionOut: { type: "fade", duration: 0.25 },
-      },
-    ],
-  },
-});
-```
-
-Legacy **`addText`** / **`addAnimatedText`** on **`createVideo`** (FFmpeg `drawtext`) are deprecated; prefer **`addTextOverlay`** or **`videoPipeline().text()`**.
-
----
-
-### Video Processing
-
-Apexify.js includes FFmpeg-backed video utilities for workflows such as metadata extraction, frame extraction, conversion, trimming, segment replace, thumbnails, **`mixAudio`** (mux WAV/MP3 buffers or paths), transitions, and frame-to-video encoding.
-
-```ts
-const info = await painter.createVideo({
-  source: "./input.mp4",
-  getInfo: true,
-});
-```
-
-Create a video from generated image buffers (requires FFmpeg):
-
-```ts
-await painter.createVideo({
-  source: "",
-  createFromFrames: {
-    frames: [frameBuf1, frameBuf2, frameBuf3],
-    outputPath: "./output.mp4",
-    fps: 30,
-    format: "mp4",
-    quality: "high",
-  },
-});
-```
-
-> Video features require FFmpeg and ffprobe to be available on the host system.
-
----
-
-### Advanced APIs
-
-Apexify.js also exposes lower-level APIs on **`painter.path2d`**, **`painter.pixels`**, **`painter.detect`**, **`painter.output`**, and **`painter.image`** (paths, pixels, hit tests, encodings, raster utilities).
-
-#### Text Metrics
+- `painter.image` — raster utilities
+- `painter.path2d` — path creation/drawing/custom connectors
+- `painter.pixels` — pixel read/write/manipulation
+- `painter.detect` — hit testing
+- `painter.output` — buffer encodings
+- `painter.video` — video stack/probe/frame helpers
 
 ```ts
 const metrics = await painter.measureText({
   text: "Hello Apexify.js",
-  font: {
-    size: 48,
-    family: "Arial",
-  },
+  font: { size: 48, family: "Arial" },
   includeCharMetrics: true,
 });
 ```
 
-#### Pixel Data
-
-```ts
-const pixelData = await painter.pixels.getData(canvasBuffer, {
-  x: 0,
-  y: 0,
-  width: 100,
-  height: 100,
-});
-```
-
-#### Pixel Manipulation
-
-```ts
-const processed = await painter.pixels.manipulate(canvasBuffer, {
-  filter: "grayscale",
-  intensity: 1,
-});
-```
-
-#### Path2D
-
-```ts
-import type { PathCommand } from "apexify.js";
-
-const commands: PathCommand[] = [
-  { type: "moveTo", x: 100, y: 100 },
-  { type: "lineTo", x: 300, y: 100 },
-  { type: "lineTo", x: 300, y: 300 },
-  { type: "closePath" },
-];
-
-const path = painter.path2d.create(commands);
-
-const output = await painter.path2d.draw(canvasBuffer, path, {
-  stroke: {
-    color: "#ffffff",
-    width: 4,
-  },
-  fill: {
-    color: "#7c3aed",
-    opacity: 0.6,
-  },
-});
-```
-
-#### Hit Detection
-
-```ts
-const hit = await painter.detect.region(
-  {
-    type: "circle",
-    x: 200,
-    y: 200,
-    radius: 80,
-  },
-  220,
-  210
-);
-```
-
 ---
 
-## API Overview
-
-The main entry point is:
-
-```ts
-import { ApexPainter } from "apexify.js";
-
-const painter = new ApexPainter({ type: "buffer" });
-```
-
-Common methods and grouped APIs:
+## API overview
 
 | Method / API | Purpose |
 |---|---|
-| `assets` (`AssetManager`) | Register **`loadImage`**, **`loadFont`**, **`loadPalette`**; resolve **`$id`** / **`$palette.key`** |
-| `prepareForRender()` | Deep-resolve **`$refs`** on any JSON-like config (manual or before imperative calls) |
-| `createCanvas()` | Base canvas (**`CanvasResults`**: **`buffer`** + metadata); supports trailing **`PainterAssetRefsOptions`** |
-| `createText()` / `createImage()` | Draw on canvas; optional **`{ resolveAssetRefs: true }`** |
-| `image.*` | Raster helpers: stitch, collage, compress, resize, filters, blend, crop, mask, palette, … |
-| `createChart()` / comparison / combo | Chart PNGs; optional asset resolution on **data/options** |
-| `createScene()` | Returns **`SceneBuilder`** (layers, **`toRenderInput()`**, **`render()`**) |
-| `renderScene()` | Layer stack → PNG; **`resolveAssetRefs`** default **true** |
-| `renderSceneToGIF()` / `renderSceneToVideoFrames()` | Scene raster → GIF / video frames |
-| `validateSceneRenderInput()` | Validate **`SceneRenderInput`** before untrusted renders |
-| `createTemplate()` | **`TemplateHandle`**: placeholders, **`$`** assets, flex **layout**, **`render()`** |
-| `components.*` | **`badge`**, **`progressBar`**, **`avatar`**, **`card`**, **`watermark`** → **`SceneLayer[]`** |
-| `plugins.use()` | Register named buckets on **`PluginHost`** |
-| `use(plugin)` | Install **`ApexifyPlugin`** once per **`name`** |
-| `createGIF()` / `animate()` | GIF / frame sequences (optional **`resolveAssetRefs`** on options) |
-| `createAudio` | Procedural SFX: **`preset`**, **`synth`**, **`sequence`**, **`compose`**, **`mix`**, **`save`** |
-| `videoPipeline()` | Layered edits: **`trim`**, **`splice`**, **`text`**, **`audio`** (files + synth); **`render()`** |
-| `createVideo()` | Single FFmpeg op: trim, merge, **`addTextOverlay`**, **`mixAudio`**, convert, … |
-| `video` | **`VideoStack`**: **`getVideoInfo`**, frame extract, **`videoPipeline()`** |
-| `measureText()` | Text layout metrics (optional **`resolveAssetRefs`** on props) |
-| `path2d.create()` / `path2d.draw()` | Path2D from commands + draw |
-| `path2d.custom()` | Custom lines, arrows, connectors |
-| `pixels.getData()` / `pixels.setData()` | Read / write pixel buffers |
-| `pixels.manipulate()` | Pixel-level filters |
-| `detect.region()` / `detect.path()` | Hit testing |
-| `output.dataURL()` / `output.base64()` | Encode buffers |
-| `batch()` / `chain()` | Parallel / sequential pipelines; optional **`{ resolveAssetRefs, resolve }`** |
-| `save()` / `saveMultiple()` | Persist files |
-| `outPut()` | Convert buffer to configured format |
-
-`ApexPainter` routes **`create*`** entry points through **`lib-next/apex-painter/creates/`** (`canvas-create`, `video-create`, `audio-create`, `template-create`, …) into domain modules (`video`, `audio-synth`, `template`, `scene`, …).
+| `assets` (`AssetManager`) | `loadImage`, `loadFont`, `loadPalette`, `loadValue`, explicit `replace*`, dotted `$` resolution |
+| `prepareForRender()` | Deep-resolve `$refs` in JSON-like composition data |
+| `createCanvas()` | Base canvas (`CanvasResults`) |
+| `createText()` / `createImage()` | Draw on an existing canvas |
+| `image.*` | Stitch, collage, compress, resize, filters, blend, crop, mask, palette, … |
+| `createChart()` / comparison / combo | Chart PNGs |
+| `createScene()` | Mutable copy-on-ingress `SceneBuilder` |
+| `renderScene()` | Validated layer graph → PNG; asset resolution defaults on |
+| `renderSceneToGIF()` / `renderSceneToVideoFrames()` | Scene → GIF/video workflow |
+| `validateSceneRenderInput()` | Mandatory scene-contract preflight helper |
+| `createTemplate()` | Immutable template handle: placeholders, visibility, assets, overrides, insertions, flex/grid |
+| `components.*` | Preset scene-layer factories |
+| `plugins.use()` | Register a named PluginHost API |
+| `await use(plugin)` | Serialized asynchronous transactional plugin installation |
+| `createGIF()` / `animate()` | GIF/frame workflows |
+| `createAudio` | Procedural WAV/SFX APIs |
+| `videoPipeline()` | Declarative layered video editing |
+| `createVideo()` | Single FFmpeg operation |
+| `measureText()` | Text layout metrics |
+| `path2d.*` | Path APIs |
+| `pixels.*` | Pixel APIs |
+| `detect.*` | Hit testing |
+| `output.*` | Buffer encodings |
+| `batch()` / `chain()` | Parallel/sequential pipelines |
+| `save()` / `saveMultiple()` | Persist output files |
+| `outPut()` | Convert buffer to configured output form |
 
 ---
 
-## Output Formats
+## Output forms
 
-Apexify.js can work with multiple output forms depending on the operation and configuration:
+Depending on the API/configuration, Apexify.js works with:
 
 - `Buffer`
-- file output
-- base64
-- data URL
+- files
+- base64/data URLs
 - Blob-like output
-- ArrayBuffer
+- `ArrayBuffer`
 - URL/upload helpers where supported
 
-Most **`create*`** raster APIs return a **`Buffer`**. **`CanvasResults`** (**`createCanvas`**) exposes **`buffer`** for chaining into **`createText`** / **`createImage`** / **`batch`** / **`chain`**.
+Most raster `create*` APIs return a Buffer. `createCanvas()` returns `CanvasResults` (`buffer` plus canvas metadata).
 
 ---
 
-## Use Cases
+## Typical use cases
 
-### Server-side image generation
-
-Generate Open Graph images, banners, reports, cards, and previews from API routes or background jobs.
-
-### Discord and bot graphics
-
-Create welcome cards, profile images, level cards, badges, and generated attachments.
-
-### Marketing and social media automation
-
-Generate post images, product visuals, quote cards, thumbnails, and campaign assets in bulk.
-
-### Data visualization
-
-Render chart images for reports, dashboards, email attachments, and static exports.
-
-### Media pipelines
-
-Build editor backends with **`videoPipeline`** (layer **`id`** upsert/merge), burn **`addTextOverlay`** captions, splice clips, synthesize SFX with **`createAudio`**, and mux with **`mixAudio`** — or use **`createVideo`** for individual operations.
+- Open Graph/social images
+- Discord/bot cards
+- certificates and reports
+- dashboard snapshots
+- chart exports
+- product/marketing assets
+- animated GIFs
+- video thumbnails and editor backends
+- procedural game/UI SFX
+- batch-generated visual assets
 
 ---
 
 ## Documentation
 
-Full documentation is available at:
+Full documentation: [https://apexifyjs.vercel.app/docs#00-start-here](https://apexifyjs.vercel.app/docs#00-start-here)
 
-[https://apexifyjs.vercel.app/docs#00-start-here](https://apexifyjs.vercel.app/docs#00-start-here)
-
-Useful links:
-
-- [Start Here](https://apexifyjs.vercel.app/docs#00-start-here)
 - [Gallery](https://apexifyjs.vercel.app/gallery)
 - [Studio](https://apexifyjs.vercel.app/studio)
 - [Recipes](https://apexifyjs.vercel.app/docs#00-recipes-overview)
-- [Feature guides hub](https://apexifyjs.vercel.app/docs#feature-guides-hub)
-- [npm package](https://www.npmjs.com/package/apexify.js)
-
----
-
-## Gallery and Studio
-
-The gallery contains real generated outputs with matching TypeScript and JavaScript snippets.
-
-Use it to explore what Apexify.js can produce:
-
-[Open Gallery](https://apexifyjs.vercel.app/gallery)
-
-The Studio lets you edit and run snippets in a browser-based code playground:
-
-[Open Studio](https://apexifyjs.vercel.app/studio)
+- [npm](https://www.npmjs.com/package/apexify.js)
 
 ---
 
 ## TypeScript
 
-Apexify.js is written in TypeScript and ships type definitions.
+Apexify.js ships public declarations for ESM and CommonJS.
 
 ```ts
 import { ApexPainter } from "apexify.js";
 import type { CanvasConfig, SceneRenderInput } from "apexify.js";
-// Alternative: import type { … } from "apexify.js/types";
+// or: import type { … } from "apexify.js/types";
 
 const painter = new ApexPainter({ type: "buffer" });
 
@@ -812,70 +581,30 @@ const config: CanvasConfig = {
   colorBg: "#111827",
 };
 
-const { buffer } = await painter.createCanvas(config);
-
-const ogCard: SceneRenderInput = {
+const scene: SceneRenderInput = {
   width: 1200,
   height: 630,
   layers: [],
 };
-painter.validateSceneRenderInput(ogCard);
+
+painter.validateSceneRenderInput(scene);
 ```
 
 ---
 
-## Performance
+## Performance and safety
 
-Apexify.js is built on top of `@napi-rs/canvas`, using native rendering foundations for server-side canvas workloads.
-
-Performance depends on:
-
-- canvas size
-- number of layers
-- image filters
-- chart complexity
-- GIF frame count
-- video duration and codec
-- available CPU/memory
-- FFmpeg availability for video workflows
-
-For heavy workloads, use batching carefully and benchmark with your own input sizes.
-
----
-
-## Notes
-
-- Apexify.js is primarily designed for Node.js/server-side usage.
-- Video features require FFmpeg and ffprobe.
-- Some advanced image/video workflows may require additional host capabilities.
-- Large images, long GIFs, and video pipelines can be memory-intensive.
-- For browser-based exploration, use the Studio.
+Performance depends on canvas size, layer count, filters, chart complexity, animation/frame counts, codecs, and host resources. Apexify.js uses bounded runtime limits, mandatory scene validation, bounded image decode caching with repeated-source reuse, and direct nested-surface canvas composition. Benchmark with workloads representative of your deployment.
 
 ---
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history.
-
----
+See [CHANGELOG.md](./CHANGELOG.md).
 
 ## Contributing
 
-Contributions are welcome.
-
-Recommended contribution areas:
-
-- examples
-- documentation
-- bug fixes
-- templates / scene recipes (OG cards, dashboards)
-- chart improvements
-- performance benchmarks
-- test cases
-
-Open an issue before major architectural changes.
-
----
+Contributions are welcome. Open an issue before major architectural changes.
 
 ## License
 
