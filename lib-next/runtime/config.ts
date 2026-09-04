@@ -7,8 +7,12 @@ export interface RenderLimits {
   maxBackgroundLayers: number;
   maxFiltersPerOperation: number;
   maxSceneLayers: number;
+  maxSceneTotalPixels: number;
   maxNestedSurfaces: number;
   maxSceneDepth: number;
+  maxSceneImages: number;
+  maxSceneTextLayers: number;
+  maxSceneCharts: number;
   maxTextLength: number;
   maxRemoteAssets: number;
   maxRemoteImageBytes: number;
@@ -122,8 +126,12 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
     maxBackgroundLayers: 128,
     maxFiltersPerOperation: 64,
     maxSceneLayers: 2_000,
+    maxSceneTotalPixels: 268_435_456,
     maxNestedSurfaces: 64,
     maxSceneDepth: 32,
+    maxSceneImages: 2_000,
+    maxSceneTextLayers: 1_000,
+    maxSceneCharts: 256,
     maxTextLength: 1_000_000,
     maxRemoteAssets: 128,
     maxRemoteImageBytes: 32 * 1024 * 1024,
@@ -230,6 +238,9 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
   }
   if (limits.maxSceneDepth > limits.maxNestedSurfaces) {
     throw new ApexifyConfigError("limits.maxSceneDepth must be <= limits.maxNestedSurfaces.");
+  }
+  if (limits.maxSceneTotalPixels < limits.maxTotalPixels) {
+    throw new ApexifyConfigError("limits.maxSceneTotalPixels must be >= limits.maxTotalPixels.");
   }
   if (limits.maxBatchConcurrency > limits.maxBatchOperations) {
     throw new ApexifyConfigError("limits.maxBatchConcurrency must be <= limits.maxBatchOperations.");
