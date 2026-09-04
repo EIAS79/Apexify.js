@@ -48,7 +48,9 @@ async function main() {
 
   assets.loadValue('meta', { flags: [false, 0, '', 'ok'] });
   const resolver = (ref) => assets.resolve(ref);
-  assert.deepEqual(api.resolveAssetRefsDeep({ a: '$meta.flags.0', b: '$meta.flags.1', c: '$meta.flags.2' }, resolver), { a: false, b: 0, c: '' });
+  const resolvedRecord = api.resolveAssetRefsDeep({ a: '$meta.flags.0', b: '$meta.flags.1', c: '$meta.flags.2' }, resolver);
+  assert.equal(Object.getPrototypeOf(resolvedRecord), null, 'resolved composition records must use a null prototype');
+  assert.deepEqual({ ...resolvedRecord }, { a: false, b: 0, c: '' });
   assert.equal(api.resolveAssetStringLeaf('value=$meta.flags.1', resolver), 'value=0');
   assert.equal(api.resolveAssetStringLeaf('$$meta.flags.1', resolver), '$meta.flags.1');
   const cycle = {}; cycle.self = cycle;
