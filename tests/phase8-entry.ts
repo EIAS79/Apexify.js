@@ -1,6 +1,9 @@
 export { ApexPainter } from "../lib-next/index";
 export { VideoOperations } from "../lib-next/video/video-operations";
 export { VideoPipeline } from "../lib-next/video/video-pipeline-builder";
+export { createFfmpegSession } from "../lib-next/video/ffmpeg-session";
+export { MediaProcessRunner, MediaProcessError } from "../lib-next/video/process-runner";
+export { createTempWorkspace, withTempWorkspace } from "../lib-next/video/temp-workspace";
 export {
   ApexifyError,
   ApexifyInputError,
