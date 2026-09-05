@@ -117,10 +117,6 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
   if (limits.maxSceneTotalPixels < limits.maxTotalPixels) throw new ApexifyConfigError("limits.maxSceneTotalPixels must be >= limits.maxTotalPixels.");
   if (limits.maxBatchConcurrency > limits.maxBatchOperations) throw new ApexifyConfigError("limits.maxBatchConcurrency must be <= limits.maxBatchOperations.");
   if (limits.maxRemoteImageBytes > limits.maxImageSourceBytes) throw new ApexifyConfigError("limits.maxRemoteImageBytes must be <= limits.maxImageSourceBytes.");
-  if (limits.maxVideoAudioTracks > limits.maxVideoOverlays) throw new ApexifyConfigError("limits.maxVideoAudioTracks must be <= limits.maxVideoOverlays.");
-  if (limits.maxVideoMergeInputs > limits.maxCollectionItems) throw new ApexifyConfigError("limits.maxVideoMergeInputs must be <= limits.maxCollectionItems.");
-  if (limits.maxVideoPipelineLayers > limits.maxCollectionItems) throw new ApexifyConfigError("limits.maxVideoPipelineLayers must be <= limits.maxCollectionItems.");
-  if (limits.maxVideoExtractedFrames > limits.maxCollectionItems) throw new ApexifyConfigError("limits.maxVideoExtractedFrames must be <= limits.maxCollectionItems.");
 
   cache.ttlMs = finitePositive("cache.ttlMs", cache.ttlMs); cache.maxEntries = Math.floor(finitePositive("cache.maxEntries", cache.maxEntries)); cache.maxBytes = finitePositive("cache.maxBytes", cache.maxBytes);
   ffmpeg.ffmpegPath = optionalNonEmptyString("ffmpeg.ffmpegPath", ffmpeg.ffmpegPath); ffmpeg.ffprobePath = optionalNonEmptyString("ffmpeg.ffprobePath", ffmpeg.ffprobePath);
