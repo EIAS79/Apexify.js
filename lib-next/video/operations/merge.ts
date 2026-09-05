@@ -102,6 +102,7 @@ export class MergeOperations {
 
   private async composite(args: string[], infos: Array<{ width: number; height: number; fps: number; duration: number; audio: boolean }>, options: VideoMergeOptions, controls: VideoRunControls) {
     const policy = options.audioPolicy ?? "first";
+    const duration = Math.min(...infos.map((info) => info.duration));
     const cellWidth = evenDimension(options.grid?.cellWidth ?? Math.max(...infos.map((info) => info.width)));
     const cellHeight = evenDimension(options.grid?.cellHeight ?? Math.max(...infos.map((info) => info.height)));
     positiveNumber(cellWidth, "merge cellWidth");
@@ -123,8 +124,10 @@ export class MergeOperations {
     const audio = compositeAudioGraph(infos, policy, "vout");
     graph.push(stack);
     if (audio.graph) graph.push(audio.graph);
-    args.push("-filter_complex", graph.join(";"), ...audio.map, "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", ...this.runtime.outputArgs(options.outputPath, controls.overwrite !== false));
-    const duration = Math.min(...infos.map((info) => info.duration));
+    // Stack filters stop the video at the shortest input, but an independently mapped
+    // audio stream can otherwise extend the muxed file. Bound the whole composite to
+    // the shortest probed input so video and audio obey one deterministic duration rule.
+    args.push("-filter_complex", graph.join(";"), ...audio.map, "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", "-t", String(duration), ...this.runtime.outputArgs(options.outputPath, controls.overwrite !== false));
     await this.runtime.runFfmpeg(args, controls, duration);
     return { outputPath: options.outputPath, success: true, mode: options.mode ?? "side-by-side", audioPolicy: policy } as const;
   }
