@@ -37,7 +37,9 @@ export type GIFTextOverlaySpec = Omit<TextProperties, "x" | "y"> & {
 export interface GIFInputFrame {
   /** Milliseconds. If omitted, `GIFOptions.delay` (default 100ms) is used. */
   duration?: number;
+  /** Exactly one of `buffer` or `background` is required. */
   buffer?: GIFFrameSource;
+  /** Exactly one of `buffer` or `background` is required. */
   background?: GIFFrameSource;
   dispose?: GIFDisposalMethod;
   transparentColor?: number | string | null;
@@ -70,8 +72,6 @@ export interface GIFOptions {
   transparentColor?: number | string | null;
   defaultDispose?: GIFDisposalMethod;
   textOverlay?: GIFTextOverlaySpec;
-  /** Kept for source compatibility; ignored. */
-  basDir?: unknown;
   /** Frames are stretched to the output dimensions; this only skips redundant scaling for exact-size frames. */
   skipResizeWhenDimensionsMatch?: boolean;
   /**
@@ -82,10 +82,12 @@ export interface GIFOptions {
     frameCountHint: number,
     painter: unknown
   ) => Promise<GIFEncodedFrame[] | AsyncIterable<GIFEncodedFrame>>;
+  /** Maximum generated frames and the hint passed to onStart. The runtime maxGifFrames limit is always enforced. */
   frameCount?: number;
+  /** Optional generated-mode duration bound in milliseconds, converted to a frame bound using `delay`. */
   duration?: number;
   onEnd?: (finalFrameBuffer: Buffer, painter: unknown) => Promise<Buffer | undefined>;
-  /** Cancels further frame pulls, media requests, and encoding work where the encoder permits. */
+  /** Cancels further frame pulls, media requests, and encoding work between encoder frame commits. */
   signal?: AbortSignal;
 }
 
