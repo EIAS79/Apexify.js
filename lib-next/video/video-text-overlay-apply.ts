@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { VideoTextOverlayClip, VideoTextOverlayOperation } from "../types";
 import { renderVideoTextLayerPng } from "./render-video-text-layer";
-import { buildEnableBetween, buildOverlayMotionExpressions } from "./video-text-overlay-filters";
+import { buildEnableBetween, buildOverlayAlphaFilters, buildOverlayMotionExpressions } from "./video-text-overlay-filters";
 
 function splitOverlayStyle(clip: VideoTextOverlayClip): { style: Omit<VideoTextOverlayClip, "startTime" | "endTime" | "transitionIn" | "transitionOut" | "overlayOpacity"> } {
   const { startTime: _startTime, endTime: _endTime, transitionIn: _transitionIn, transitionOut: _transitionOut, overlayOpacity: _overlayOpacity, ...style } = clip;
@@ -29,8 +29,17 @@ export function buildTextOverlayFilterComplex(overlayCount: number, clips: Video
     const outTag = `v${i + 1}`;
     const scaleExpr = motion.scale === "1" ? "iw" : `iw*(${motion.scale})`;
     const scaleExprH = motion.scale === "1" ? "ih" : `ih*(${motion.scale})`;
-    parts.push(`[${inputIdx}:v]format=rgba,scale=w='${scaleExpr}':h='${scaleExprH}':eval=frame,colorchannelmixer=aa='${motion.alpha}'[${tag}]`);
-    parts.push(`${current}[${tag}]overlay=x='${motion.x}':y='${motion.y}':eval=frame:enable='${enable}'[${outTag}]`);
+    const alphaFilters = buildOverlayAlphaFilters(clip);
+    const prep = [
+      // A still PNG has one frame. Repeat it inside the graph so scale/alpha filters
+      // receive advancing timestamps without relying on shell/demuxer-specific argv.
+      `tpad=stop_mode=clone:stop_duration=${clip.endTime}`,
+      "format=rgba",
+      `scale=w='${scaleExpr}':h='${scaleExprH}':eval=frame`,
+      ...alphaFilters,
+    ];
+    parts.push(`[${inputIdx}:v]${prep.join(",")}[${tag}]`);
+    parts.push(`${current}[${tag}]overlay=x='${motion.x}':y='${motion.y}':eval=frame:enable='${enable}':eof_action=pass[${outTag}]`);
     current = `[${outTag}]`;
   }
   return { filterComplex: parts.join(";"), outputLabel: current.slice(1, -1) };
