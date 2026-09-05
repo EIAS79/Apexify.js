@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { FfmpegSession } from "../ffmpeg-session";
 import { createFfmpegProgressParser, type FfmpegProgress } from "../process-runner";
 import { resolveVideoInputToPath } from "../video-input-resolve";
@@ -51,6 +52,12 @@ export class VideoOperationRuntime {
   outputArgs(outputPath: string, overwrite = true): string[] {
     if (typeof outputPath !== "string" || outputPath.trim().length === 0 || outputPath.includes("\0")) {
       throw new ApexifyInputError("video outputPath must be a non-empty path without NUL bytes.");
+    }
+    // FFmpeg versions are inconsistent about the process exit status for `-n` when
+    // the destination already exists (some print an error and still exit 0). Enforce
+    // the public overwrite contract here, then keep `-n` as a TOCTOU backstop.
+    if (!overwrite && existsSync(outputPath)) {
+      throw new ApexifyInputError(`video output already exists and overwrite is false: ${outputPath}`);
     }
     return [overwrite ? "-y" : "-n", outputPath];
   }
