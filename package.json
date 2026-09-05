@@ -55,7 +55,7 @@
     "test:phase5": "node scripts/phase5-raster-scan.cjs && node scripts/build-phase5-fixture.mjs && node tests/phase5-runtime.cjs && node tests/phase5-review-regressions.cjs && node tests/phase5-completion.cjs && node tests/phase5-golden.cjs && node tests/phase5-benchmark.cjs",
     "test:phase6": "node scripts/phase6-composition-scan.cjs && node scripts/build-phase6-fixture.mjs && node tests/phase6-scenes-assets.cjs && node tests/phase6-templates-components.cjs && node tests/phase6-plugins.cjs && node tests/phase6-regressions.cjs && node tests/phase6-golden.cjs && node tests/phase6-benchmark.cjs",
     "test:phase7": "node scripts/phase7-gif-scan.cjs && node scripts/build-phase7-fixture.mjs && node tests/phase7-gif.cjs && node tests/phase7-streaming.cjs && node tests/phase7-golden.cjs && node tests/phase7-animate.cjs && node --expose-gc tests/phase7-benchmark.cjs",
-    "test:phase8": "node scripts/phase8-video-scan.cjs && node scripts/build-phase8-fixture.mjs && node tests/phase8-video.cjs && node tests/phase8-pipeline.cjs && node --expose-gc tests/phase8-benchmark.cjs",
+    "test:phase8": "node scripts/phase8-video-scan.cjs && node scripts/build-phase8-fixture.mjs && node tests/phase8-video.cjs && node tests/phase8-edges.cjs && node tests/phase8-pipeline.cjs && node --expose-gc tests/phase8-benchmark.cjs",
     "test": "npm run test:security && npm run test:phase3 && npm run test:phase4 && npm run test:phase5 && npm run test:phase6 && npm run test:phase7 && npm run test:phase8",
     "verify:package": "npm run build && node scripts/verify-packed-package.cjs",
     "verify:release": "npm run build && npm test && node scripts/verify-packed-package.cjs",
