@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import type {
   VideoPipelineAudioLayer,
   VideoPipelineAudioTrack,
@@ -71,7 +71,7 @@ async function resolveAudioTracks(
 
 async function copyOutput(source: string, target: string, overwrite: boolean): Promise<void> {
   if (source === target) return;
-  await fs.copyFile(source, target, overwrite ? 0 : fs.constants.COPYFILE_EXCL);
+  await fs.copyFile(source, target, overwrite ? 0 : fsConstants.COPYFILE_EXCL);
 }
 
 export async function renderVideoPipeline(
