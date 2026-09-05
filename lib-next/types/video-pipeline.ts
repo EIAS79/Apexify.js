@@ -27,6 +27,7 @@ export interface VideoPipelineSpliceLayer extends VideoPipelineLayerBase {
   replacementDuration?: number;
   replacementFrames?: Array<string | Buffer>;
   replacementFps?: number;
+  durationPolicy?: "fit" | "trim" | "preserve";
 }
 
 export interface VideoPipelineTextLayer extends VideoPipelineLayerBase {
@@ -44,6 +45,9 @@ export interface VideoPipelineAudioFileTrack {
   volume?: number;
   speed?: number;
   pitchSemitones?: number;
+  pan?: number;
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 /** Procedural preset at a point in time (rendered to WAV during compile). */
@@ -95,6 +99,7 @@ export interface VideoPipelineAudioLayer extends VideoPipelineLayerBase {
   originalVolume?: number;
   originalSpeed?: number;
   originalPitchSemitones?: number;
+  durationPolicy?: "video" | "shortest" | "longest";
 }
 
 export type VideoPipelineLayer =
@@ -105,6 +110,8 @@ export type VideoPipelineLayer =
   | VideoPipelineAudioLayer;
 
 export interface VideoPipelineSnapshot {
+  /** Snapshot schema version. Omitted snapshots are accepted as legacy v1 input. */
+  version?: 1;
   layers: VideoPipelineLayer[];
 }
 
@@ -113,6 +120,9 @@ export type VideoPipelineRenderPreset = "export" | "preview";
 export interface VideoPipelineRenderOptions {
   outputPath: string;
   preset?: VideoPipelineRenderPreset;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  overwrite?: boolean;
   onProgress?: (progress: { percent: number; time: number; speed: number }) => void;
 }
 
@@ -120,4 +130,6 @@ export interface VideoPipelineRenderResult {
   outputPath: string;
   success: boolean;
   passes: number;
+  /** Deterministic ordered operation names executed for this render. */
+  executionPlan: string[];
 }
