@@ -35,6 +35,7 @@ function cloneLayers(layers: readonly VideoPipelineLayer[]): VideoPipelineLayer[
 }
 
 function reviveSerializedBuffers(value: unknown): unknown {
+  if (Buffer.isBuffer(value)) return Buffer.from(value);
   if (Array.isArray(value)) return value.map(reviveSerializedBuffers);
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
