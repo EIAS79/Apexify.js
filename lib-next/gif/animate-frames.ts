@@ -3,8 +3,10 @@ import { GifEncoder } from "@skyra/gifenc";
 import fs from "node:fs";
 import { finished } from "node:stream/promises";
 import type { Frame } from "../types";
+import type { gradient } from "../types/gradient";
 import { decodeImageDataUrl, resolveMediaInput } from "../media/source";
 import { decodeImageSource } from "../image/image-source-validation";
+import { createGradientFill } from "../render/gradient-fill";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError, ApexifyProcessError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertGifResourceLimits, assertWithinLimit } from "../runtime/limits";
 import {
@@ -173,22 +175,13 @@ export async function animateFrames(
 
       let fillStyle: string | CanvasGradient | CanvasPattern | null = null;
       if (frame.gradient) {
-        const { type, startX, startY, endX, endY, startRadius, endRadius, colors } = frame.gradient;
-        let gradient: CanvasGradient | null = null;
-        if (type === "linear") {
-          gradient = ctx.createLinearGradient(startX ?? 0, startY ?? 0, endX ?? width, endY ?? height);
-        } else if (type === "radial") {
-          gradient = ctx.createRadialGradient(
-            startX ?? width / 2,
-            startY ?? height / 2,
-            startRadius ?? 0,
-            endX ?? width / 2,
-            endY ?? height / 2,
-            endRadius ?? Math.max(width, height)
-          );
-        }
-        colors.forEach((colorStop) => { if (gradient) gradient.addColorStop(colorStop.stop, colorStop.color); });
-        fillStyle = gradient;
+        // Route animation gradients through the shared renderer so linear/radial/conic
+        // semantics cannot silently diverge from the rest of Apexify. `angle` is the
+        // legacy conic alias retained by GradientConfig.
+        const normalized = frame.gradient.type === "conic" && frame.gradient.startAngle === undefined && frame.gradient.angle !== undefined
+          ? { ...frame.gradient, startAngle: frame.gradient.angle }
+          : frame.gradient;
+        fillStyle = createGradientFill(ctx, normalized as gradient, { x: 0, y: 0, w: width, h: height });
       }
 
       if (frame.pattern) {
