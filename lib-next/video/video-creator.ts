@@ -1,6 +1,7 @@
 import type { VideoOperations } from "./video-operations";
 import type { VideoCreationOptions } from "./video-options";
 import { validateVideoCreationOptions } from "./video-validation";
+import { validatePhase8VideoOptions } from "./video-phase8-validation";
 
 export type {
   MixAudioOperation,
@@ -23,6 +24,7 @@ export class VideoCreator {
 
   createVideo(options: VideoCreationOptions): Promise<unknown> {
     validateVideoCreationOptions(options);
+    validatePhase8VideoOptions(options);
     return this.operations.create(options);
   }
 }
