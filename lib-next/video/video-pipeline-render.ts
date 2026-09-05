@@ -13,6 +13,7 @@ import type { VideoOperations } from "./video-operations";
 import { synthesizePreset, synthesizeSequence, synthesizeSound } from "../audio-synth/synthesizer";
 import { withTempWorkspace, type TempWorkspace } from "./temp-workspace";
 import { validateVideoPipelineLayers, validateVideoPipelineRenderOptions } from "./video-validation";
+import { validatePhase8PipelineLayers, validatePhase8PipelineRenderOptions } from "./video-phase8-validation";
 import { ApexifyInputError } from "../runtime/errors";
 
 interface ParsedPipeline {
@@ -27,21 +28,14 @@ function parseLayers(layers: VideoPipelineLayer[]): ParsedPipeline {
   const sourceLayer = layers.find((layer) => layer.kind === "source");
   if (!sourceLayer || sourceLayer.kind !== "source") throw new ApexifyInputError("videoPipeline requires a source layer.");
   const trim = layers.find((layer) => layer.kind === "trim") as VideoPipelineTrimLayer | undefined;
-  const splices = (layers.filter((layer) => layer.kind === "splice") as VideoPipelineSpliceLayer[])
-    .slice()
-    .sort((a, b) => a.targetStartTime - b.targetStartTime || (a.id ?? "").localeCompare(b.id ?? ""));
+  const splices = (layers.filter((layer) => layer.kind === "splice") as VideoPipelineSpliceLayer[]).slice().sort((a, b) => a.targetStartTime - b.targetStartTime || (a.id ?? "").localeCompare(b.id ?? ""));
   const textOverlays = layers.filter((layer) => layer.kind === "text").flatMap((layer) => layer.kind === "text" ? layer.overlays : []);
   const audioLayers = layers.filter((layer) => layer.kind === "audio") as VideoPipelineAudioLayer[];
-  const audio = audioLayers.length
-    ? { ...audioLayers[audioLayers.length - 1]!, tracks: audioLayers.flatMap((layer) => layer.tracks) }
-    : undefined;
+  const audio = audioLayers.length ? { ...audioLayers[audioLayers.length - 1]!, tracks: audioLayers.flatMap((layer) => layer.tracks) } : undefined;
   return { source: sourceLayer.source, trim, splices, textOverlays, audio };
 }
 
-async function resolveAudioTracks(
-  tracks: VideoPipelineAudioTrack[],
-  workspace: TempWorkspace
-): Promise<Array<{ source: string | Buffer; startTime: number; volume?: number; duration?: number; sourceStart?: number; speed?: number; pitchSemitones?: number; pan?: number; fadeIn?: number; fadeOut?: number }>> {
+async function resolveAudioTracks(tracks: VideoPipelineAudioTrack[], workspace: TempWorkspace): Promise<Array<{ source: string | Buffer; startTime: number; volume?: number; duration?: number; sourceStart?: number; speed?: number; pitchSemitones?: number; pan?: number; fadeIn?: number; fadeOut?: number }>> {
   const resolved: Array<{ source: string | Buffer; startTime: number; volume?: number; duration?: number; sourceStart?: number; speed?: number; pitchSemitones?: number; pan?: number; fadeIn?: number; fadeOut?: number }> = [];
   let sequence = 0;
   for (const track of tracks) {
@@ -74,13 +68,11 @@ async function copyOutput(source: string, target: string, overwrite: boolean): P
   await fs.copyFile(source, target, overwrite ? 0 : fsConstants.COPYFILE_EXCL);
 }
 
-export async function renderVideoPipeline(
-  operations: VideoOperations,
-  layers: VideoPipelineLayer[],
-  options: VideoPipelineRenderOptions
-): Promise<VideoPipelineRenderResult> {
+export async function renderVideoPipeline(operations: VideoOperations, layers: VideoPipelineLayer[], options: VideoPipelineRenderOptions): Promise<VideoPipelineRenderResult> {
   validateVideoPipelineLayers(layers);
+  validatePhase8PipelineLayers(layers);
   validateVideoPipelineRenderOptions(options);
+  validatePhase8PipelineRenderOptions(options);
   const plan = parseLayers(layers);
   const controls = { signal: options.signal, timeoutMs: options.timeoutMs, overwrite: options.overwrite, onProgress: options.onProgress };
 
@@ -145,18 +137,8 @@ export async function renderVideoPipeline(
     if (options.preset === "preview") {
       const previewPath = workspace.path("pipeline-preview.mp4");
       const info = await operations.getInfo(currentPath, controls);
-      const resolution = info.width >= info.height
-        ? { width: Math.min(960, info.width), fit: "contain" as const }
-        : { height: Math.min(960, info.height), fit: "contain" as const };
-      await operations.transcode.convert(currentPath, {
-        outputPath: previewPath,
-        format: "mp4",
-        videoCodec: "libx264",
-        audioCodec: info.audio ? "aac" : "none",
-        quality: "low",
-        fps: Math.min(30, info.fps),
-        resolution,
-      }, { ...controls, overwrite: true });
+      const resolution = info.width >= info.height ? { width: Math.min(960, info.width), fit: "contain" as const } : { height: Math.min(960, info.height), fit: "contain" as const };
+      await operations.transcode.convert(currentPath, { outputPath: previewPath, format: "mp4", videoCodec: "libx264", audioCodec: info.audio ? "aac" : "none", quality: "low", fps: Math.min(30, info.fps), resolution }, { ...controls, overwrite: true });
       currentPath = previewPath;
       executionPlan.push("preview");
       passes += 1;
