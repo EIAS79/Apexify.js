@@ -124,7 +124,7 @@ export function validateGIFGeneralOptions(options: GIFOptions, frameCountHint = 
 
   const delay = options.delay ?? 100;
   const durationCount = options.duration !== undefined && delay > 0 ? Math.ceil(options.duration / delay) : 0;
-  const expectedFrames = options.frameCount ?? durationCount || frameCountHint;
+  const expectedFrames = (options.frameCount ?? durationCount) || frameCountHint;
   if (expectedFrames > 0) assertWithinLimit("maxGifFrames", expectedFrames);
   if (options.width !== undefined && options.height !== undefined) {
     assertGifResourceLimits(options.width, options.height, Math.max(1, expectedFrames));
