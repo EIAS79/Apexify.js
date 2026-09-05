@@ -157,7 +157,7 @@ async function main() {
     const port = await listen(server);
     try {
       api.configureApexifyRuntime({
-        network: { trustedNetworkAccess: true, allowedHosts: ['127.0.0.1'], retryAttempts: 0, timeoutMs: 2000 },
+        network: { trustedNetworkAccess: true, allowedHosts: ['127.0.0.1'], retryAttempts: 1, timeoutMs: 2000 },
         limits: { maxBatchConcurrency: 4, maxConcurrentRemoteFetches: 3 },
       });
       perf.push(await timed('remote-equivalent-12', 12, async () => {
