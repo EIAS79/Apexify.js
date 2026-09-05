@@ -13,6 +13,7 @@ import type {
   GIFWatermarkSpec,
 } from "../types";
 import { getCanvasContext } from "../core/errors";
+import { BoundedCache } from "../media/cache";
 import { decodeImageDataUrl, resolveMediaInput } from "../media/source";
 import { decodeImageSource } from "../image/image-source-validation";
 import { EnhancedTextRenderer } from "../text/enhanced-text-renderer";
@@ -46,6 +47,8 @@ type PreparedFrameSource =
 
 type GIFPrimaryResult = Buffer | string | GIFAttachment[] | undefined;
 
+type WatermarkCache = BoundedCache<string, Image>;
+
 function isAsyncIterable<T>(value: unknown): value is AsyncIterable<T> {
   return value != null && typeof (value as AsyncIterable<T>)[Symbol.asyncIterator] === "function";
 }
@@ -60,6 +63,15 @@ function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) {
     throw new ApexifyProcessError("createGIF: operation aborted.", { cause: signal.reason });
   }
+}
+
+function createWatermarkCache(): WatermarkCache {
+  return new BoundedCache<string, Image>({
+    ttlMs: 60 * 60 * 1000,
+    maxEntries: 4,
+    maxBytes: 4,
+    sizeOf: () => 1,
+  });
 }
 
 export class GIFCreator {
@@ -268,7 +280,7 @@ export class GIFCreator {
   private async watermarkImage(
     spec: GIFWatermarkSpec,
     signal: AbortSignal,
-    cache: Map<string, Image>,
+    cache: WatermarkCache,
     cacheRemoteBytes: boolean
   ): Promise<Image> {
     const key = watermarkCacheKey(spec.url);
@@ -278,13 +290,7 @@ export class GIFCreator {
     }
     const source = await this.resolveImageSource(spec.url, signal, cacheRemoteBytes);
     const image = await decodeImageSource(source, { label: "createGIF watermark" });
-    if (key) {
-      if (cache.size >= 4) {
-        const oldest = cache.keys().next().value as string | undefined;
-        if (oldest !== undefined) cache.delete(oldest);
-      }
-      cache.set(key, image);
-    }
+    if (key) cache.set(key, image);
     return image;
   }
 
@@ -335,7 +341,7 @@ export class GIFCreator {
     frame: GIFCanonicalFrame,
     options: GIFOptions,
     signal: AbortSignal,
-    cache: Map<string, Image>,
+    cache: WatermarkCache,
     globalImage?: Image
   ): Promise<void> {
     if (frame.watermark?.enable === false) return;
@@ -416,6 +422,7 @@ export class GIFCreator {
     let fileStream: fs.WriteStream | undefined;
     let outputPromise: Promise<Buffer | void> | undefined;
     let outputStarted = false;
+    let watermarkCache: WatermarkCache | undefined;
 
     try {
       // Common/output/overlay validation is always executed before onStart or any output allocation.
@@ -427,7 +434,7 @@ export class GIFCreator {
       assertGifResourceLimits(canvasWidth, canvasHeight, 1);
       const prepared = await this.prepareFrameSource(gifFrames, options, signal, canvasWidth, canvasHeight);
 
-      const watermarkCache = new Map<string, Image>();
+      watermarkCache = createWatermarkCache();
       const globalWatermarkImage = options.watermark && options.watermark.enable !== false
         ? await this.watermarkImage(options.watermark, signal, watermarkCache, true)
         : undefined;
@@ -508,6 +515,8 @@ export class GIFCreator {
       }
       if (error instanceof ApexifyError) throw error;
       throw new ApexifyDecodeError("GIF creation failed.", { cause: error });
+    } finally {
+      watermarkCache?.clear();
     }
   }
 }
