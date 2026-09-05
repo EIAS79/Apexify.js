@@ -411,7 +411,25 @@ const gif = await painter.createGIF(
 );
 ```
 
-Scene compositions can also feed `renderSceneToGIF`.
+For long generated animations, `onStart` may return an `AsyncIterable<GIFEncodedFrame>`. Apexify pulls one generated frame at a time and completes resolve → decode → overlay → encode before requesting the next frame, so producer backpressure is preserved instead of collecting the stream first. Static frame arrays use bounded ordered resolution tied to the central batch/network concurrency policy.
+
+GIF frame/watermark URLs use the shared media/network layer, including SSRF/host policy and remote-byte limits. `createGIF` supports file, Buffer, base64, and Buffer-backed `.gif` attachment outputs; `AbortSignal`, rich text overlays, watermark positioning/sizing/opacity, transparency/disposal overrides, GIF signature checks, and partial-file cleanup are supported. Scene compositions can also feed `renderSceneToGIF`.
+
+```ts
+await painter.createGIF(undefined, {
+  outputFormat: "file",
+  outputFile: "./out/streamed.gif",
+  width: 640,
+  height: 360,
+  frameCount: 120,
+  signal: abortController.signal,
+  onStart: async () => (async function* () {
+    for (let i = 0; i < 120; i++) {
+      yield { buffer: await renderFrame(i), duration: 50 };
+    }
+  })(),
+});
+```
 
 ## Procedural audio (`createAudio`)
 
@@ -594,7 +612,7 @@ painter.validateSceneRenderInput(scene);
 
 ## Performance and safety
 
-Performance depends on canvas size, layer count, filters, chart complexity, animation/frame counts, codecs, and host resources. Apexify.js uses bounded runtime limits, mandatory scene validation, bounded image decode caching with repeated-source reuse, and direct nested-surface canvas composition. Benchmark with workloads representative of your deployment.
+Performance depends on canvas size, layer count, filters, chart complexity, animation/frame counts, codecs, and host resources. Apexify.js uses bounded runtime limits, mandatory scene validation, bounded image decode caching with repeated-source reuse, bounded media/network concurrency, and incremental generated-GIF processing with producer backpressure. Benchmark with workloads representative of your deployment.
 
 ---
 

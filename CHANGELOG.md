@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced legacy **`gifencoder` / `canvas`** dependency plumbing with **`@skyra/gifenc`** for compatibility with the supported modern Node matrix.
 - Migrated Sharp integration and types to **Sharp 0.35.4** semantics.
 
+### 🎞️ GIF streaming and output correctness
+
+- Rebuilt **`createGIF`** around real incremental **`AsyncIterable<GIFEncodedFrame>`** consumption: one generated frame is pulled, validated, resolved, decoded, composited, and encoded before the producer is asked for the next frame. Generated streams are no longer collected into an intermediate array.
+- Static frame arrays use a **bounded ordered resolver queue** tied to the central batch/network concurrency limits instead of unbounded `Promise.all`; generated arrays and streams are checked against `maxGifFrames` and aggregate GIF resource cost.
+- Routed GIF frames, watermarks, and **`animate`** raster sources through the shared media/network policy, preserving protocol/host trust rules, SSRF protections, redirect/timeout handling, remote-byte limits, redacted errors, and central remote concurrency. One-use frame payloads bypass shared byte/decode caches; reusable watermark data remains bounded.
+- Corrected all output lifecycles: `file` waits for stream completion and removes partial files on failure, `buffer` / `base64` fully drain the encoder, and `attachment` returns Buffer-backed **`.gif`** data with **`image/gif`** MIME. All output paths validate the final **GIF87a/GIF89a** signature.
+- Added **`AbortSignal`** cancellation for GIF generation/media resolution, including producer cleanup and partial-output teardown; common/output/overlay validation runs before `onStart`, and supplying both a non-empty static frame list and `onStart` is rejected.
+- Hardened per-frame semantics: deterministic stretch-to-output sizing, reset transparency/disposal state every frame, validated repeat/quality/delay ranges, rich `textOverlay` rendering through **`EnhancedTextRenderer`**, and expanded watermark opacity/size/scale/margin/position controls.
+- Hardened **`animate`** GIF output: fixed logical-screen dimensions, completed-file/signature checks before `onEnd`, partial-file cleanup, central media policy/cancellation, no artificial wall-clock sleeps while encoding GIFs, and shared linear/radial/conic gradient rendering instead of a divergent local implementation.
+- Added dedicated Phase 7 architecture, validation, streaming/backpressure, network/cache/concurrency, golden-output, `animate`, and benchmark suites. In CI's 100-frame fresh-process comparison, streaming reduced retained source-frame high-water from **7,306,588 bytes to 73,442 bytes (~98.995%)**, while also lowering peak RSS/external/ArrayBuffer pressure versus the collect-all reference.
+- Updated the package README and documentation site to describe the verified Phase 7 contracts rather than the historical Axios/`gifencoder`/collect-all behavior.
+
 ## [5.4.5] - 2026-05-13
 
 ### ✨ Added
@@ -697,7 +709,6 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
   - Custom `points` array now properly recognized and used
   - Polygon drawing correctly uses provided points or falls back to regular polygon
   - Fixed white hexagon appearing incorrectly
-
 - **Fixed Shape Property Passing**: Fixed shape properties not being passed to drawing functions
   - `points`, `startAngle`, `endAngle`, `centerX`, `centerY` now properly passed through
   - Type definitions updated to include all shape properties
@@ -1302,4 +1313,3 @@ This release follows **5.3.16** (legend layout) and earlier **5.3.x** chart work
 ---
 
 For a complete list of changes, please refer to the [GitHub repository](https://github.com/zenith-79/apexify.js).
-
