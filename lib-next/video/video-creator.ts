@@ -1,212 +1,16 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import type { VideoTextOverlayOperation } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
+import type { VideoCreationOptions } from "./video-options";
 
-export interface MixAudioOverlayClip {
-  source: string | Buffer;
-  startTime: number;
-  duration?: number;
-  sourceStart?: number;
-  volume?: number;
-  speed?: number;
-  pitchSemitones?: number;
-}
-
-export interface MixAudioOperation {
-  outputPath: string;
-  overlays: MixAudioOverlayClip[];
-  keepOriginalAudio?: boolean;
-  originalVolume?: number;
-  originalSpeed?: number;
-  originalPitchSemitones?: number;
-}
-
-/** Public video operation options. Runtime behavior is implemented by VideoHelpers. */
-export interface VideoCreationOptions {
-  source: string | Buffer;
-  getInfo?: boolean;
-  extractFrame?: {
-    time?: number;
-    frame?: number;
-    width?: number;
-    height?: number;
-    outputFormat?: "jpg" | "png";
-    quality?: number;
-  };
-  extractFrames?: {
-    times?: number[];
-    interval?: number;
-    frameSelection?: { start?: number; end?: number };
-    outputFormat?: "jpg" | "png";
-    quality?: number;
-    outputDirectory?: string;
-  };
-  extractAllFrames?: {
-    outputFormat?: "jpg" | "png";
-    outputDirectory?: string;
-    quality?: number;
-    prefix?: string;
-    startTime?: number;
-    endTime?: number;
-  };
-  generateThumbnail?: {
-    count?: number;
-    grid?: { cols: number; rows: number };
-    width?: number;
-    height?: number;
-    outputFormat?: "jpg" | "png";
-    quality?: number;
-  };
-  convert?: {
-    outputPath: string;
-    format?: "mp4" | "webm" | "avi" | "mov" | "mkv";
-    quality?: "low" | "medium" | "high" | "ultra";
-    bitrate?: number;
-    fps?: number;
-    resolution?: { width: number; height: number };
-  };
-  trim?: { startTime: number; endTime: number; outputPath: string };
-  extractAudio?: { outputPath: string; format?: "mp3" | "wav" | "aac" | "ogg"; bitrate?: number };
-  addWatermark?: {
-    watermarkPath: string;
-    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
-    opacity?: number;
-    size?: { width: number; height: number };
-    outputPath: string;
-  };
-  changeSpeed?: { speed: number; outputPath: string };
-  generatePreview?: { count?: number; outputDirectory?: string; outputFormat?: "jpg" | "png"; quality?: number };
-  applyEffects?: {
-    filters: Array<{
-      type: "blur" | "brightness" | "contrast" | "saturation" | "grayscale" | "sepia" | "invert" | "sharpen" | "noise";
-      intensity?: number;
-      value?: number;
-    }>;
-    outputPath: string;
-  };
-  merge?: {
-    videos: Array<string | Buffer>;
-    outputPath: string;
-    mode?: "sequential" | "side-by-side" | "grid";
-    grid?: { cols: number; rows: number };
-  };
-  replaceSegment?: {
-    replacementVideo?: string | Buffer;
-    replacementStartTime?: number;
-    replacementDuration?: number;
-    replacementFrames?: Array<string | Buffer>;
-    replacementFps?: number;
-    targetStartTime: number;
-    targetEndTime: number;
-    outputPath: string;
-  };
-  rotate?: { angle?: 90 | 180 | 270; flip?: "horizontal" | "vertical" | "both"; outputPath: string };
-  crop?: { x: number; y: number; width: number; height: number; outputPath: string };
-  compress?: {
-    outputPath: string;
-    quality?: "low" | "medium" | "high" | "ultra";
-    targetSize?: number;
-    maxBitrate?: number;
-  };
-  /** @deprecated Prefer addTextOverlay. */
-  addText?: {
-    text: string;
-    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" | "top-center" | "bottom-center";
-    fontSize?: number;
-    fontColor?: string;
-    backgroundColor?: string;
-    startTime?: number;
-    endTime?: number;
-    outputPath: string;
-  };
-  addFade?: { fadeIn?: number; fadeOut?: number; outputPath: string };
-  reverse?: { outputPath: string };
-  createLoop?: { outputPath: string; smooth?: boolean };
-  batch?: { videos: Array<{ source: string | Buffer; operations: any }>; outputDirectory: string };
-  detectScenes?: { threshold?: number; outputPath?: string };
-  stabilize?: { outputPath: string; smoothing?: number };
-  colorCorrect?: {
-    brightness?: number;
-    contrast?: number;
-    saturation?: number;
-    hue?: number;
-    temperature?: number;
-    outputPath: string;
-  };
-  pictureInPicture?: {
-    overlayVideo: string | Buffer;
-    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
-    size?: { width: number; height: number };
-    opacity?: number;
-    outputPath: string;
-  };
-  splitScreen?: {
-    videos: Array<string | Buffer>;
-    layout?: "side-by-side" | "top-bottom" | "grid";
-    grid?: { cols: number; rows: number };
-    outputPath: string;
-  };
-  createTimeLapse?: { speed?: number; outputPath: string };
-  removeAudio?: { outputPath: string };
-  mixAudio?: MixAudioOperation;
-  mute?: { outputPath: string; ranges?: Array<{ start: number; end: number }> };
-  adjustVolume?: {
-    outputPath: string;
-    volume?: number;
-    ranges?: Array<{
-      start: number;
-      end: number;
-      volume: number;
-      speed?: number;
-      pitchSemitones?: number;
-    }>;
-  };
-  createFromFrames?: {
-    frames: Array<string | Buffer>;
-    outputPath: string;
-    fps?: number;
-    format?: "mp4" | "webm" | "avi" | "mov" | "mkv";
-    quality?: "low" | "medium" | "high" | "ultra";
-    bitrate?: number;
-    resolution?: { width: number; height: number };
-  };
-  detectFormat?: boolean;
-  freezeFrame?: { time: number; duration: number; outputPath: string };
-  exportPreset?: {
-    preset: "youtube" | "instagram" | "tiktok" | "twitter" | "facebook" | "4k" | "1080p" | "720p" | "mobile" | "web";
-    outputPath: string;
-  };
-  normalizeAudio?: { targetLevel?: number; method?: "peak" | "rms" | "lufs"; outputPath: string };
-  applyLUT?: { lutPath: string; intensity?: number; outputPath: string };
-  addTransition?: {
-    type: "fade" | "wipe" | "slide" | "zoom" | "rotate" | "dissolve" | "blur" | "circle" | "pixelize";
-    duration: number;
-    direction?: "left" | "right" | "up" | "down" | "in" | "out";
-    secondVideo?: string | Buffer;
-    outputPath: string;
-  };
-  addTextOverlay?: VideoTextOverlayOperation;
-  /** @deprecated Prefer addTextOverlay. */
-  addAnimatedText?: {
-    text: string;
-    animation?: "fadeIn" | "fadeOut" | "slideIn" | "slideOut" | "typewriter" | "bounce" | "zoom" | "rotate";
-    startTime: number;
-    endTime: number;
-    position?: { x: number; y: number } | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" | "top-center" | "bottom-center";
-    fontSize?: number;
-    fontColor?: string;
-    fontPath?: string;
-    fontName?: string;
-    fontFamily?: string;
-    backgroundColor?: string;
-    outputPath: string;
-  };
-  onProgress?: (progress: { percent: number; time: number; speed: number }) => void;
-}
+export type {
+  MixAudioOperation,
+  MixAudioOverlayClip,
+  VideoCreationOptions,
+} from "./video-options";
 
 type Helper3 = (a: any, b: any, c?: any) => Promise<any>;
 
-/** Routes public video operations to the secured VideoHelpers implementation. */
+/** Routes public video operations to the secured video implementation. */
 export class VideoCreator {
   private checkFFmpegAvailable?: () => Promise<boolean>;
   private getFFmpegInstallInstructions?: () => string;
@@ -385,7 +189,7 @@ export class VideoCreator {
       if (options.generatePreview) return this.require(this.generateVideoPreview, "generateVideoPreview")(options.source, options.generatePreview, videoInfo);
       if (options.applyEffects) return this.require(this.applyVideoEffects, "applyVideoEffects")(options.source, options.applyEffects);
       if (options.merge) return this.require(this.mergeVideos, "mergeVideos")(options.merge);
-      if (options.replaceSegment) return this.require(this.replaceVideoSegment, "replaceVideoSegment")(options.source, options.replaceSegment);
+      if (options.replaceSegment) return this.require(this.replaceVideoSegment, "replaceSegment")(options.source, options.replaceSegment);
       if (options.rotate) return this.require(this.rotateVideo, "rotateVideo")(options.source, options.rotate);
       if (options.crop) return this.require(this.cropVideo, "cropVideo")(options.source, options.crop);
       if (options.compress) return this.require(this.compressVideo, "compressVideo")(options.source, options.compress);
