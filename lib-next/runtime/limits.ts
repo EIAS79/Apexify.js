@@ -24,6 +24,8 @@ export function assertGifResourceLimits(width: number, height: number, frameCoun
   const resolved = currentLimits(limits);
   assertWithinLimit("maxGifDimension", width, resolved);
   assertWithinLimit("maxGifDimension", height, resolved);
+  // GIF output pixels are independently bounded before encoder/canvas allocation.
+  assertWithinLimit("maxTotalPixels", width * height, resolved);
   assertWithinLimit("maxGifFrames", frameCount, resolved);
   assertWithinLimit("maxGifResourceCost", width * height * Math.max(1, frameCount), resolved);
 }
