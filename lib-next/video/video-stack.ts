@@ -1,4 +1,4 @@
-import { VideoCreator, type VideoCreationOptions } from "./video-creator";
+import { VideoCreator } from "./video-creator";
 import { VideoPipeline } from "./video-pipeline-builder";
 import type { ExtractFramesOptions, VideoPipelineLayer } from "../types";
 import { createFfmpegSession, type FfmpegSession, type FfmpegSessionOptions } from "./ffmpeg-session";
@@ -7,6 +7,7 @@ import { ApexifyInputError } from "../runtime/errors";
 import { assertWithinLimit } from "../runtime/limits";
 import { assertCollection, assertEnum, assertFiniteNumber, assertSource } from "../runtime/validation";
 import { validateVideoCreationOptions, validateVideoPipelineLayers } from "./video-validation";
+import { validatePhase8PipelineLayers } from "./video-phase8-validation";
 import { VideoOperations } from "./video-operations";
 
 /** Single entry for all video work (used as `painter.video`). */
@@ -30,11 +31,15 @@ export class VideoStack {
   videoPipeline(source?: string | Buffer, initialLayers?: VideoPipelineLayer[]): VideoPipeline {
     if (source !== undefined) assertSource(source, "videoPipeline.source");
     if (initialLayers !== undefined) {
-      assertCollection(initialLayers, "videoPipeline.initialLayers", { limit: "maxVideoPipelineLayers" });
+      assertWithinLimit("maxVideoPipelineLayers", initialLayers.length + (source !== undefined && !initialLayers.some((layer) => layer.kind === "source") ? 1 : 0));
+      assertCollection(initialLayers, "videoPipeline.initialLayers", { limit: "maxCollectionItems" });
       const combined = source !== undefined
         ? [{ kind: "source", source } as VideoPipelineLayer, ...initialLayers.filter((layer) => layer.kind !== "source")]
         : initialLayers;
-      if (combined.length > 0 && combined.some((layer) => layer.kind === "source")) validateVideoPipelineLayers(combined);
+      if (combined.length > 0 && combined.some((layer) => layer.kind === "source")) {
+        validateVideoPipelineLayers(combined);
+        validatePhase8PipelineLayers(combined);
+      }
     }
     return new VideoPipeline(this.operations, source, initialLayers);
   }
@@ -67,7 +72,8 @@ export class VideoStack {
 
   async extractMultipleFrames(videoSource: string | Buffer, times: number[], outputFormat: "jpg" | "png" = "jpg", quality = 2): Promise<Buffer[]> {
     assertSource(videoSource, "video.extractMultipleFrames.source");
-    assertCollection(times, "video.extractMultipleFrames.times", { min: 1, limit: "maxVideoExtractedFrames" });
+    assertWithinLimit("maxVideoExtractedFrames", times.length);
+    assertCollection(times, "video.extractMultipleFrames.times", { min: 1, limit: "maxCollectionItems" });
     assertEnum(outputFormat, "video.extractMultipleFrames.outputFormat", ["jpg", "png"] as const);
     assertFiniteNumber(quality, "video.extractMultipleFrames.quality", { min: 1, max: 31, integer: true });
     times.forEach((time, index) => {
