@@ -1,41 +1,67 @@
-/** Matches **`$name`** or **`$palette.slot`** as a full token (trimmed). */
-export const LONE_ASSET_REF = /^\$([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)$/;
+import type { AssetResolveFn, AssetValue } from "../types";
+import { isPlainCompositionObject } from "../composition/clone";
+import { ApexifyAssetError } from "../runtime/errors";
 
-/** Replaces embedded **`$ref`** segments in a string; each segment resolves to a string (Buffers are not allowed in the middle of text). */
-export const EMBEDDED_ASSET_TOKEN = /\$([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)/g;
-
-import type { AssetResolveFn } from "../types";
+/** Matches a full `$name` / `$value.path.0` token after trimming. */
+export const LONE_ASSET_REF = /^\$([A-Za-z_]\w*(?:\.(?:[A-Za-z_]\w*|\d+))*)$/;
+/** Matches embedded asset tokens. Escape a literal dollar sign as `$$`. */
+export const EMBEDDED_ASSET_TOKEN = /\$([A-Za-z_]\w*(?:\.(?:[A-Za-z_]\w*|\d+))*)/g;
 
 export type { AssetResolveFn };
 
-/**
- * Resolves a single leaf string: lone **`$ref`** → string or Buffer; otherwise replaces embedded **`$ref`** with string values only.
- */
-export function resolveAssetStringLeaf(s: string, resolve: AssetResolveFn): string | Buffer {
-  const trimmed = s.trim();
-  const lone = LONE_ASSET_REF.exec(trimmed);
-  if (lone && lone[0] === trimmed) {
-    return resolve(lone[1]!);
-  }
-  return s.replace(EMBEDDED_ASSET_TOKEN, (_full, refPath: string) => {
-    const r = resolve(refPath);
-    if (typeof r === "string") return r;
-    throw new Error(
-      `Cannot embed Buffer asset "${refPath}" inside a longer string; use the asset as the whole field value (e.g. "$${refPath}").`
-    );
-  });
+const ESCAPED_DOLLAR = "\uE000APEXIFY_DOLLAR\uE001";
+
+function printableEmbeddedAsset(value: AssetValue, refPath: string): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  throw new ApexifyAssetError(
+    `Cannot embed non-scalar asset "${refPath}" inside a longer string; use "$${refPath}" as the whole field value.`
+  );
 }
 
-/** Walks any JSON-like tree and resolves asset references in string leaves (deep copy). */
+/**
+ * Resolves one string leaf. `$$` emits a literal `$`; a full `$ref` may resolve to structured data or Buffer;
+ * embedded refs are limited to printable scalar values.
+ */
+export function resolveAssetStringLeaf(s: string, resolve: AssetResolveFn): AssetValue {
+  const protectedInput = s.replace(/\$\$/g, ESCAPED_DOLLAR);
+  const trimmed = protectedInput.trim();
+  const lone = LONE_ASSET_REF.exec(trimmed);
+  if (lone && lone[0] === trimmed) return resolve(lone[1]!);
+
+  return protectedInput
+    .replace(EMBEDDED_ASSET_TOKEN, (_full, refPath: string) => printableEmbeddedAsset(resolve(refPath), refPath))
+    .replaceAll(ESCAPED_DOLLAR, "$");
+}
+
+/**
+ * Authoritative deep asset resolver. Arrays and plain records are cloned, Buffers and opaque runtime objects are
+ * retained, and cyclic composition graphs are rejected deterministically.
+ */
 export function resolveAssetRefsDeep(input: unknown, resolve: AssetResolveFn): unknown {
-  if (input === null || input === undefined) return input;
-  if (typeof input === "string") return resolveAssetStringLeaf(input, resolve);
-  if (typeof input !== "object") return input;
-  if (Buffer.isBuffer(input)) return input;
-  if (Array.isArray(input)) return input.map((v) => resolveAssetRefsDeep(v, resolve));
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
-    out[k] = resolveAssetRefsDeep(v, resolve);
-  }
-  return out;
+  const active = new WeakSet<object>();
+
+  const walk = (value: unknown, path: string): unknown => {
+    if (value === null || value === undefined) return value;
+    if (typeof value === "string") return resolveAssetStringLeaf(value, resolve);
+    if (typeof value !== "object" || Buffer.isBuffer(value)) return value;
+    if (!Array.isArray(value) && !isPlainCompositionObject(value)) return value;
+    if (active.has(value)) throw new ApexifyAssetError(`${path} contains a cyclic object graph.`);
+
+    active.add(value);
+    try {
+      if (Array.isArray(value)) return value.map((item, index) => walk(item, `${path}[${index}]`));
+      const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+      for (const [key, child] of Object.entries(value)) {
+        if (key === "__proto__" || key === "prototype" || key === "constructor") {
+          throw new ApexifyAssetError(`${path} contains unsafe key "${key}".`);
+        }
+        out[key] = walk(child, `${path}.${key}`);
+      }
+      return out;
+    } finally {
+      active.delete(value);
+    }
+  };
+
+  return walk(input, "asset input");
 }

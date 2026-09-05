@@ -1,6 +1,7 @@
 import type { SceneCreator } from "./scene-creator";
 import type { SceneRenderInput, SceneRenderOptions, SceneVideoFrameSlot } from "../types";
 import type { VideoCreationOptions, VideoCreator } from "../video/video-creator";
+import { ApexifyInputError } from "../runtime/errors";
 import { expandSceneVideoFrames } from "./video-scene";
 
 export type SceneToVideoResult = Awaited<ReturnType<VideoCreator["createVideo"]>>;
@@ -21,19 +22,22 @@ export async function renderSceneToVideoFrames(
     sceneRender?: SceneRenderOptions;
   }
 ): Promise<SceneToVideoResult> {
-  const composedPng = await sceneCreator.render(scene, video.sceneRender);
   const opt = video.options;
   if (!opt.createFromFrames) {
-    throw new Error("renderSceneToVideoFrames: options.createFromFrames is required.");
+    throw new ApexifyInputError("renderSceneToVideoFrames: options.createFromFrames is required.");
   }
+
   const cf = opt.createFromFrames;
   const prepend = video.prependComposedToFrames !== false;
   const body =
     video.framesWithRepeats != null ? expandSceneVideoFrames(video.framesWithRepeats) : [...cf.frames];
-  const frames = prepend ? [composedPng, ...body] : body;
-  if (frames.length === 0) {
-    throw new Error("renderSceneToVideoFrames: no frames after expansion.");
+  if (!prepend && body.length === 0) {
+    throw new ApexifyInputError("renderSceneToVideoFrames: no frames after expansion.");
   }
+
+  // Render only after cheap structural validation so invalid video configuration does not waste raster work.
+  const composedPng = await sceneCreator.render(scene, video.sceneRender);
+  const frames = prepend ? [composedPng, ...body] : body;
   const merged: VideoCreationOptions = {
     ...opt,
     source: opt.source ?? composedPng,

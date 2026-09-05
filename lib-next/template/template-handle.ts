@@ -7,30 +7,30 @@ import type {
   SceneRenderOptions,
   TemplateRenderHost,
 } from "../types";
-import { resolveTemplateToSceneInput, type ResolveContext } from "./resolve-template";
+import { resolveTemplateToSceneInput, type ResolveContext, TemplateResolveError } from "./resolve-template";
+import { cloneCompositionValue } from "../composition/clone";
 
 export type { TemplateRenderHost } from "../types";
 
 export class TemplateHandle {
+  private readonly definition: TemplateSceneDefinition;
+
   constructor(
     private readonly host: TemplateRenderHost,
-    private readonly definition: TemplateSceneDefinition,
+    definition: TemplateSceneDefinition,
     private readonly templateOptions?: TemplateOptions
-  ) {}
+  ) {
+    this.definition = cloneCompositionValue(definition, "template definition");
+  }
 
-  /**
-   * Resolves placeholders, layout nodes, and optional overrides; returns a plain **`SceneRenderInput`** (no I/O).
-   */
-  async toRenderInput(
-    data: TemplateData,
-    options?: TemplateRenderOptions
-  ): Promise<SceneRenderInput> {
-    const ctx = this.buildContext(data);
+  async toRenderInput(data: TemplateData, options?: TemplateRenderOptions): Promise<SceneRenderInput> {
+    const dataSnapshot = cloneCompositionValue(data, "template data");
     return resolveTemplateToSceneInput(
       this.definition,
-      ctx,
+      this.buildContext(dataSnapshot),
       options?.overrides,
-      (p) => this.host.measureText(p)
+      (props) => this.host.measureText(props),
+      options?.insertions
     );
   }
 
@@ -38,9 +38,9 @@ export class TemplateHandle {
     data: TemplateData,
     options?: TemplateRenderOptions & SceneRenderOptions
   ): Promise<Buffer> {
-    const { overrides, ...sceneOpts } = options ?? {};
-    const input = await this.toRenderInput(data, { overrides });
-    return this.host.renderScene(input, { ...sceneOpts, resolveAssetRefs: false });
+    const { overrides, insertions, ...sceneOptions } = options ?? {};
+    const input = await this.toRenderInput(data, { overrides, insertions });
+    return this.host.renderScene(input, { ...sceneOptions, resolveAssetRefs: false });
   }
 
   private buildContext(data: TemplateData): ResolveContext {
@@ -48,17 +48,17 @@ export class TemplateHandle {
     const assets = this.host.assets;
     return {
       data,
-      resolveAssetRef:
-        hook ??
-        ((ref: string) => {
-          try {
-            return assets.resolve(ref);
-          } catch {
-            throw new Error(
-              `Template render failed: asset "${ref}" is not registered on painter.assets (use assets.loadImage / loadFont / loadPalette).`
-            );
-          }
-        }),
+      resolveAssetRef: hook ?? ((ref: string) => {
+        try {
+          return assets.resolve(ref);
+        } catch (error) {
+          throw new TemplateResolveError(
+            `Template render failed: asset "${ref}" is not registered on painter.assets.`,
+            ref,
+            { cause: error }
+          );
+        }
+      }),
     };
   }
 }

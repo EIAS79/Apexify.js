@@ -7,13 +7,12 @@ import type {
 import type { SceneCreator } from "./scene-creator";
 import type { AssetResolveFn } from "../assets/asset-strings";
 import { resolveSceneRenderInputAssets } from "../assets/resolve-scene-assets";
+import { cloneCompositionValue } from "../composition/clone";
+import { ApexifyInputError } from "../runtime/errors";
 
 /**
- * Mutable builder for incremental scene setup; call {@link SceneBuilder.render} once.
- *
- * **Layer stack:** `addLayers` / `addLayer`, `insertLayer` / `insertLayers`, `removeLayer`, `moveLayer`,
- * `replaceLayers`, `clearLayers`, `layerCount`. **Snapshot:** `toRenderInput()` for `renderScene` / GIF / video.
- * Use **`render({ resolveAssetRefs: true })`** to resolve **`$...`** asset strings (builders from {@link ApexPainter.createScene} only).
+ * Mutable scene builder with copy-on-ingress semantics. User-owned layer/background objects are cloned when added,
+ * so later mutation of caller inputs does not silently alter an existing builder.
  */
 export class SceneBuilder {
   private background?: SceneRenderInput["background"];
@@ -26,16 +25,20 @@ export class SceneBuilder {
     initialLayers?: SceneLayer[],
     private readonly assetResolve?: AssetResolveFn
   ) {
-    this.layers = initialLayers ? [...initialLayers] : [];
+    this.layers = cloneCompositionValue(initialLayers ?? [], "SceneBuilder.initialLayers");
   }
 
-  /** Current stack depth (paint order length). */
   get layerCount(): number {
     return this.layers.length;
   }
 
-  setBackground(bg: NonNullable<SceneRenderInput["background"]>): this {
-    this.background = bg;
+  setBackground(background: NonNullable<SceneRenderInput["background"]>): this {
+    this.background = cloneCompositionValue(background, "SceneBuilder.background");
+    return this;
+  }
+
+  clearBackground(): this {
+    this.background = undefined;
     return this;
   }
 
@@ -43,16 +46,21 @@ export class SceneBuilder {
     return this.addLayers([layer]);
   }
 
-  /** Appends layers in order (bottom → top). Same types as {@link SceneRenderInput.layers} (no GIF/video layers). */
   addLayers(layers: readonly SceneLayer[]): this {
-    if (layers.length === 0) return this;
-    this.layers.push(...layers);
+    if (layers.length > 0) {
+      this.layers.push(...cloneCompositionValue([...layers], "SceneBuilder.addLayers"));
+    }
     return this;
   }
 
-  /** Replaces the entire layer stack (copied from `layers`). */
   replaceLayers(layers: readonly SceneLayer[]): this {
-    this.layers = layers.length === 0 ? [] : [...layers];
+    this.layers = cloneCompositionValue([...layers], "SceneBuilder.replaceLayers");
+    return this;
+  }
+
+  replaceLayer(index: number, layer: SceneLayer): this {
+    SceneBuilder.assertExistingIndex("replaceLayer", index, this.layers.length);
+    this.layers[index] = cloneCompositionValue(layer, "SceneBuilder.replaceLayer");
     return this;
   }
 
@@ -61,37 +69,40 @@ export class SceneBuilder {
     return this;
   }
 
-  /**
-   * Inserts one layer at `index` (0 = bottom). `index` may equal `layerCount` to append.
-   */
   insertLayer(index: number, layer: SceneLayer): this {
     SceneBuilder.assertInsertIndex("insertLayer", index, this.layers.length);
-    this.layers.splice(index, 0, layer);
+    this.layers.splice(index, 0, cloneCompositionValue(layer, "SceneBuilder.insertLayer"));
     return this;
   }
 
-  /** Inserts multiple layers at `index`, preserving their relative order. */
   insertLayers(index: number, layers: readonly SceneLayer[]): this {
     if (layers.length === 0) return this;
     SceneBuilder.assertInsertIndex("insertLayers", index, this.layers.length);
-    this.layers.splice(index, 0, ...layers);
+    this.layers.splice(index, 0, ...cloneCompositionValue([...layers], "SceneBuilder.insertLayers"));
     return this;
   }
 
+  insertBefore(index: number, layer: SceneLayer): this {
+    SceneBuilder.assertExistingIndex("insertBefore", index, this.layers.length);
+    return this.insertLayer(index, layer);
+  }
+
+  insertAfter(index: number, layer: SceneLayer): this {
+    SceneBuilder.assertExistingIndex("insertAfter", index, this.layers.length);
+    return this.insertLayer(index + 1, layer);
+  }
+
   removeLayer(index: number): this {
-    SceneBuilder.assertRemoveIndex("removeLayer", index, this.layers.length);
+    SceneBuilder.assertExistingIndex("removeLayer", index, this.layers.length);
     this.layers.splice(index, 1);
     return this;
   }
 
-  /**
-   * Moves the layer at `fromIndex` to `toIndex` (indices refer to the array **before** the move).
-   * Same final order as removing then inserting manually.
-   */
+  /** `toIndex` is interpreted in the original pre-move array. */
   moveLayer(fromIndex: number, toIndex: number): this {
-    const len = this.layers.length;
-    SceneBuilder.assertRemoveIndex("moveLayer (fromIndex)", fromIndex, len);
-    SceneBuilder.assertRemoveIndex("moveLayer (toIndex)", toIndex, len);
+    const length = this.layers.length;
+    SceneBuilder.assertExistingIndex("moveLayer (fromIndex)", fromIndex, length);
+    SceneBuilder.assertExistingIndex("moveLayer (toIndex)", toIndex, length);
     if (fromIndex === toIndex) return this;
     const [item] = this.layers.splice(fromIndex, 1);
     this.layers.splice(toIndex, 0, item!);
@@ -100,55 +111,44 @@ export class SceneBuilder {
 
   private static assertInsertIndex(method: string, index: number, currentLength: number): void {
     if (!Number.isInteger(index) || index < 0 || index > currentLength) {
-      throw new Error(
-        `SceneBuilder.${method}: index ${index} out of range; allowed 0..${currentLength} (inclusive upper for insert).`
+      throw new ApexifyInputError(
+        `SceneBuilder.${method}: index ${index} out of range; allowed 0..${currentLength}.`
       );
     }
   }
 
-  private static assertRemoveIndex(method: string, index: number, currentLength: number): void {
+  private static assertExistingIndex(method: string, index: number, currentLength: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= currentLength) {
-      throw new Error(`SceneBuilder.${method}: index ${index} out of range; allowed 0..${currentLength - 1}.`);
+      throw new ApexifyInputError(
+        `SceneBuilder.${method}: index ${index} out of range; allowed 0..${Math.max(-1, currentLength - 1)}.`
+      );
     }
   }
 
-  /**
-   * Snapshot of the current scene as {@link SceneRenderInput} (copied `layers` array).
-   * Use for `renderScene`, GIF/video helpers, caching, or tests.
-   */
+  /** Returns an isolated snapshot; mutating it does not mutate the builder. */
   toRenderInput(): SceneRenderInput {
-    return {
-      width: this.width,
-      height: this.height,
-      ...(this.background !== undefined ? { background: this.background } : {}),
-      layers: [...this.layers],
-    };
-  }
-
-  /**
-   * Renders this scene to PNG. Pass **`{ resolveAssetRefs: true }`** to resolve **`$...`** tokens the same way as
-   * {@link ApexPainter.renderScene} when the builder was created with {@link ApexPainter.createScene} (has an internal
-   * resolver). Resolving is **off by default** here so programmatic scenes stay a no-op unless you opt in.
-   */
-  async render(options?: SceneRenderOptions): Promise<SceneRenderResult> {
-    const { resolveAssetRefs = false, ...sceneOptions } = options ?? {};
-    if (resolveAssetRefs) {
-      if (!this.assetResolve) {
-        throw new Error(
-          "SceneBuilder.render: resolveAssetRefs is true but this builder has no asset resolver — use ApexPainter#createScene(), or construct SceneBuilder with an AssetResolveFn."
-        );
-      }
-      const input = resolveSceneRenderInputAssets(this.toRenderInput(), this.assetResolve);
-      return this.sceneCreator.render(input, sceneOptions);
-    }
-    return this.sceneCreator.render(
+    return cloneCompositionValue(
       {
         width: this.width,
         height: this.height,
-        background: this.background,
+        ...(this.background !== undefined ? { background: this.background } : {}),
         layers: this.layers,
       },
-      sceneOptions
+      "SceneBuilder.snapshot"
     );
+  }
+
+  async render(options?: SceneRenderOptions): Promise<SceneRenderResult> {
+    const { resolveAssetRefs = false, ...sceneOptions } = options ?? {};
+    const snapshot = this.toRenderInput();
+    if (resolveAssetRefs) {
+      if (!this.assetResolve) {
+        throw new ApexifyInputError(
+          "SceneBuilder.render: resolveAssetRefs requires a builder created by ApexPainter.createScene()."
+        );
+      }
+      return this.sceneCreator.render(resolveSceneRenderInputAssets(snapshot, this.assetResolve), sceneOptions);
+    }
+    return this.sceneCreator.render(snapshot, sceneOptions);
   }
 }

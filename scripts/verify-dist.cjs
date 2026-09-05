@@ -44,11 +44,13 @@ if (/\bfrom\s+["']\.{1,2}\/[^"']+(?<!\.cjs)["']/.test(cjsTypes)) {
 
 const expectedRuntimeKeys = [
   'ApexPainter',
+  'ApexifyAssetError',
   'ApexifyConfigError',
   'ApexifyDecodeError',
   'ApexifyError',
   'ApexifyExternalServiceError',
   'ApexifyInputError',
+  'ApexifyPluginError',
   'ApexifyProcessError',
   'ApexifyRemoteFetchError',
   'ApexifyResourceLimitError',

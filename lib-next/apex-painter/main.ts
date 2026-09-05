@@ -87,6 +87,8 @@ import { PluginHost } from "../plugins/plugin-host";
 import { createPainterComponents, type PainterComponents } from "../components/painter-components";
 import { resolveAssetRefsDeep } from "../assets/asset-strings";
 import { resolveSceneRenderInputAssets } from "../assets/resolve-scene-assets";
+import { ApexifyInputError } from "../runtime/errors";
+
 export class ApexPainter {
   private readonly _outputFormat: OutputFormat;
   private readonly canvasCreator: CanvasCreator;
@@ -116,7 +118,8 @@ export class ApexPainter {
    */
   readonly video: VideoStack;
   /**
-   * Named images, fonts, and palettes for **`$id`** resolution (templates, scenes, and opt-in imperative APIs).
+   * Named composition assets for `$id` / dotted-path resolution. Duplicate registrations are rejected unless
+   * an explicit `replace*` method is used.
    */
   readonly assets: AssetManager;
   /**
@@ -142,7 +145,6 @@ export class ApexPainter {
   private _pixels: PainterPixels | undefined;
   private _output: PainterOutput | undefined;
   private readonly _saveSession: SaveCounterSession = { saveCounter: 1 };
-  private readonly _installedPluginNames = new Set<string>();
 
   constructor({ type }: OutputFormat = { type: "buffer" }) {
     this._outputFormat = { type: type || "buffer" };
@@ -225,8 +227,8 @@ export class ApexPainter {
   }
 
   /**
-   * Deep-resolves **`$name`** / **`$palette.key`** string leaves across a JSON-like value (cloned), using {@link assets}.
-   * Use ahead of imperative calls when you keep **`resolveAssetRefs: false`** on individual methods.
+   * Deep-resolves `$name` / `$value.path` leaves across composition data, using {@link assets}.
+   * Escape a literal dollar sign as `$$`.
    */
   prepareForRender<T>(value: T): T {
     return resolveAssetRefsDeep(value, (ref) => this.assets.resolve(ref)) as T;
@@ -263,9 +265,8 @@ export class ApexPainter {
   }
 
   /**
-   * Layered scene composition (chart / image / text / path / surface). Use {@link SceneBuilder} methods
-   * (`addLayers`, `insertLayer`, `moveLayer`, …); renders to one PNG on {@link SceneBuilder.render}.
-   * Use **`scene.render({ resolveAssetRefs: true })`** when layer strings contain **`$...`** asset refs (same resolver as {@link renderScene}).
+   * Layered scene composition (chart / image / text / path / surface). Layer array order is stable bottom-to-top.
+   * Builder inputs are copied on ingress and render snapshots are isolated from later caller mutation.
    */
   createScene(config: {
     width: number;
@@ -289,28 +290,25 @@ export class ApexPainter {
       return this.sceneCreate.createScene(widthOrConfig);
     }
     if (height === undefined) {
-      throw new Error("createScene: height is required when the first argument is numeric width.");
+      throw new ApexifyInputError("createScene: height is required when the first argument is numeric width.");
     }
     return this.sceneCreate.createScene(widthOrConfig, height);
   }
 
   /**
-   * Reusable scene design: **`{{placeholders}}`**, **`$namedAssets`**, optional flex **`layout`** nodes,
-   * **`visible`** conditionals, and **`id`** + render-time **`overrides`**. Resolves to {@link renderScene}.
+   * Reusable immutable scene design: native-value `{{placeholders}}`, `$namedAssets`, flex/grid layout nodes,
+   * precise `visible` conditionals, unique `id` overrides, and deterministic render-time insertions.
    */
   createTemplate(definition: TemplateSceneDefinition, options?: TemplateOptions): TemplateHandle {
     return this.templateCreate.createTemplate(definition, options);
   }
 
   /**
-   * Optional extensions: run **`install`** once per **`name`** (e.g. register APIs on {@link ApexPainter.plugins}).
+   * Installs one named plugin transactionally. Installation is serialized and may be asynchronous; callers must await it.
    */
-  use(plugin: ApexifyPlugin<ApexPainter>): void {
-    if (this._installedPluginNames.has(plugin.name)) {
-      throw new Error(`ApexPainter.use: plugin "${plugin.name}" is already installed.`);
-    }
-    void plugin.install(this);
-    this._installedPluginNames.add(plugin.name);
+  async use(plugin: ApexifyPlugin<ApexPainter>): Promise<this> {
+    await this.plugins.install(plugin, this);
+    return this;
   }
 
   renderScene(input: SceneRenderInput, options?: SceneRenderOptions): Promise<Buffer> {
@@ -322,7 +320,8 @@ export class ApexPainter {
   }
 
   /**
-   * Validates a scene description (dimensions, nested `surface` depth). Throws on invalid input.
+   * Validates scene dimensions, aggregate composition budgets, nested surfaces, text/image/chart counts, remote assets,
+   * and finite transforms. Validation is mandatory before rendering.
    */
   validateSceneRenderInput(
     input: SceneRenderInput,
