@@ -1,4 +1,5 @@
 import { ApexifyInputError } from "../../runtime/errors";
+import { assertWithinLimit } from "../../runtime/limits";
 import type { VideoAudioPolicy, VideoSource } from "../video-options";
 import { VideoOperationRuntime, type VideoRunControls } from "./runtime";
 import { buildGridLayout, evenDimension, nonNegativeNumber, positiveNumber } from "./filter-graph";
@@ -14,9 +15,7 @@ export interface VideoMergeOptions {
 
 function safeColor(value: string | undefined): string {
   const color = value ?? "black";
-  if (!/^(?:#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?|[a-zA-Z]{1,32})$/.test(color)) {
-    throw new ApexifyInputError("video grid background must be a named color or #RRGGBB/#RRGGBBAA value.");
-  }
+  if (!/^(?:#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?|[a-zA-Z]{1,32})$/.test(color)) throw new ApexifyInputError("video grid background must be a named color or #RRGGBB/#RRGGBBAA value.");
   return color;
 }
 
@@ -41,21 +40,18 @@ function compositeAudioGraph(infos: Array<{ audio: boolean }>, policy: VideoAudi
   if (policy === "mix") {
     const pads = audioIndices.map((index, n) => `[${index}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[ma${n}]`).join(";");
     const inputs = audioIndices.map((_index, n) => `[ma${n}]`).join("");
-    return {
-      graph: `${pads};${inputs}amix=inputs=${audioIndices.length}:duration=shortest:normalize=1[aout]`,
-      map: ["-map", `[${outputVideoLabel}]`, "-map", "[aout]", "-c:a", "aac"],
-    };
+    return { graph: `${pads};${inputs}amix=inputs=${audioIndices.length}:duration=shortest:normalize=1[aout]`, map: ["-map", `[${outputVideoLabel}]`, "-map", "[aout]", "-c:a", "aac"] };
   }
-  const index = policy === "first" || policy === "preserve" ? audioIndices[0]! : audioIndices[0]!;
+  const index = audioIndices[0]!;
   return { graph: "", map: ["-map", `[${outputVideoLabel}]`, "-map", `${index}:a:0`, "-c:a", "aac"] };
 }
 
-/** Fully normalized sequential/composite merge implementation. */
 export class MergeOperations {
   constructor(private readonly runtime: VideoOperationRuntime) {}
 
   async merge(options: VideoMergeOptions, controls: VideoRunControls = {}) {
     if (!options.videos || options.videos.length < 2) throw new ApexifyInputError("video.merge requires at least two videos.");
+    assertWithinLimit("maxVideoMergeInputs", options.videos.length);
     return this.runtime.withWorkspace("apexify-merge-", async (workspace) => {
       const paths: string[] = [];
       const infos = [];
@@ -78,16 +74,9 @@ export class MergeOperations {
     return this.merge({ ...options, mode, direction }, controls);
   }
 
-  private async sequential(
-    args: string[],
-    infos: Array<{ width: number; height: number; fps: number; duration: number; audio: boolean }>,
-    options: VideoMergeOptions,
-    controls: VideoRunControls
-  ) {
+  private async sequential(args: string[], infos: Array<{ width: number; height: number; fps: number; duration: number; audio: boolean }>, options: VideoMergeOptions, controls: VideoRunControls) {
     const policy = options.audioPolicy ?? "preserve";
-    if (policy === "first" || policy === "mix") {
-      throw new ApexifyInputError("Sequential merge supports audioPolicy 'preserve' (audio follows each clip) or 'none'.");
-    }
+    if (policy === "first" || policy === "mix") throw new ApexifyInputError("Sequential merge supports audioPolicy 'preserve' (audio follows each clip) or 'none'.");
     const width = evenDimension(Math.max(...infos.map((info) => info.width)));
     const height = evenDimension(Math.max(...infos.map((info) => info.height)));
     const fps = Math.max(...infos.map((info) => info.fps));
@@ -111,12 +100,7 @@ export class MergeOperations {
     return { outputPath: options.outputPath, success: true, mode: "sequential", audioPolicy: policy } as const;
   }
 
-  private async composite(
-    args: string[],
-    infos: Array<{ width: number; height: number; fps: number; duration: number; audio: boolean }>,
-    options: VideoMergeOptions,
-    controls: VideoRunControls
-  ) {
+  private async composite(args: string[], infos: Array<{ width: number; height: number; fps: number; duration: number; audio: boolean }>, options: VideoMergeOptions, controls: VideoRunControls) {
     const policy = options.audioPolicy ?? "first";
     const cellWidth = evenDimension(options.grid?.cellWidth ?? Math.max(...infos.map((info) => info.width)));
     const cellHeight = evenDimension(options.grid?.cellHeight ?? Math.max(...infos.map((info) => info.height)));
