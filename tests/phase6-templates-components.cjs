@@ -38,9 +38,10 @@ async function main() {
         shape: { fill: '{{flag}}', color: '$theme.accent' },
       },
       {
-        id: 'empty',
+        id: 'empty-visible',
         type: 'text',
-        text: '{{empty}}',
+        visible: '{{empty | true}}',
+        text: 'should-not-render',
         x: 30,
         y: 18,
         fontSize: 12,
@@ -96,14 +97,17 @@ async function main() {
   data.flag = true;
   const first = await firstPromise;
   assert.equal(first.width, 140);
-  assert.equal(first.layers.length, 5, 'hidden layer must be removed before its missing placeholder is resolved');
+  assert.equal(first.layers.length, 4, 'false/empty visibility layers must be removed before placeholder resolution');
   const box = first.layers.find((layer) => layer.type === 'image');
   assert.equal(box.images.x, 0, 'numeric zero placeholder must survive');
   assert.equal(box.images.shape.fill, false, 'boolean false placeholder must survive');
   assert.equal(box.images.width, 30, 'override must win');
   assert.equal(box.images.shape.color, '#ff0000', 'nested override merge must preserve explicit patch');
-  const empty = first.layers.find((layer) => layer.type === 'text' && layer.texts.x === 30 && layer.texts.y === 18);
-  assert.equal(empty.texts.text, '', 'empty string placeholder must not be treated as missing');
+  assert.equal(
+    first.layers.some((layer) => layer.type === 'text' && layer.texts.text === 'should-not-render'),
+    false,
+    'explicit empty string must not be treated as missing and replaced by the visibility default'
+  );
   const fallback = first.layers.find((layer) => layer.type === 'text' && layer.texts.y === 36);
   assert.equal(fallback.texts.text, 'fallback');
   assert.equal(first.layers.some((layer) => layer.type === 'text' && layer.texts.text === 'I'), true, 'insertion missing');
@@ -114,6 +118,7 @@ async function main() {
   const second = await handle.toRenderInput({ position: { x: 5 }, flag: true, empty: 'E', showHidden: false, person: { name: 'Lin' } });
   assert.equal(second.layers.find((layer) => layer.type === 'image').images.x, 5);
   assert.equal(second.layers.some((layer) => layer.type === 'text' && layer.texts.text === 'Lin'), true);
+  assert.equal(second.layers.some((layer) => layer.type === 'text' && layer.texts.text === 'should-not-render'), true, 'non-empty visibility value should include the layer');
   assert.equal(second.layers.some((layer) => layer.type === 'text' && layer.texts.text === 'I'), false, 'render-time insertion must not mutate template definition');
 
   await assert.rejects(handle.toRenderInput({ position: { x: 0 }, flag: true, empty: '', showHidden: false, person: { name: 'A' } }, {
