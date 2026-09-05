@@ -34,6 +34,20 @@ function cloneLayers(layers: readonly VideoPipelineLayer[]): VideoPipelineLayer[
   return layers.map(cloneLayer);
 }
 
+function reviveSerializedBuffers(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reviveSerializedBuffers);
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if (record.type === "Buffer" && Array.isArray(record.data)) {
+    const bytes = record.data;
+    if (!bytes.every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 255)) {
+      throw new ApexifyInputError("videoPipeline snapshot contains an invalid serialized Buffer.");
+    }
+    return Buffer.from(bytes);
+  }
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, reviveSerializedBuffers(item)]));
+}
+
 export class VideoPipeline {
   private layers: VideoPipelineLayer[] = [];
   private undoStack: VideoPipelineLayer[][] = [];
@@ -53,11 +67,13 @@ export class VideoPipeline {
   toJSON(): VideoPipelineSnapshot { return { version: 1, layers: this.getLayers() }; }
 
   static fromJSON(operations: VideoOperations, snapshot: VideoPipelineSnapshot): VideoPipeline {
-    if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.layers)) throw new ApexifyInputError("videoPipeline snapshot must contain a layers array.");
-    if (snapshot.version !== undefined && snapshot.version !== 1) throw new ApexifyInputError(`Unsupported videoPipeline snapshot version: ${String(snapshot.version)}.`);
-    validateVideoPipelineLayers(snapshot.layers);
-    validatePhase8PipelineLayers(snapshot.layers);
-    return new VideoPipeline(operations, undefined, snapshot.layers);
+    if (!snapshot || typeof snapshot !== "object") throw new ApexifyInputError("videoPipeline snapshot must be an object.");
+    const revived = reviveSerializedBuffers(snapshot) as VideoPipelineSnapshot;
+    if (!Array.isArray(revived.layers)) throw new ApexifyInputError("videoPipeline snapshot must contain a layers array.");
+    if (revived.version !== undefined && revived.version !== 1) throw new ApexifyInputError(`Unsupported videoPipeline snapshot version: ${String(revived.version)}.`);
+    validateVideoPipelineLayers(revived.layers);
+    validatePhase8PipelineLayers(revived.layers);
+    return new VideoPipeline(operations, undefined, revived.layers);
   }
 
   canUndo(): boolean { return this.undoStack.length > 0; }
