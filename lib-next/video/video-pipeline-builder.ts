@@ -14,7 +14,10 @@ import type {
 import type { VideoOperations } from "./video-operations";
 import { renderVideoPipeline } from "./video-pipeline-render";
 import { validateVideoPipelineLayers } from "./video-validation";
+import { validatePhase8PipelineLayers } from "./video-phase8-validation";
 import { ApexifyInputError } from "../runtime/errors";
+
+const HISTORY_LIMIT = 256;
 
 function assertId(id: string | undefined, method: string): void {
   if (id != null && id.length === 0) throw new ApexifyInputError(`${method}: id must be a non-empty string when provided.`);
@@ -31,10 +34,6 @@ function cloneLayers(layers: readonly VideoPipelineLayer[]): VideoPipelineLayer[
   return layers.map(cloneLayer);
 }
 
-/**
- * Declarative video edit pipeline with stable layer IDs and in-memory undo/redo history.
- * Same IDs replace source/trim/splice layers; text/audio IDs merge by default.
- */
 export class VideoPipeline {
   private layers: VideoPipelineLayer[] = [];
   private undoStack: VideoPipelineLayer[][] = [];
@@ -46,30 +45,18 @@ export class VideoPipeline {
     initialLayers?: VideoPipelineLayer[]
   ) {
     if (source != null) this.applyLayer({ kind: "source", id: "source", source });
-    if (initialLayers?.length) {
-      for (const layer of initialLayers) this.applyLayer(layer);
-    }
-    if (this.layers.some((layer) => layer.kind === "source")) validateVideoPipelineLayers(this.layers);
-    this.undoStack = [];
-    this.redoStack = [];
+    if (initialLayers?.length) for (const layer of initialLayers) this.applyLayer(layer);
+    if (this.layers.some((layer) => layer.kind === "source")) this.validateRenderable();
   }
 
-  getLayers(): VideoPipelineLayer[] {
-    return cloneLayers(this.layers);
-  }
-
-  toJSON(): VideoPipelineSnapshot {
-    return { version: 1, layers: this.getLayers() };
-  }
+  getLayers(): VideoPipelineLayer[] { return cloneLayers(this.layers); }
+  toJSON(): VideoPipelineSnapshot { return { version: 1, layers: this.getLayers() }; }
 
   static fromJSON(operations: VideoOperations, snapshot: VideoPipelineSnapshot): VideoPipeline {
-    if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.layers)) {
-      throw new ApexifyInputError("videoPipeline snapshot must contain a layers array.");
-    }
-    if (snapshot.version !== undefined && snapshot.version !== 1) {
-      throw new ApexifyInputError(`Unsupported videoPipeline snapshot version: ${String(snapshot.version)}.`);
-    }
+    if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.layers)) throw new ApexifyInputError("videoPipeline snapshot must contain a layers array.");
+    if (snapshot.version !== undefined && snapshot.version !== 1) throw new ApexifyInputError(`Unsupported videoPipeline snapshot version: ${String(snapshot.version)}.`);
     validateVideoPipelineLayers(snapshot.layers);
+    validatePhase8PipelineLayers(snapshot.layers);
     return new VideoPipeline(operations, undefined, snapshot.layers);
   }
 
@@ -94,9 +81,15 @@ export class VideoPipeline {
 
   pushLayer(layer: VideoPipelineLayer, opts?: { replace?: boolean }): this {
     assertId(layer.id, "pushLayer");
-    this.recordMutation();
+    const previous = cloneLayers(this.layers);
     this.applyLayer(layer, opts);
-    this.validateIfRenderable();
+    try {
+      this.validateIfRenderable();
+    } catch (error) {
+      this.layers = previous;
+      throw error;
+    }
+    this.recordMutation(previous);
     return this;
   }
 
@@ -127,37 +120,30 @@ export class VideoPipeline {
     this.layers.push(cloneLayer(layer));
   }
 
-  private recordMutation(): void {
-    this.undoStack.push(cloneLayers(this.layers));
+  private recordMutation(previous: VideoPipelineLayer[]): void {
+    this.undoStack.push(previous);
+    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
     this.redoStack = [];
   }
 
+  private validateRenderable(): void {
+    validateVideoPipelineLayers(this.layers);
+    validatePhase8PipelineLayers(this.layers);
+  }
+
   private validateIfRenderable(): void {
-    if (this.layers.some((layer) => layer.kind === "source")) validateVideoPipelineLayers(this.layers);
+    if (this.layers.some((layer) => layer.kind === "source")) this.validateRenderable();
+    else validatePhase8PipelineLayers(this.layers);
   }
 
-  source(source: string | Buffer, id = "source"): this {
-    return this.pushLayer({ kind: "source", id, source } satisfies VideoPipelineSourceLayer);
-  }
-
-  trim(startTime: number, endTime: number, id = "trim"): this {
-    return this.pushLayer({ kind: "trim", id, startTime, endTime } satisfies VideoPipelineTrimLayer);
-  }
-
-  splice(options: Omit<VideoPipelineSpliceLayer, "kind" | "id">, id = "splice"): this {
-    return this.pushLayer({ kind: "splice", id, ...options } satisfies VideoPipelineSpliceLayer);
-  }
-
+  source(source: string | Buffer, id = "source"): this { return this.pushLayer({ kind: "source", id, source } satisfies VideoPipelineSourceLayer); }
+  trim(startTime: number, endTime: number, id = "trim"): this { return this.pushLayer({ kind: "trim", id, startTime, endTime } satisfies VideoPipelineTrimLayer); }
+  splice(options: Omit<VideoPipelineSpliceLayer, "kind" | "id">, id = "splice"): this { return this.pushLayer({ kind: "splice", id, ...options } satisfies VideoPipelineSpliceLayer); }
   text(overlays: VideoTextOverlayClip | VideoTextOverlayClip[], id = "text"): this {
     const list = Array.isArray(overlays) ? overlays : [overlays];
     return this.pushLayer({ kind: "text", id, overlays: list } satisfies VideoPipelineTextLayer);
   }
-
-  audio(
-    tracks: VideoPipelineAudioTrack | VideoPipelineAudioTrack[],
-    options?: Omit<VideoPipelineAudioLayer, "kind" | "id" | "tracks">,
-    id = "audio"
-  ): this {
+  audio(tracks: VideoPipelineAudioTrack | VideoPipelineAudioTrack[], options?: Omit<VideoPipelineAudioLayer, "kind" | "id" | "tracks">, id = "audio"): this {
     const list = Array.isArray(tracks) ? tracks : [tracks];
     return this.pushLayer({ kind: "audio", id, tracks: list, ...options } satisfies VideoPipelineAudioLayer);
   }
@@ -166,24 +152,24 @@ export class VideoPipeline {
     assertId(id, "removeLayer");
     const next = this.layers.filter((layer) => layer.id !== id);
     if (next.length === this.layers.length) return this;
-    this.recordMutation();
+    const previous = cloneLayers(this.layers);
     this.layers = next;
-    this.validateIfRenderable();
+    try { this.validateIfRenderable(); } catch (error) { this.layers = previous; throw error; }
+    this.recordMutation(previous);
     return this;
   }
 
   clearLayers(kind?: VideoPipelineLayer["kind"]): this {
-    const next = kind
-      ? this.layers.filter((layer) => layer.kind !== kind)
-      : (() => {
-          const source = this.layers.find((layer) => layer.kind === "source");
-          return source ? [source] : [];
-        })();
+    const next = kind ? this.layers.filter((layer) => layer.kind !== kind) : (() => {
+      const source = this.layers.find((layer) => layer.kind === "source");
+      return source ? [source] : [];
+    })();
     const unchanged = next.length === this.layers.length && next.every((layer, index) => layer === this.layers[index]);
     if (unchanged) return this;
-    this.recordMutation();
+    const previous = cloneLayers(this.layers);
     this.layers = cloneLayers(next);
-    this.validateIfRenderable();
+    try { this.validateIfRenderable(); } catch (error) { this.layers = previous; throw error; }
+    this.recordMutation(previous);
     return this;
   }
 
