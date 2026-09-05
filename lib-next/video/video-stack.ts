@@ -1,5 +1,4 @@
 import { VideoCreator, type VideoCreationOptions } from "./video-creator";
-import { VideoHelpers } from "./video-helpers";
 import { VideoPipeline } from "./video-pipeline-builder";
 import type { ExtractFramesOptions, VideoPipelineLayer } from "../types";
 import { createFfmpegSession, type FfmpegSession, type FfmpegSessionOptions } from "./ffmpeg-session";
@@ -14,31 +13,12 @@ import { VideoOperations } from "./video-operations";
 export class VideoStack {
   readonly creator: VideoCreator;
   readonly operations: VideoOperations;
-  private readonly pipelineHelpers: VideoHelpers;
   private readonly session: FfmpegSession;
 
   constructor(options: FfmpegSessionOptions = {}) {
     this.session = createFfmpegSession(options);
     this.operations = new VideoOperations(this.session);
     this.creator = new VideoCreator(this.operations);
-
-    // Temporary compatibility bridge used only by the old pipeline renderer.
-    // Phase 8 removes this after the pipeline is moved onto VideoOperations.
-    this.pipelineHelpers = new VideoHelpers({
-      checkFFmpegAvailable: () => this.session.checkAvailable(),
-      getFFmpegInstallInstructions: () => this.session.getInstallInstructions(),
-      getVideoInfo: (source, skip) => probeVideoMetadata(source, this.session, skip ?? false),
-      extractVideoFrame: async (source, frame, time, outputFormat, quality) => {
-        const result = await this.operations.frames.extractOne(source, {
-          frame: time === undefined ? frame : undefined,
-          time,
-          outputFormat,
-          quality,
-        });
-        return result.buffer;
-      },
-      createVideo: (createOptions) => this.creator.createVideo(createOptions as VideoCreationOptions),
-    }, this.session);
   }
 
   getVideoInfo(source: string | Buffer, skipFfmpegCheck = false) {
@@ -56,7 +36,7 @@ export class VideoStack {
         : initialLayers;
       if (combined.length > 0 && combined.some((layer) => layer.kind === "source")) validateVideoPipelineLayers(combined);
     }
-    return new VideoPipeline(this.pipelineHelpers, source, initialLayers);
+    return new VideoPipeline(this.operations, source, initialLayers);
   }
 
   extractFrames(videoSource: string | Buffer, options: ExtractFramesOptions) {
