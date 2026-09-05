@@ -56,11 +56,16 @@ assert.equal(facade.includes('validateGIFOptions'), false, 'GIF facade must not 
 
 const animate = sources['lib-next/gif/animate-frames.ts'];
 assert.ok(animate.includes('await gifCompletion'), 'animate GIF file lifecycle must await stream completion');
+assert.ok(animate.includes('await assertGifFile(options!.gifPath!)'), 'animate GIF output must validate the completed file');
 assert.ok(animate.includes('resolveMediaInput(source, { kind: "image", cache: false, signal })'), 'animate media must use central network resolver without global frame cache pollution');
+assert.ok(animate.includes('createGradientFill(ctx, normalized as gradient'), 'animate gradients must route through the shared renderer');
+assert.equal(/ctx\.create(?:Linear|Radial|Conic)Gradient\s*\(/.test(animate), false, 'animate must not maintain a divergent local gradient implementation');
+assert.ok(animate.includes('GIF frames must use the configured GIF width and height'), 'animate GIF mode must reject mixed logical-screen dimensions');
+assert.ok(animate.includes('if (!options?.gif && (frame.duration ?? defaultDuration) > 0)'), 'animate GIF encoding must not add wall-clock sleeps to encode throughput');
 
 const types = sources['lib-next/types/gif.ts'];
 assert.ok(types.includes('AsyncIterable<GIFEncodedFrame>'), 'public generated-frame type must expose streaming AsyncIterable');
 assert.ok(types.includes('signal?: AbortSignal'), 'public GIF cancellation contract missing');
 assert.ok(types.includes('contentType: "image/gif"'), 'public attachment MIME contract missing');
 
-console.log('phase7-gif-scan: streaming, backpressure, network, output, validation, cache and dead-path architecture checks passed.');
+console.log('phase7-gif-scan: streaming, backpressure, network, output, validation, cache, animate parity and dead-path architecture checks passed.');
