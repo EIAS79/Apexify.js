@@ -3,101 +3,42 @@ import { VideoHelpers } from "./video-helpers";
 import { VideoPipeline } from "./video-pipeline-builder";
 import type { ExtractFramesOptions, VideoPipelineLayer } from "../types";
 import { createFfmpegSession, type FfmpegSession, type FfmpegSessionOptions } from "./ffmpeg-session";
-import { probeVideoCodecSource, probeVideoMetadata } from "./ffprobe-metadata";
-import { extractVideoFrameBuffer } from "./extract-frame";
-import { extractFramesAtInterval } from "./extract-interval-frames";
-import { extractAllVideoFrames } from "./extract-all-frames";
+import { probeVideoMetadata } from "./ffprobe-metadata";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertWithinLimit } from "../runtime/limits";
 import { assertCollection, assertEnum, assertFiniteNumber, assertSource } from "../runtime/validation";
 import { validateVideoCreationOptions, validateVideoPipelineLayers } from "./video-validation";
-
-class ValidatedVideoCreator extends VideoCreator {
-  override createVideo(options: VideoCreationOptions): Promise<any> {
-    // Runs before VideoCreator checks FFmpeg availability or resolves sources.
-    validateVideoCreationOptions(options);
-    return super.createVideo(options);
-  }
-}
+import { VideoOperations } from "./video-operations";
 
 /** Single entry for all video work (used as `painter.video`). */
 export class VideoStack {
   readonly creator: VideoCreator;
-  private readonly helpers: VideoHelpers;
+  readonly operations: VideoOperations;
+  private readonly pipelineHelpers: VideoHelpers;
   private readonly session: FfmpegSession;
 
   constructor(options: FfmpegSessionOptions = {}) {
     this.session = createFfmpegSession(options);
-    this.creator = new ValidatedVideoCreator();
+    this.operations = new VideoOperations(this.session);
+    this.creator = new VideoCreator(this.operations);
 
-    const session = this.session;
-    const getVideoInfo = (src: string | Buffer, skip?: boolean) => probeVideoMetadata(src, session, skip ?? false);
-    const extractVideoFrame = (
-      src: string | Buffer,
-      frameNumber?: number,
-      timeSeconds?: number,
-      outputFormat?: "jpg" | "png",
-      quality?: number
-    ) => extractVideoFrameBuffer(session, src, frameNumber ?? 0, timeSeconds, outputFormat ?? "jpg", quality ?? 2);
-    const extractFrames = (src: string | Buffer, opts: ExtractFramesOptions) => extractFramesAtInterval(src, opts, session);
-    const extractAllFrames = (src: string | Buffer, opts?: Parameters<typeof extractAllVideoFrames>[1]) => extractAllVideoFrames(src, opts, session);
-
-    this.creator.setDependencies({
-      checkFFmpegAvailable: () => session.checkAvailable(),
-      getFFmpegInstallInstructions: () => session.getInstallInstructions(),
-      getVideoInfo,
-      getVideoCodec: (source: string | Buffer) => probeVideoCodecSource(source, session),
-      extractVideoFrame,
-      extractFrames,
-      extractAllFrames,
-    });
-
-    this.helpers = new VideoHelpers({
-      checkFFmpegAvailable: () => session.checkAvailable(),
-      getFFmpegInstallInstructions: () => session.getInstallInstructions(),
-      getVideoInfo,
-      extractVideoFrame,
-      createVideo: (opts) => this.creator.createVideo(opts),
-    }, session);
-
-    const h = this.helpers;
-    this.creator.setHelperMethods({
-      generateVideoThumbnail: (a, b, c) => h.generateVideoThumbnail(a, b, c),
-      convertVideo: (a, b) => h.convertVideo(a, b),
-      trimVideo: (a, b) => h.trimVideo(a, b),
-      extractAudio: (a, b) => h.extractAudio(a, b),
-      addWatermarkToVideo: (a, b) => h.addWatermarkToVideo(a, b),
-      changeVideoSpeed: (a, b) => h.changeVideoSpeed(a, b),
-      generateVideoPreview: (a, b, c) => h.generateVideoPreview(a, b, c),
-      applyVideoEffects: (a, b) => h.applyVideoEffects(a, b),
-      mergeVideos: (o) => h.mergeVideos(o),
-      replaceVideoSegment: (a, b) => h.replaceVideoSegment(a, b),
-      rotateVideo: (a, b) => h.rotateVideo(a, b),
-      cropVideo: (a, b) => h.cropVideo(a, b),
-      compressVideo: (a, b) => h.compressVideo(a, b),
-      addTextToVideo: (a, b) => h.addTextToVideo(a, b),
-      addFadeToVideo: (a, b) => h.addFadeToVideo(a, b),
-      reverseVideo: (a, b) => h.reverseVideo(a, b),
-      createVideoLoop: (a, b) => h.createVideoLoop(a, b),
-      batchProcessVideos: (o) => h.batchProcessVideos(o),
-      detectVideoScenes: (a, b) => h.detectVideoScenes(a, b),
-      stabilizeVideo: (a, b) => h.stabilizeVideo(a, b),
-      colorCorrectVideo: (a, b) => h.colorCorrectVideo(a, b),
-      addPictureInPicture: (a, b) => h.addPictureInPicture(a, b),
-      createSplitScreen: (o) => h.createSplitScreen(o),
-      createTimeLapseVideo: (a, b) => h.createTimeLapseVideo(a, b),
-      muteVideo: (a, b) => h.muteVideo(a, b),
-      mixVideoAudio: (a, b) => h.mixVideoAudio(a, b),
-      adjustVideoVolume: (a, b) => h.adjustVideoVolume(a, b),
-      createVideoFromFrames: (o) => h.createVideoFromFrames(o),
-      freezeVideoFrame: (a, b, c) => h.freezeVideoFrame(a, b, c),
-      exportVideoPreset: (a, b, c) => h.exportVideoPreset(a, b, c),
-      normalizeVideoAudio: (a, b, c) => h.normalizeVideoAudio(a, b, c),
-      applyLUTToVideo: (a, b, c) => h.applyLUTToVideo(a, b, c),
-      addVideoTransition: (a, b, c) => h.addVideoTransition(a, b, c),
-      addTextOverlayToVideo: (a, b, c) => h.addTextOverlayToVideo(a, b, c),
-      addAnimatedTextToVideo: (a, b, c) => h.addAnimatedTextToVideo(a, b, c),
-    });
+    // Temporary compatibility bridge used only by the old pipeline renderer.
+    // Phase 8 removes this after the pipeline is moved onto VideoOperations.
+    this.pipelineHelpers = new VideoHelpers({
+      checkFFmpegAvailable: () => this.session.checkAvailable(),
+      getFFmpegInstallInstructions: () => this.session.getInstallInstructions(),
+      getVideoInfo: (source, skip) => probeVideoMetadata(source, this.session, skip ?? false),
+      extractVideoFrame: async (source, frame, time, outputFormat, quality) => {
+        const result = await this.operations.frames.extractOne(source, {
+          frame: time === undefined ? frame : undefined,
+          time,
+          outputFormat,
+          quality,
+        });
+        return result.buffer;
+      },
+      createVideo: (createOptions) => this.creator.createVideo(createOptions as VideoCreationOptions),
+    }, this.session);
   }
 
   getVideoInfo(source: string | Buffer, skipFfmpegCheck = false) {
@@ -109,28 +50,28 @@ export class VideoStack {
   videoPipeline(source?: string | Buffer, initialLayers?: VideoPipelineLayer[]): VideoPipeline {
     if (source !== undefined) assertSource(source, "videoPipeline.source");
     if (initialLayers !== undefined) {
-      assertCollection(initialLayers, "videoPipeline.initialLayers", { limit: "maxCollectionItems" });
+      assertCollection(initialLayers, "videoPipeline.initialLayers", { limit: "maxVideoPipelineLayers" });
       const combined = source !== undefined
         ? [{ kind: "source", source } as VideoPipelineLayer, ...initialLayers.filter((layer) => layer.kind !== "source")]
         : initialLayers;
       if (combined.length > 0 && combined.some((layer) => layer.kind === "source")) validateVideoPipelineLayers(combined);
     }
-    return new VideoPipeline(this.helpers, source, initialLayers);
+    return new VideoPipeline(this.pipelineHelpers, source, initialLayers);
   }
 
   extractFrames(videoSource: string | Buffer, options: ExtractFramesOptions) {
     validateVideoCreationOptions({ source: videoSource, extractFrames: options });
-    return extractFramesAtInterval(videoSource, options, this.session);
+    return this.operations.frames.extractInterval(videoSource, options);
   }
 
-  extractAllFrames(videoSource: string | Buffer, options?: Parameters<typeof extractAllVideoFrames>[1]) {
+  extractAllFrames(videoSource: string | Buffer, options?: Parameters<VideoOperations["frames"]["extractAll"]>[1]) {
     validateVideoCreationOptions({ source: videoSource, extractAllFrames: options ?? {} });
-    return extractAllVideoFrames(videoSource, options, this.session);
+    return this.operations.frames.extractAll(videoSource, options ?? {});
   }
 
-  extractFrameAtTime(videoSource: string | Buffer, timeSeconds: number, outputFormat: "jpg" | "png" = "jpg", quality = 2) {
+  async extractFrameAtTime(videoSource: string | Buffer, timeSeconds: number, outputFormat: "jpg" | "png" = "jpg", quality = 2) {
     validateVideoCreationOptions({ source: videoSource, extractFrame: { time: timeSeconds, outputFormat, quality } });
-    return extractVideoFrameBuffer(this.session, videoSource, 0, timeSeconds, outputFormat, quality);
+    return (await this.operations.frames.extractOne(videoSource, { time: timeSeconds, outputFormat, quality })).buffer;
   }
 
   async extractFrameByNumber(videoSource: string | Buffer, frameNumber: number, outputFormat: "jpg" | "png" = "jpg", quality = 2) {
@@ -141,24 +82,19 @@ export class VideoStack {
     const videoInfo = await this.getVideoInfo(videoSource, true);
     if (!videoInfo || videoInfo.fps <= 0) throw new ApexifyInputError("Could not get video FPS to convert frame number to time.");
     const timeSeconds = (frameNumber - 1) / videoInfo.fps;
-    return extractVideoFrameBuffer(this.session, videoSource, frameNumber - 1, timeSeconds, outputFormat, quality);
+    return (await this.operations.frames.extractOne(videoSource, { time: timeSeconds, outputFormat, quality })).buffer;
   }
 
   async extractMultipleFrames(videoSource: string | Buffer, times: number[], outputFormat: "jpg" | "png" = "jpg", quality = 2): Promise<Buffer[]> {
     assertSource(videoSource, "video.extractMultipleFrames.source");
-    assertCollection(times, "video.extractMultipleFrames.times", { min: 1, limit: "maxVideoOverlays" });
+    assertCollection(times, "video.extractMultipleFrames.times", { min: 1, limit: "maxVideoExtractedFrames" });
     assertEnum(outputFormat, "video.extractMultipleFrames.outputFormat", ["jpg", "png"] as const);
     assertFiniteNumber(quality, "video.extractMultipleFrames.quality", { min: 1, max: 31, integer: true });
     times.forEach((time, index) => {
       assertFiniteNumber(time, `video.extractMultipleFrames.times[${index}]`, { min: 0 });
       assertWithinLimit("maxVideoDurationSeconds", time);
     });
-    const frames: Buffer[] = [];
-    for (const time of times) {
-      const frame = await this.extractFrameAtTime(videoSource, time, outputFormat, quality);
-      if (frame) frames.push(frame);
-    }
-    return frames;
+    return this.operations.frames.extractTimes(videoSource, times, { outputFormat, quality });
   }
 }
 
