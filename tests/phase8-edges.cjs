@@ -102,12 +102,12 @@ async function main() {
     assert.ok(effectsInfo.duration > 0.8 && effectsInfo.duration < 1.2);
 
     await assert.rejects(
-      painter.createVideo({ source, changeSpeed: { speed: 0.124, outputPath: path.join(dir, 'too-slow.mp4') } }),
+      async () => painter.createVideo({ source, changeSpeed: { speed: 0.124, outputPath: path.join(dir, 'too-slow.mp4') } }),
       /between 0\.125 and 16|speed/i,
       'speed below supported minimum must be rejected before FFmpeg'
     );
     await assert.rejects(
-      painter.createVideo({ source, changeSpeed: { speed: 16.001, outputPath: path.join(dir, 'too-fast.mp4') } }),
+      async () => painter.createVideo({ source, changeSpeed: { speed: 16.001, outputPath: path.join(dir, 'too-fast.mp4') } }),
       /between 0\.125 and 16|speed/i,
       'speed above supported maximum must be rejected before FFmpeg'
     );
