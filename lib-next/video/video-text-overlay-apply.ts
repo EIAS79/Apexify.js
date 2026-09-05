@@ -4,9 +4,7 @@ import type { VideoTextOverlayClip, VideoTextOverlayOperation } from "../types";
 import { renderVideoTextLayerPng } from "./render-video-text-layer";
 import { buildEnableBetween, buildOverlayMotionExpressions } from "./video-text-overlay-filters";
 
-function splitOverlayStyle(clip: VideoTextOverlayClip): {
-  style: Omit<VideoTextOverlayClip, "startTime" | "endTime" | "transitionIn" | "transitionOut" | "overlayOpacity">;
-} {
+function splitOverlayStyle(clip: VideoTextOverlayClip): { style: Omit<VideoTextOverlayClip, "startTime" | "endTime" | "transitionIn" | "transitionOut" | "overlayOpacity"> } {
   const { startTime: _startTime, endTime: _endTime, transitionIn: _transitionIn, transitionOut: _transitionOut, overlayOpacity: _overlayOpacity, ...style } = clip;
   return { style };
 }
@@ -38,7 +36,8 @@ export function buildTextOverlayFilterComplex(overlayCount: number, clips: Video
   return { filterComplex: parts.join(";"), outputLabel: current.slice(1, -1) };
 }
 
-export async function prepareTextOverlayPngs(frameDir: string, clips: VideoTextOverlayClip[], videoWidth: number, videoHeight: number): Promise<string[]> {
+/** Internal compatibility signature; timestamp is intentionally ignored because workspace names are already unique. */
+export async function prepareTextOverlayPngs(frameDir: string, _timestamp: number, clips: VideoTextOverlayClip[], videoWidth: number, videoHeight: number): Promise<{ pngPaths: string[]; tempFiles: string[] }> {
   const pngPaths: string[] = [];
   for (let i = 0; i < clips.length; i += 1) {
     const { style } = splitOverlayStyle(clips[i]!);
@@ -47,7 +46,7 @@ export async function prepareTextOverlayPngs(frameDir: string, clips: VideoTextO
     await fs.writeFile(pngPath, png);
     pngPaths.push(pngPath);
   }
-  return pngPaths;
+  return { pngPaths, tempFiles: [...pngPaths] };
 }
 
 export function validateTextOverlayOperation(options: VideoTextOverlayOperation): void {
