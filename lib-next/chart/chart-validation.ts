@@ -1,77 +1,191 @@
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
-import { assertFiniteNumericLeaves, assertRecord } from "../runtime/validation";
+import { assertFiniteNumber, assertFiniteNumericLeaves, assertRecord } from "../runtime/validation";
 
 const DEFAULT_CHART_WIDTH = 800;
 const DEFAULT_CHART_HEIGHT = 600;
+const TYPES = ["pie", "bar", "horizontalBar", "line", "scatter", "radar", "polarArea"] as const;
+type SupportedChartType = (typeof TYPES)[number];
 
-interface TraversalCounters {
-  items: number;
-  text: number;
-}
+interface TraversalCounters { items: number; text: number; }
 
 function inspectBoundedValue(value: unknown, name: string, counters: TraversalCounters, depth = 0): void {
-  if (depth > 16 || value == null || Buffer.isBuffer(value) || value instanceof Uint8Array || value instanceof URL) return;
-  if (typeof value === "string") {
-    counters.text += value.length;
-    assertWithinLimit("maxTextLength", counters.text);
-    return;
-  }
+  if (depth > 16 || value == null || Buffer.isBuffer(value) || value instanceof Uint8Array || value instanceof URL || typeof value === "function") return;
+  if (typeof value === "string") { counters.text += value.length; assertWithinLimit("maxTextLength", counters.text); return; }
   if (Array.isArray(value)) {
     counters.items += value.length;
     assertWithinLimit("maxCollectionItems", counters.items);
     for (let i = 0; i < value.length; i++) inspectBoundedValue(value[i], `${name}[${i}]`, counters, depth + 1);
     return;
   }
-  if (typeof value === "object") {
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      inspectBoundedValue(child, `${name}.${key}`, counters, depth + 1);
-    }
-  }
+  if (typeof value === "object") for (const [key, child] of Object.entries(value as Record<string, unknown>)) inspectBoundedValue(child, `${name}.${key}`, counters, depth + 1);
 }
 
 function validateChartDimensions(options: unknown, name: string): void {
-  if (options === undefined) {
-    assertCanvasResourceLimits(DEFAULT_CHART_WIDTH, DEFAULT_CHART_HEIGHT);
-    return;
-  }
+  if (options === undefined) { assertCanvasResourceLimits(DEFAULT_CHART_WIDTH, DEFAULT_CHART_HEIGHT); return; }
   assertRecord(options, name);
   const dimensions = options.dimensions;
-  if (dimensions === undefined) {
-    assertCanvasResourceLimits(DEFAULT_CHART_WIDTH, DEFAULT_CHART_HEIGHT);
-    return;
-  }
+  if (dimensions === undefined) { assertCanvasResourceLimits(DEFAULT_CHART_WIDTH, DEFAULT_CHART_HEIGHT); return; }
   assertRecord(dimensions, `${name}.dimensions`);
   const width = dimensions.width ?? DEFAULT_CHART_WIDTH;
   const height = dimensions.height ?? DEFAULT_CHART_HEIGHT;
-  if (typeof width !== "number" || !Number.isFinite(width) || width <= 0 || !Number.isInteger(width)) {
-    throw new ApexifyInputError(`${name}.dimensions.width must be a finite positive integer.`);
-  }
-  if (typeof height !== "number" || !Number.isFinite(height) || height <= 0 || !Number.isInteger(height)) {
-    throw new ApexifyInputError(`${name}.dimensions.height must be a finite positive integer.`);
-  }
+  assertFiniteNumber(width, `${name}.dimensions.width`, { min: 1, integer: true });
+  assertFiniteNumber(height, `${name}.dimensions.height`, { min: 1, integer: true });
   assertCanvasResourceLimits(width, height);
 }
 
 function validateChartValueTree(value: unknown, name: string): void {
   assertFiniteNumericLeaves(value, name);
   inspectBoundedValue(value, name, { items: 0, text: 0 });
+  inspectSemanticOptionRanges(value, name);
+}
+
+function inspectSemanticOptionRanges(value: unknown, name: string, depth = 0): void {
+  if (depth > 16 || value == null || typeof value !== "object" || Buffer.isBuffer(value) || value instanceof Uint8Array) return;
+  if (Array.isArray(value)) { value.forEach((item, index) => inspectSemanticOptionRanges(item, `${name}[${index}]`, depth + 1)); return; }
+  const record = value as Record<string, unknown>;
+  for (const key of ["opacity", "fillOpacity", "innerRadiusRatio", "donutInnerRadius"] as const) {
+    if (record[key] !== undefined) assertFiniteNumber(record[key], `${name}.${key}`, { min: 0, max: 1 });
+  }
+  if (record.range !== undefined) {
+    assertRecord(record.range, `${name}.range`);
+    const range = record.range;
+    if (range.min !== undefined) assertFiniteNumber(range.min, `${name}.range.min`);
+    if (range.max !== undefined) assertFiniteNumber(range.max, `${name}.range.max`);
+    if (range.step !== undefined) assertFiniteNumber(range.step, `${name}.range.step`, { min: 0, exclusiveMin: true });
+    if (typeof range.min === "number" && typeof range.max === "number" && range.min >= range.max) {
+      throw new ApexifyInputError(`${name}.range.min must be less than range.max.`);
+    }
+  }
+  for (const [key, child] of Object.entries(record)) inspectSemanticOptionRanges(child, `${name}.${key}`, depth + 1);
+}
+
+function nonEmptyLabel(record: Record<string, unknown>, name: string): void {
+  if (typeof record.label !== "string") throw new ApexifyInputError(`${name}.label must be a string.`);
+}
+
+function validatePieLike(data: unknown[], name: string): void {
+  let total = 0;
+  data.forEach((item, index) => {
+    assertRecord(item, `${name}[${index}]`);
+    nonEmptyLabel(item, `${name}[${index}]`);
+    assertFiniteNumber(item.value, `${name}[${index}].value`, { min: 0 });
+    total += item.value;
+  });
+  if (!(total > 0)) throw new ApexifyInputError(`${name} total must be greater than zero.`);
+}
+
+function validateBars(data: unknown[], name: string, horizontal: boolean): void {
+  data.forEach((item, index) => {
+    assertRecord(item, `${name}[${index}]`);
+    nonEmptyLabel(item, `${name}[${index}]`);
+    const hasValue = item.value !== undefined;
+    const hasValues = item.values !== undefined;
+    if (hasValue === hasValues) throw new ApexifyInputError(`${name}[${index}] must provide exactly one of value or values.`);
+    if (hasValue) assertFiniteNumber(item.value, `${name}[${index}].value`);
+    if (hasValues) {
+      if (!Array.isArray(item.values) || item.values.length === 0) throw new ApexifyInputError(`${name}[${index}].values must be a non-empty array.`);
+      item.values.forEach((segment, segmentIndex) => {
+        assertRecord(segment, `${name}[${index}].values[${segmentIndex}]`);
+        assertFiniteNumber(segment.value, `${name}[${index}].values[${segmentIndex}].value`);
+      });
+    }
+    for (const key of horizontal ? ["xStart", "xEnd", "yStart", "yEnd"] : ["xStart", "xEnd"]) {
+      if (item[key] !== undefined) assertFiniteNumber(item[key], `${name}[${index}].${key}`);
+    }
+    if (!horizontal) {
+      if (item.xStart === undefined || item.xEnd === undefined) throw new ApexifyInputError(`${name}[${index}] requires xStart and xEnd.`);
+      if ((item.xEnd as number) <= (item.xStart as number)) throw new ApexifyInputError(`${name}[${index}].xEnd must be greater than xStart.`);
+    }
+  });
+}
+
+function validateCartesianSeries(data: unknown[], name: string): void {
+  data.forEach((series, seriesIndex) => {
+    assertRecord(series, `${name}[${seriesIndex}]`);
+    nonEmptyLabel(series, `${name}[${seriesIndex}]`);
+    if (!Array.isArray(series.data) || series.data.length === 0) throw new ApexifyInputError(`${name}[${seriesIndex}].data must be a non-empty array.`);
+    series.data.forEach((point, pointIndex) => {
+      assertRecord(point, `${name}[${seriesIndex}].data[${pointIndex}]`);
+      assertFiniteNumber(point.x, `${name}[${seriesIndex}].data[${pointIndex}].x`);
+      assertFiniteNumber(point.y, `${name}[${seriesIndex}].data[${pointIndex}].y`);
+    });
+  });
+}
+
+function validateRadar(data: unknown[], options: unknown, name: string): void {
+  if (options === undefined) throw new ApexifyInputError(`${name} requires radar.categories.`);
+  assertRecord(options, `${name}.options`);
+  assertRecord(options.radar, `${name}.options.radar`);
+  if (!Array.isArray(options.radar.categories) || options.radar.categories.length < 3) throw new ApexifyInputError(`${name}.options.radar.categories must contain at least three labels.`);
+  const count = options.radar.categories.length;
+  data.forEach((series, index) => {
+    assertRecord(series, `${name}[${index}]`);
+    nonEmptyLabel(series, `${name}[${index}]`);
+    if (!Array.isArray(series.values) || series.values.length !== count) throw new ApexifyInputError(`${name}[${index}].values length must match radar.categories.`);
+    series.values.forEach((value, valueIndex) => assertFiniteNumber(value, `${name}[${index}].values[${valueIndex}]`, { min: 0 }));
+  });
+  if (options.radar.maxValue !== undefined) assertFiniteNumber(options.radar.maxValue, `${name}.options.radar.maxValue`, { min: 0, exclusiveMin: true });
+}
+
+function validateTypeSemantics(chartType: SupportedChartType, data: unknown[], options: unknown, name = "chart.data"): void {
+  switch (chartType) {
+    case "pie": validatePieLike(data, name); break;
+    case "polarArea": validatePieLike(data, name); break;
+    case "bar": validateBars(data, name, false); break;
+    case "horizontalBar": validateBars(data, name, true); break;
+    case "line": validateCartesianSeries(data, name); break;
+    case "scatter": validateCartesianSeries(data, name); break;
+    case "radar": validateRadar(data, options, name); break;
+  }
+}
+
+function validateCombo(options: Record<string, unknown>): void {
+  if (!Array.isArray(options.bars)) throw new ApexifyInputError("comboChart.bars must be an array.");
+  if (!Array.isArray(options.lines)) throw new ApexifyInputError("comboChart.lines must be an array.");
+  if (options.bars.length === 0 && options.lines.length === 0) throw new ApexifyInputError("comboChart requires at least one bar or line series.");
+  if (options.bars.length > 0) validateBars(options.bars, "comboChart.bars", false);
+  if (options.lines.length > 0) validateCartesianSeries(options.lines, "comboChart.lines");
+  if (options.barsType !== undefined && !["standard", "grouped", "stacked"].includes(String(options.barsType))) {
+    throw new ApexifyInputError("comboChart.barsType must be standard, grouped, or stacked.");
+  }
+}
+
+function validateComparisonChartConfig(value: unknown, name: string): void {
+  assertRecord(value, name);
+  if (typeof value.type !== "string") throw new ApexifyInputError(`${name}.type is required.`);
+  const normalized = value.type === "donut" ? "pie" : value.type;
+  if (!TYPES.includes(normalized as SupportedChartType)) throw new ApexifyInputError(`${name}.type is unsupported.`);
+  if (!Array.isArray(value.data) || value.data.length === 0) throw new ApexifyInputError(`${name}.data must be a non-empty array.`);
+  if (value.options !== undefined) {
+    validateChartValueTree(value.options, `${name}.options`);
+    validateChartDimensions(value.options, `${name}.options`);
+  }
+  validateTypeSemantics(normalized as SupportedChartType, value.data, value.options, `${name}.data`);
+}
+
+function validateComparison(options: Record<string, unknown>): void {
+  validateComparisonChartConfig(options.chart1, "comparisonChart.chart1");
+  validateComparisonChartConfig(options.chart2, "comparisonChart.chart2");
+  if (options.layout !== undefined && options.layout !== "sideBySide" && options.layout !== "topBottom") {
+    throw new ApexifyInputError("comparisonChart.layout must be sideBySide or topBottom.");
+  }
+  if (options.spacing !== undefined) assertFiniteNumber(options.spacing, "comparisonChart.spacing", { min: 0 });
 }
 
 export function validateChartRequest(chartType: unknown, data: unknown, options?: unknown): void {
-  if (typeof chartType !== "string" || !["pie", "bar", "horizontalBar", "line", "scatter", "radar", "polarArea"].includes(chartType)) {
-    throw new ApexifyInputError("chart.type is unsupported.");
-  }
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new ApexifyInputError("chart.data must be a non-empty array.");
-  }
+  if (typeof chartType !== "string" || !TYPES.includes(chartType as SupportedChartType)) throw new ApexifyInputError("chart.type is unsupported.");
+  if (!Array.isArray(data) || data.length === 0) throw new ApexifyInputError("chart.data must be a non-empty array.");
   validateChartValueTree(data, "chart.data");
   if (options !== undefined) validateChartValueTree(options, "chart.options");
   validateChartDimensions(options, "chart.options");
+  validateTypeSemantics(chartType as SupportedChartType, data, options);
 }
 
 export function validateCompositeChartOptions(options: unknown, name: "comparisonChart" | "comboChart"): void {
   assertRecord(options, name);
   validateChartValueTree(options, name);
   validateChartDimensions(options, name);
+  if (name === "comboChart") validateCombo(options);
+  else validateComparison(options);
 }

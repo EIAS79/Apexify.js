@@ -1,38 +1,34 @@
 import { dataURL, base64, blob, arrayBuffer } from "./buffer-encoding";
 import { url as uploadPngToUrl } from "./upload-imgur";
-import { getErrorMessage } from "../core/errors";
+import { ApexifyError, ApexifyInputError, ApexifyExternalServiceError } from "../runtime/errors";
 
-/**
- * Encode a PNG buffer according to ApexPainter output `type` (constructor / `outputFormat`).
- */
+export type PainterOutputType = "buffer" | "url" | "dataURL" | "blob" | "base64" | "arraybuffer";
+
+/** Encode PNG bytes according to ApexPainter output type. base64 is raw; dataURL includes the MIME prefix. */
 export async function bufferToPainterOutput(
   results: Buffer,
   formatType: string
 ): Promise<Buffer | string | Blob | ArrayBuffer> {
-  try {
-    if (!Buffer.isBuffer(results)) {
-      throw new Error("outPut: results must be a Buffer.");
-    }
+  if (!Buffer.isBuffer(results) || results.length === 0) {
+    throw new ApexifyInputError("output.results must be a non-empty Buffer.");
+  }
+  if (!["buffer", "url", "dataURL", "blob", "base64", "arraybuffer"].includes(formatType)) {
+    throw new ApexifyInputError(
+      `output.type is unsupported: ${String(formatType)}. Supported: buffer, url, dataURL, blob, base64, arraybuffer.`
+    );
+  }
 
-    switch (formatType) {
-      case "buffer":
-        return results;
-      case "url":
-        return await uploadPngToUrl(results);
-      case "dataURL":
-        return dataURL(results);
-      case "blob":
-        return blob(results);
-      case "base64":
-        return base64(results);
-      case "arraybuffer":
-        return arrayBuffer(results);
-      default:
-        throw new Error(
-          `outPut: Unsupported format '${formatType}'. Supported: buffer, url, dataURL, blob, base64, arraybuffer`
-        );
+  try {
+    switch (formatType as PainterOutputType) {
+      case "buffer": return results;
+      case "url": return await uploadPngToUrl(results);
+      case "dataURL": return dataURL(results, "image/png");
+      case "blob": return blob(results, "image/png");
+      case "base64": return base64(results);
+      case "arraybuffer": return arrayBuffer(results);
     }
-  } catch (error) {
-    throw new Error(`outPut failed: ${getErrorMessage(error)}`);
+  } catch (cause) {
+    if (cause instanceof ApexifyError) throw cause;
+    throw new ApexifyExternalServiceError("output conversion failed.", { cause, details: { formatType } });
   }
 }

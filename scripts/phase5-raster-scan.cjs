@@ -25,7 +25,6 @@ function isRasterRelevant(rel) {
     'lib-next/chart/',
     'lib-next/path/',
   ].some((prefix) => rel.startsWith(prefix)) || [
-    'lib-next/core/general-functions.ts',
     'lib-next/output/compression.ts',
     'lib-next/output/convert.ts',
     'lib-next/output/stitch.ts',
@@ -40,49 +39,27 @@ function lineAndSnippet(text, index) {
   return { line, snippet: text.slice(start, end).trim() };
 }
 
-const nativeDecodeAllowlist = new Set([
-  'lib-next/image/image-source-validation.ts',
-]);
-const rawMediaResolverAllowlist = new Set([
-  'lib-next/image/image-source-validation.ts',
-]);
+const nativeDecodeAllowlist = new Set(['lib-next/image/image-source-validation.ts']);
+const rawMediaResolverAllowlist = new Set(['lib-next/image/image-source-validation.ts']);
 
 for (const file of walk(SOURCE)) {
   const rel = path.relative(ROOT, file).replace(/\\/g, '/');
   if (!isRasterRelevant(rel)) continue;
   const text = fs.readFileSync(file, 'utf8');
-
-  if (/from\s+["']jimp["']|require\s*\(\s*["']jimp["']\s*\)/.test(text)) {
-    failures.push(`${rel}: executable Jimp dependency remains in the raster pipeline`);
-  }
-  if (/\bresolveMediaPath\b|media-path\.ts/.test(text)) {
-    failures.push(`${rel}: obsolete image path resolver remains`);
-  }
-  if (!nativeDecodeAllowlist.has(rel) && /\bloadImage\b/.test(text) && /@napi-rs\/canvas/.test(text)) {
-    failures.push(`${rel}: native loadImage must delegate to the authoritative image decoder/cache`);
-  }
-  if (!rawMediaResolverAllowlist.has(rel) && /\bresolveMediaInput\s*\(/.test(text)) {
-    failures.push(`${rel}: direct resolveMediaInput bypasses authoritative image metadata/decode preflight`);
-  }
-  if (/\baxios\b/.test(text) || /\bfetch\s*\(/.test(text)) {
-    failures.push(`${rel}: direct network transport remains in raster code; use shared media/network policy`);
-  }
-  if (/\b(?:readFileSync|writeFileSync|existsSync|mkdirSync|rmSync)\s*\(/.test(text)) {
-    failures.push(`${rel}: synchronous filesystem call remains on a raster/render path`);
-  }
-  if (/\bMath\.random\s*\(/.test(text)) {
-    failures.push(`${rel}: nondeterministic Math.random remains on a raster/render path`);
-  }
-  if (/\b(?:TODO|FIXME)\b|\bnot implemented\b|\bstub\b/i.test(text)) {
-    failures.push(`${rel}: unfinished raster marker remains`);
-  }
+  if (/from\s+["']jimp["']|require\s*\(\s*["']jimp["']\s*\)/.test(text)) failures.push(`${rel}: executable Jimp dependency remains in the raster pipeline`);
+  if (/\bresolveMediaPath\b|media-path\.ts/.test(text)) failures.push(`${rel}: obsolete image path resolver remains`);
+  if (!nativeDecodeAllowlist.has(rel) && /\bloadImage\b/.test(text) && /@napi-rs\/canvas/.test(text)) failures.push(`${rel}: native loadImage must delegate to the authoritative image decoder/cache`);
+  if (!rawMediaResolverAllowlist.has(rel) && /\bresolveMediaInput\s*\(/.test(text)) failures.push(`${rel}: direct resolveMediaInput bypasses authoritative image metadata/decode preflight`);
+  if (/\baxios\b/.test(text) || /\bfetch\s*\(/.test(text)) failures.push(`${rel}: direct network transport remains in raster code; use shared media/network policy`);
+  if (/\b(?:readFileSync|writeFileSync|existsSync|mkdirSync|rmSync)\s*\(/.test(text)) failures.push(`${rel}: synchronous filesystem call remains on a raster/render path`);
+  if (/\bMath\.random\s*\(/.test(text)) failures.push(`${rel}: nondeterministic Math.random remains on a raster/render path`);
+  if (/\b(?:TODO|FIXME)\b|\bnot implemented\b|\bstub\b/i.test(text)) failures.push(`${rel}: unfinished raster marker remains`);
 
   const suspiciousCoordinateDefault = /\.(?:x|y|startX|startY|endX|endY|centerX|centerY|offsetX|offsetY)\s*\|\|\s*[-+]?\d+(?:\.\d+)?\b/g;
   for (const match of text.matchAll(suspiciousCoordinateDefault)) {
     const location = lineAndSnippet(text, match.index ?? 0);
     failures.push(`${rel}:${location.line}: zero coordinate is overwritten by || fallback: ${location.snippet}`);
   }
-
   const suspiciousValueDefault = /\.(?:opacity|rotation|scale|blur|intensity|value|angle|radius|threshold|globalAlpha)\s*\|\|\s*[-+]?\d+(?:\.\d+)?\b/g;
   for (const match of text.matchAll(suspiciousValueDefault)) {
     const location = lineAndSnippet(text, match.index ?? 0);
@@ -90,36 +67,27 @@ for (const file of walk(SOURCE)) {
   }
 }
 
-const generalFunctions = fs.readFileSync(path.join(ROOT, 'lib-next/core/general-functions.ts'), 'utf8');
-const detectStart = generalFunctions.indexOf('export async function detectColors');
-const detectEnd = generalFunctions.indexOf('/** Remove one exact RGB color', detectStart);
-if (detectStart < 0 || detectEnd < 0) {
-  failures.push('lib-next/core/general-functions.ts: detectColors implementation could not be located');
-} else {
-  const detectColors = generalFunctions.slice(detectStart, detectEnd);
-  if (/\bloadImageCached\s*\(/.test(detectColors) || /\bgetImageData\s*\(/.test(detectColors)) {
-    failures.push('lib-next/core/general-functions.ts: detectColors regressed to full decoded-canvas pixel enumeration');
+const imageUtilitiesPath = path.join(ROOT, 'lib-next/image/image-utilities.ts');
+if (!fs.existsSync(imageUtilitiesPath)) failures.push('lib-next/image/image-utilities.ts: migrated image utility domain is missing');
+else {
+  const imageUtilities = fs.readFileSync(imageUtilitiesPath, 'utf8');
+  const detectStart = imageUtilities.indexOf('export async function detectColors');
+  const detectEnd = imageUtilities.indexOf('/** Remove one exact RGB color', detectStart);
+  if (detectStart < 0 || detectEnd < 0) failures.push('lib-next/image/image-utilities.ts: detectColors implementation could not be located');
+  else {
+    const detectColors = imageUtilities.slice(detectStart, detectEnd);
+    if (/\bloadImageCached\s*\(/.test(detectColors) || /\bgetImageData\s*\(/.test(detectColors)) failures.push('lib-next/image/image-utilities.ts: detectColors regressed to full decoded-canvas pixel enumeration');
+    if (!/\.resize\s*\(\s*\{[^}]*width:\s*160[^}]*height:\s*160/s.test(detectColors)) failures.push('lib-next/image/image-utilities.ts: detectColors must downsample before palette extraction');
+    if (!/\.slice\s*\(\s*0\s*,\s*16\s*\)/.test(detectColors)) failures.push('lib-next/image/image-utilities.ts: detectColors palette must remain explicitly bounded');
   }
-  if (!/\.resize\s*\(\s*\{[^}]*width:\s*160[^}]*height:\s*160/s.test(detectColors)) {
-    failures.push('lib-next/core/general-functions.ts: detectColors must downsample before palette extraction');
-  }
-  if (!/\.slice\s*\(\s*0\s*,\s*16\s*\)/.test(detectColors)) {
-    failures.push('lib-next/core/general-functions.ts: detectColors palette must remain explicitly bounded');
-  }
+  if (/function\s+applyBlur\s*\(/.test(imageUtilities)) failures.push('lib-next/image/image-utilities.ts: legacy quadratic blur loop remains after native filter migration');
 }
-if (/function\s+applyBlur\s*\(/.test(generalFunctions)) {
-  failures.push('lib-next/core/general-functions.ts: legacy quadratic blur loop remains after native filter migration');
-}
+if (fs.existsSync(path.join(ROOT, 'lib-next/core/general-functions.ts'))) failures.push('lib-next/core/general-functions.ts: obsolete mixed-responsibility utility file still exists');
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-if (packageJson.dependencies?.jimp || packageJson.optionalDependencies?.jimp) {
-  failures.push('package.json: Jimp remains a production dependency after the Sharp/RAW filter migration');
-}
-
+if (packageJson.dependencies?.jimp || packageJson.optionalDependencies?.jimp) failures.push('package.json: Jimp remains a production dependency after the Sharp/RAW filter migration');
 const lock = fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8');
-if (/"node_modules\/(?:@jimp\/|jimp")/.test(lock)) {
-  failures.push('package-lock.json: Jimp packages remain in the locked dependency graph');
-}
+if (/"node_modules\/(?:@jimp\/|jimp")/.test(lock)) failures.push('package-lock.json: Jimp packages remain in the locked dependency graph');
 
 if (failures.length) {
   console.error('Phase 5 raster self-challenge failed:\n' + failures.map((failure) => ` - ${failure}`).join('\n'));

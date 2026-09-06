@@ -21,8 +21,8 @@ export * from "./helpers/legendTextLayout";
 /** Per-chart modules as namespaces (avoids type name collisions across charts). */
 export * as pie from "./impl/piechart";
 export * as bar from "./impl/barchart";
-export * as horizontalBar from "./impl/horizontalbarchart";
-export * as line from "./impl/linechart";
+export * as horizontalBar from "./horizontalbar-public";
+export * as line from "./linechart-public";
 export * as scatter from "./impl/scatterchart";
 export * as radar from "./impl/radarchart";
 export * as polarArea from "./impl/polarareachart";

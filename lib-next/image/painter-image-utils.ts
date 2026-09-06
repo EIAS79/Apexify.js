@@ -5,13 +5,7 @@ import type { PainterImageUtils } from "../types";
 import { stitchImages, createCollage } from "../output/stitch";
 import { compressImage, extractPalette } from "../output/compression";
 import { resizingImg, converter } from "../output/convert";
-import {
-  applyColorFilters,
-  imgEffects,
-  detectColors,
-  removeColor,
-  bgRemoval,
-} from "../core/general-functions";
+import { applyColorFilters, imgEffects, detectColors, removeColor, bgRemoval } from "./image-utilities";
 import { blendImageLayers } from "./layer-blend";
 import { cropRasterImage } from "./crop-raster";
 import { applyRasterMask } from "./raster-masking";
@@ -62,138 +56,73 @@ export const painterImageUtils: PainterImageUtils = {
     try {
       for (const image of images) await preflightImageSource(image);
       return await stitchImages(images, options);
-    } catch (error) {
-      rethrowDecode(error, "stitchImages");
-    }
+    } catch (error) { rethrowDecode(error, "stitchImages"); }
   },
-
   async createCollage(images, layout) {
     validateCollageInputs(images, layout);
     try {
       for (const image of images) await preflightImageSource(image.source);
       return await createCollage(images, layout);
-    } catch (error) {
-      rethrowDecode(error, "createCollage");
-    }
+    } catch (error) { rethrowDecode(error, "createCollage"); }
   },
-
   async compress(image, options) {
     validateCompressionInputs(image, options);
-    try {
-      return await compressImage(image, options);
-    } catch (error) {
-      rethrowDecode(error, "compress");
-    }
+    try { return await compressImage(image, options); } catch (error) { rethrowDecode(error, "compress"); }
   },
-
   async extractPalette(image, options) {
     validatePaletteInputs(image, options);
-    try {
-      return await extractPalette(image, options);
-    } catch (error) {
-      rethrowDecode(error, "extractPalette");
-    }
+    try { return await extractPalette(image, options); } catch (error) { rethrowDecode(error, "extractPalette"); }
   },
-
   async resize(resizeOptions) {
     validateResizeInputs(resizeOptions);
-    try {
-      return await resizingImg(resizeOptions);
-    } catch (error) {
-      rethrowDecode(error, "resize");
-    }
+    try { return await resizingImg(resizeOptions); } catch (error) { rethrowDecode(error, "resize"); }
   },
-
   async imgConverter(source, newExtension) {
     validateConverterInputs(source, newExtension);
-    try {
-      return await converter(source, newExtension);
-    } catch (error) {
-      rethrowDecode(error, "imgConverter");
-    }
+    try { return await converter(source, newExtension); } catch (error) { rethrowDecode(error, "imgConverter"); }
   },
-
   async effects(source, filters) {
     validateEffectsInputs(source, filters);
-    try {
-      await preflightCanvasSource(source);
-      return await imgEffects(source, filters);
-    } catch (error) {
-      rethrowDecode(error, "effects");
-    }
+    try { await preflightCanvasSource(source); return await imgEffects(source, filters); } catch (error) { rethrowDecode(error, "effects"); }
   },
-
   async colorsFilter(source, filterColor, opacity = 1) {
     validateColorFilterInputs(source, opacity);
     assertFiniteNumericLeaves(filterColor, "image.colorsFilter.filterColor");
-    try {
-      await preflightCanvasSource(source);
-      return await applyColorFilters(source, filterColor, opacity);
-    } catch (error) {
-      rethrowDecode(error, "colorsFilter");
-    }
+    try { await preflightCanvasSource(source); return await applyColorFilters(source, filterColor, opacity); } catch (error) { rethrowDecode(error, "colorsFilter"); }
   },
-
   async colorAnalysis(source) {
     assertSource(source, "image.colorAnalysis.source");
-    try {
-      await preflightCanvasSource(source);
-      return await detectColors(source);
-    } catch (error) {
-      rethrowDecode(error, "colorAnalysis");
-    }
+    try { await preflightCanvasSource(source); return await detectColors(source); } catch (error) { rethrowDecode(error, "colorAnalysis"); }
   },
-
   async colorsRemover(source, colorToRemove) {
     validateColorRemovalInputs(source, colorToRemove);
     try {
       await preflightCanvasSource(source);
-      return await removeColor(source, colorToRemove);
-    } catch (error) {
-      rethrowDecode(error, "colorsRemover");
-    }
+      const result = await removeColor(source, colorToRemove);
+      if (!result) throw new ApexifyDecodeError("colorsRemover failed to produce image bytes.");
+      return result;
+    } catch (error) { rethrowDecode(error, "colorsRemover"); }
   },
-
   async removeBackground(imageURL, apiKey) {
     validateBackgroundRemovalInputs(imageURL, apiKey);
     try {
-      return await bgRemoval(imageURL, apiKey);
+      const result = await bgRemoval(imageURL, apiKey);
+      if (!result) throw new ApexifyExternalServiceError("removeBackground failed to produce image bytes.");
+      return result;
     } catch (error) {
       if (error instanceof ApexifyError) throw error;
       throw new ApexifyExternalServiceError(`removeBackground failed: ${getErrorMessage(error)}`, { cause: error });
     }
   },
-
   blend(layers, baseImageBuffer, defaultBlendMode = "source-over") {
     validateBlendInputs(layers, baseImageBuffer);
-    try {
-      return blendImageLayers(layers, baseImageBuffer, defaultBlendMode);
-    } catch (error) {
-      rethrowDecode(error, "blend");
-    }
+    try { return blendImageLayers(layers, baseImageBuffer, defaultBlendMode); } catch (error) { rethrowDecode(error, "blend"); }
   },
-
-  cropImage(options) {
-    validateCropInputs(options);
-    return cropRasterImage(options);
-  },
-
-  masking(source, maskSource, options = { type: "alpha" }) {
-    validateMaskInputs(source, maskSource, options);
-    return applyRasterMask(source, maskSource, options);
-  },
-
+  cropImage(options) { validateCropInputs(options); return cropRasterImage(options); },
+  masking(source, maskSource, options = { type: "alpha" }) { validateMaskInputs(source, maskSource, options); return applyRasterMask(source, maskSource, options); },
   async gradientBlend(source, options) {
     validateGradientBlendInputs(source, options);
-    try {
-      await preflightCanvasSource(source as string | Buffer);
-      return await blendGradientOverImage(source, options);
-    } catch (error) {
-      rethrowDecode(error, "gradientBlend");
-    }
+    try { await preflightCanvasSource(source as string | Buffer); return await blendGradientOverImage(source, options); } catch (error) { rethrowDecode(error, "gradientBlend"); }
   },
-
-  validHex(hexColor) {
-    return assertValidHex(hexColor);
-  },
+  validHex(hexColor) { return assertValidHex(hexColor); },
 };

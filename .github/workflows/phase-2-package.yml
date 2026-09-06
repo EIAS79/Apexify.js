@@ -44,13 +44,58 @@ jobs:
           ffprobe -version | head -n 1
 
       - name: Install locked dependency graph
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Build and verify emitted module formats
         run: npm run build
 
-      - name: Run security regression suite
-        run: npm test
+      - name: Phase 1 security regression suite
+        run: npm run test:security
+
+      - name: Phase 3 runtime regression suite
+        run: npm run test:phase3
+
+      - name: Phase 4 validation regression suite
+        run: npm run test:phase4
+
+      - name: Phase 5 raster regression suite
+        run: npm run test:phase5
+
+      - name: Phase 6 composition regression suite
+        run: npm run test:phase6
+
+      - name: Phase 7 GIF regression suite
+        run: npm run test:phase7
+
+      - name: Phase 8 video regression suite
+        run: npm run test:phase8
+
+      - name: Phase 9 audio regression suite
+        run: npm run test:phase9
+
+      - name: Phase 10 completeness scan
+        run: node scripts/phase10-completeness-scan.cjs
+
+      - name: Phase 10 fixture build
+        run: node scripts/build-phase10-fixture.mjs
+
+      - name: Phase 10 runtime boundary probe
+        run: timeout --signal=TERM 45s node tests/phase10-runtime-probe.cjs
+
+      - name: Phase 10 runtime regression suite
+        run: timeout --signal=TERM 60s node tests/phase10-runtime.cjs
+
+      - name: Phase 10 collage semantics suite
+        run: node tests/phase10-collage-semantics.cjs
+
+      - name: Phase 10 fuzz suite
+        run: node tests/phase10-fuzz.cjs
+
+      - name: Phase 10 golden suite
+        run: node tests/phase10-golden.cjs
+
+      - name: Phase 10 benchmark gate
+        run: node --expose-gc tests/phase10-benchmark.cjs
 
       - name: Install packed package into clean ESM/CJS fixtures
         run: node scripts/verify-packed-package.cjs
@@ -104,4 +149,5 @@ jobs:
             phase2-prepack-node-${{ matrix.node }}.json
             phase2-pack-node-${{ matrix.node }}.json
             phase2-audit-node-${{ matrix.node }}.json
+            phase10-benchmark-node-${{ matrix.node }}.json
           if-no-files-found: warn
