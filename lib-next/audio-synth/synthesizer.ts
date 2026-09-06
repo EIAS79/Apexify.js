@@ -9,8 +9,9 @@ import type {
   SynthSoundOptions,
 } from "../types";
 import { ApexifyInputError } from "../runtime/errors";
+import { assertAudioWavResourceLimits, assertWithinLimit, estimatePcm16WavBytes } from "../runtime/limits";
 import { composeSynthAudio } from "./compose";
-import { DEFAULT_SAMPLE_RATE, mixFloatBuffers, renderSequence, renderSound, resampleToMatch } from "./engine";
+import { mixFloatBuffers, renderSequence, renderSound, resampleToMatch } from "./engine";
 import { deriveAudioSeed } from "./audio-random";
 import { applyPresetOverrides } from "./preset-overrides";
 import { getPresetDefinition } from "./presets";
@@ -36,18 +37,22 @@ function resolvePreset(name: SynthPresetName, overrides?: SynthPresetOverrides):
 
 export function synthesizeSound(options: SynthSoundOptions): Buffer {
   const validated = validateSynthSoundOptions(options);
+  assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
   const pcm = renderSound(options);
   return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
 }
 
 export function synthesizePreset(name: SynthPresetName, overrides?: SynthPresetOverrides): Buffer {
-  const definition = resolvePreset(name, overrides);
-  validateSynthSoundOptions(definition);
-  return synthesizeSound(definition);
+  return synthesizeSound(resolvePreset(name, overrides));
 }
 
 export function synthesizeSequence(options: SynthSequenceOptions): Buffer {
   const validated = validateSynthSequenceOptions(options);
+  assertWithinLimit(
+    "maxAudioBytes",
+    Math.max(validated.peakBytes, validated.peakBytes - estimatePcm16WavBytes(validated.duration, validated.sampleRate, validated.channels) + estimatePcm16WavBytes(validated.duration, validated.sampleRate, validated.channels))
+  );
+  assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
   const pcm = renderSequence(options);
   return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
 }
@@ -76,8 +81,10 @@ export function mixSynthSounds(inputs: SynthMixInput[], options: SynthMixOptions
     return composeSynthAudio(composeOptions);
   }
 
-  const sampleRate = validated.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  const sampleRate = validated.sampleRate;
   const channels = validated.channels;
+  const wavBytes = estimatePcm16WavBytes(validated.maxDuration, sampleRate, channels);
+  assertWithinLimit("maxAudioBytes", validated.peakBytes + wavBytes);
   const floats: Float32Array[] = [];
 
   for (let index = 0; index < inputs.length; index += 1) {
