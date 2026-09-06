@@ -4,10 +4,10 @@ import type { TextProperties } from "./text";
 import type { PainterAssetRefsOptions } from "./painter-resolve";
 import type { AssetResolveFn } from "./assets";
 
-export interface BatchOperation {
-  type: "canvas" | "image" | "text";
-  config: unknown;
-}
+export type BatchOperation =
+  | { type: "canvas"; config: CanvasConfig }
+  | { type: "image"; config: ImageProperties | ImageProperties[] }
+  | { type: "text"; config: TextProperties | TextProperties[] };
 
 export interface ChainOperation {
   method: string;
@@ -16,14 +16,18 @@ export interface ChainOperation {
 
 export interface StitchOptions {
   direction?: "horizontal" | "vertical" | "grid";
+  /** Pixels shared by adjacent horizontal/vertical images. Grid mode rejects overlap. */
   overlap?: number;
+  /** Draw the overlapping source once more with multiply/0.5 alpha. */
   blend?: boolean;
   spacing?: number;
 }
 
 export interface CollageLayout {
-  type: "grid" | "masonry" | "carousel" | "custom";
+  /** `custom` was removed in Phase 10 because it had no positioning contract and rendered no images. */
+  type: "grid" | "masonry" | "carousel";
   columns?: number;
+  /** Minimum grid row count; extra rows are added when needed to avoid dropping inputs. */
   rows?: number;
   spacing?: number;
   background?: string;
@@ -44,9 +48,14 @@ export interface PaletteOptions {
   format?: "hex" | "rgb" | "hsl";
 }
 
+/** Batch/chain execution policy. Results preserve input order; failures are fail-fast. */
 export interface BatchChainAssetOpts {
   resolveAssetRefs?: boolean;
   resolve?: AssetResolveFn;
+  /** Per-call concurrency, capped by runtime `limits.maxBatchConcurrency`. */
+  concurrency?: number;
+  /** Abort stops scheduling new batch work and prevents later chain steps. */
+  signal?: AbortSignal;
 }
 
 /** Minimal painter surface for batch / chain helpers. */
