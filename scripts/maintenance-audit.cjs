@@ -263,6 +263,7 @@ if (strict) {
   for (const cycle of report.source.runtimeCycles) failures.push(`runtime source cycle: ${cycle.join(' -> ')}`);
   for (const hit of report.hygiene.packageDeepImportHits) failures.push(`package deep import: ${hit.path}:${hit.line}`);
   for (const hit of report.hygiene.markerHits) failures.push(`unfinished source marker: ${hit.path}:${hit.line}`);
+  for (const hit of report.hygiene.avoidableAnyCandidates) failures.push(`avoidable any: ${hit.path}:${hit.line}`);
   for (const hit of report.hygiene.consoleHits) failures.push(`library console output: ${hit.path}:${hit.line}`);
   if (failures.length) {
     console.error('MAINTENANCE_AUDIT_STRICT_FAILURES');
