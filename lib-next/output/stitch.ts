@@ -1,222 +1,209 @@
-import { createCanvas, type Image } from '@napi-rs/canvas';
+import { createCanvas, type Image } from "@napi-rs/canvas";
 import type { StitchOptions, CollageLayout } from "../types";
 import { getCanvasContext } from "../core/errors";
 import { loadImageCached } from "../image/image-properties";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits } from "../runtime/limits";
+import { assertCollection, assertFiniteNumber, assertRecord } from "../runtime/validation";
 
-/**
- * Stitches multiple images together
- * @param images - Array of image sources
- * @param options - Stitching options
- * @returns Stitched image buffer
- */
-export async function stitchImages(
-  images: Array<string | Buffer>,
-  options: StitchOptions = {}
-): Promise<Buffer> {
-  if (!images || images.length === 0) {
-    throw new Error('stitchImages: images array is required');
-  }
+type Source = string | Buffer;
+type CollageSource = { source: Source; width?: number; height?: number };
+type Loaded = { image: Image; width: number; height: number };
 
-  const {
-    direction = 'horizontal',
-    overlap = 0,
-    blend = false,
-    spacing = 0
-  } = options;
-
-  const loadedImages: Image[] = [];
-  for (const imgSource of images) {
-    loadedImages.push(await loadImageCached(imgSource));
-  }
-
-  if (loadedImages.length === 0) {
-    throw new Error('stitchImages: No valid images loaded');
-  }
-
-  let canvasWidth = 0;
-  let canvasHeight = 0;
-  let maxWidth = 0;
-  let maxHeight = 0;
-
-  for (const img of loadedImages) {
-    maxWidth = Math.max(maxWidth, img.width);
-    maxHeight = Math.max(maxHeight, img.height);
-  }
-
-  if (direction === 'horizontal') {
-    canvasWidth = loadedImages.reduce((sum, img) => sum + img.width, 0);
-    canvasWidth -= overlap * (loadedImages.length - 1);
-    canvasWidth += spacing * (loadedImages.length - 1);
-    canvasHeight = maxHeight;
-  } else if (direction === 'vertical') {
-    canvasWidth = maxWidth;
-    canvasHeight = loadedImages.reduce((sum, img) => sum + img.height, 0);
-    canvasHeight -= overlap * (loadedImages.length - 1);
-    canvasHeight += spacing * (loadedImages.length - 1);
-  } else if (direction === 'grid') {
-    const cols = Math.ceil(Math.sqrt(loadedImages.length));
-    const rows = Math.ceil(loadedImages.length / cols);
-    canvasWidth = maxWidth * cols + spacing * (cols - 1);
-    canvasHeight = maxHeight * rows + spacing * (rows - 1);
-  }
-
-  assertCanvasResourceLimits(canvasWidth, canvasHeight);
-  const canvas = createCanvas(canvasWidth, canvasHeight);
-  const ctx = getCanvasContext(canvas);
-
-  let currentX = 0;
-  let currentY = 0;
-
-  for (let i = 0; i < loadedImages.length; i++) {
-    const img = loadedImages[i];
-
-    if (direction === 'horizontal') {
-      if (i > 0) {
-        currentX -= overlap;
-        currentX += spacing;
-      }
-      ctx.drawImage(img, currentX, 0, img.width, img.height);
-      currentX += img.width;
-    } else if (direction === 'vertical') {
-      if (i > 0) {
-        currentY -= overlap;
-        currentY += spacing;
-      }
-      ctx.drawImage(img, 0, currentY, img.width, img.height);
-      currentY += img.height;
-    } else if (direction === 'grid') {
-      const cols = Math.ceil(Math.sqrt(loadedImages.length));
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = col * (maxWidth + spacing);
-      const y = row * (maxHeight + spacing);
-      ctx.drawImage(img, x, y, img.width, img.height);
+async function mapBounded<T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const concurrency = Math.min(items.length, getDefaultApexifyRuntimeConfig().limits.maxBatchConcurrency);
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]!, index);
     }
-
-    if (blend && i > 0 && overlap > 0) {
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.globalAlpha = 0.5;
-      if (direction === 'horizontal') {
-        ctx.drawImage(img, currentX - img.width - spacing + overlap, 0, img.width, img.height);
-      } else if (direction === 'vertical') {
-        ctx.drawImage(img, 0, currentY - img.height - spacing + overlap, img.width, img.height);
-      }
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
-    }
-  }
-
-  return canvas.toBuffer('image/png');
+  }));
+  return results;
 }
 
-/**
- * Creates an image collage
- * @param images - Array of image sources with optional dimensions
- * @param layout - Collage layout configuration
- * @returns Collage image buffer
- */
-export async function createCollage(
-  images: Array<{ source: string | Buffer; width?: number; height?: number }>,
-  layout: CollageLayout
-): Promise<Buffer> {
-  if (!images || images.length === 0) {
-    throw new Error('createCollage: images array is required');
+function validateSources(images: unknown, name: string): asserts images is Source[] {
+  assertCollection(images, name, { min: 1, limit: "maxCollectionItems" });
+  for (let i = 0; i < images.length; i++) {
+    const source = images[i];
+    if (!(typeof source === "string" || Buffer.isBuffer(source))) throw new ApexifyInputError(`${name}[${i}] must be a string or Buffer.`);
   }
+}
 
-  const {
-    type = 'grid',
-    columns = 3,
-    rows = 3,
-    spacing = 10,
-    background = '#ffffff',
-    borderRadius = 0
-  } = layout;
+function validateStitchOptions(options: StitchOptions): void {
+  assertRecord(options, "stitch.options");
+  const direction = options.direction ?? "horizontal";
+  if (!["horizontal", "vertical", "grid"].includes(direction)) throw new ApexifyInputError(`stitch.direction is unsupported: ${String(direction)}.`);
+  assertFiniteNumber(options.overlap ?? 0, "stitch.overlap", { min: 0, integer: true });
+  assertFiniteNumber(options.spacing ?? 0, "stitch.spacing", { min: 0, integer: true });
+  if (options.blend !== undefined && typeof options.blend !== "boolean") throw new ApexifyInputError("stitch.blend must be boolean.");
+  if (direction === "grid" && (options.overlap ?? 0) !== 0) throw new ApexifyInputError("stitch.overlap is not supported for grid direction.");
+}
 
-  const loadedImages: Array<{ image: Image; width: number; height: number }> = [];
-  for (const imgConfig of images) {
-    const img = await loadImageCached(imgConfig.source);
-    loadedImages.push({
-      image: img,
-      width: imgConfig.width ?? img.width,
-      height: imgConfig.height ?? img.height
+function validateCollage(images: unknown, layout: CollageLayout): asserts images is CollageSource[] {
+  assertCollection(images, "collage.images", { min: 1, limit: "maxCollectionItems" });
+  assertRecord(layout, "collage.layout");
+  if (!["grid", "masonry", "carousel"].includes(layout.type)) throw new ApexifyInputError(`collage.layout.type is unsupported: ${String(layout.type)}.`);
+  assertFiniteNumber(layout.columns ?? 3, "collage.layout.columns", { min: 1, integer: true });
+  assertFiniteNumber(layout.rows ?? 3, "collage.layout.rows", { min: 1, integer: true });
+  assertFiniteNumber(layout.spacing ?? 10, "collage.layout.spacing", { min: 0, integer: true });
+  assertFiniteNumber(layout.borderRadius ?? 0, "collage.layout.borderRadius", { min: 0 });
+  for (let i = 0; i < images.length; i++) {
+    const item = images[i];
+    assertRecord(item, `collage.images[${i}]`);
+    if (!(typeof item.source === "string" || Buffer.isBuffer(item.source))) throw new ApexifyInputError(`collage.images[${i}].source must be a string or Buffer.`);
+    if (item.width !== undefined) assertFiniteNumber(item.width, `collage.images[${i}].width`, { min: 1, integer: true });
+    if (item.height !== undefined) assertFiniteNumber(item.height, `collage.images[${i}].height`, { min: 1, integer: true });
+  }
+}
+
+async function loadCollageImages(images: CollageSource[]): Promise<Loaded[]> {
+  return mapBounded(images, async (item) => {
+    const image = await loadImageCached(item.source);
+    const width = item.width ?? image.width;
+    const height = item.height ?? image.height;
+    assertCanvasResourceLimits(width, height);
+    return { image, width, height };
+  });
+}
+
+/** Stitch images horizontally, vertically, or in a square-ish grid. Differing dimensions are padded transparently. */
+export async function stitchImages(images: Source[], options: StitchOptions = {}): Promise<Buffer> {
+  validateSources(images, "stitch.images");
+  validateStitchOptions(options);
+  try {
+    const loaded = await mapBounded(images, async (source) => {
+      const image = await loadImageCached(source);
+      assertCanvasResourceLimits(image.width, image.height);
+      return image;
     });
+    const direction = options.direction ?? "horizontal";
+    const overlap = options.overlap ?? 0;
+    const spacing = options.spacing ?? 0;
+    const blend = options.blend ?? false;
+    const maxWidth = Math.max(...loaded.map((image) => image.width));
+    const maxHeight = Math.max(...loaded.map((image) => image.height));
+    let canvasWidth: number;
+    let canvasHeight: number;
+    let columns = 1;
+
+    if (direction === "horizontal") {
+      canvasWidth = loaded.reduce((sum, image) => sum + image.width, 0) - overlap * (loaded.length - 1) + spacing * (loaded.length - 1);
+      canvasHeight = maxHeight;
+    } else if (direction === "vertical") {
+      canvasWidth = maxWidth;
+      canvasHeight = loaded.reduce((sum, image) => sum + image.height, 0) - overlap * (loaded.length - 1) + spacing * (loaded.length - 1);
+    } else {
+      columns = Math.ceil(Math.sqrt(loaded.length));
+      const rows = Math.ceil(loaded.length / columns);
+      canvasWidth = maxWidth * columns + spacing * (columns - 1);
+      canvasHeight = maxHeight * rows + spacing * (rows - 1);
+    }
+    if (canvasWidth <= 0 || canvasHeight <= 0) throw new ApexifyInputError("stitch overlap produces non-positive output dimensions.");
+    assertCanvasResourceLimits(canvasWidth, canvasHeight);
+
+    const canvas = createCanvas(canvasWidth, canvasHeight);
+    const ctx = getCanvasContext(canvas);
+    let x = 0, y = 0;
+    for (let i = 0; i < loaded.length; i++) {
+      const image = loaded[i]!;
+      let drawX = x, drawY = y;
+      if (direction === "grid") {
+        const col = i % columns, row = Math.floor(i / columns);
+        drawX = col * (maxWidth + spacing);
+        drawY = row * (maxHeight + spacing);
+      }
+      ctx.drawImage(image, drawX, drawY, image.width, image.height);
+      if (blend && i > 0 && overlap > 0 && direction !== "grid") {
+        ctx.save();
+        ctx.globalCompositeOperation = "multiply";
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(image, drawX, drawY, image.width, image.height);
+        ctx.restore();
+      }
+      if (direction === "horizontal") x += image.width - overlap + spacing;
+      else if (direction === "vertical") y += image.height - overlap + spacing;
+    }
+    return canvas.toBuffer("image/png");
+  } catch (cause) {
+    if (cause instanceof ApexifyError) throw cause;
+    throw new ApexifyDecodeError("stitchImages failed.", { cause });
   }
+}
 
-  let canvasWidth = 0;
-  let canvasHeight = 0;
+/** Create a bounded grid, masonry, or carousel collage. */
+export async function createCollage(images: CollageSource[], layout: CollageLayout): Promise<Buffer> {
+  validateCollage(images, layout);
+  try {
+    const loaded = await loadCollageImages(images);
+    const type = layout.type;
+    const columns = layout.columns ?? 3;
+    const rows = layout.rows ?? 3;
+    const spacing = layout.spacing ?? 10;
+    const background = layout.background ?? "#ffffff";
+    const borderRadius = layout.borderRadius ?? 0;
+    const cellWidth = Math.max(...loaded.map((item) => item.width));
+    const cellHeight = Math.max(...loaded.map((item) => item.height));
+    let canvasWidth: number;
+    let canvasHeight: number;
 
-  if (type === 'grid') {
-    const cellWidth = Math.max(...loadedImages.map(img => img.width));
-    const cellHeight = Math.max(...loadedImages.map(img => img.height));
-    canvasWidth = cellWidth * columns + spacing * (columns - 1);
-    canvasHeight = cellHeight * rows + spacing * (rows - 1);
-  } else if (type === 'masonry') {
-    const colWidths: number[] = new Array(columns).fill(0);
-    const colHeights: number[] = new Array(columns).fill(0);
-
-    for (let i = 0; i < loadedImages.length; i++) {
-      const col = i % columns;
-      colWidths[col] = Math.max(colWidths[col], loadedImages[i].width);
-      colHeights[col] += loadedImages[i].height + (i >= columns ? spacing : 0);
+    if (type === "grid") {
+      const requiredRows = Math.ceil(loaded.length / columns);
+      const actualRows = Math.max(rows, requiredRows);
+      canvasWidth = cellWidth * columns + spacing * (columns - 1);
+      canvasHeight = cellHeight * actualRows + spacing * (actualRows - 1);
+    } else if (type === "masonry") {
+      const heights = new Array<number>(columns).fill(0);
+      for (let i = 0; i < loaded.length; i++) {
+        const col = i % columns;
+        heights[col] = heights[col]! + loaded[i]!.height + (heights[col]! > 0 ? spacing : 0);
+      }
+      canvasWidth = cellWidth * columns + spacing * (columns - 1);
+      canvasHeight = Math.max(...heights);
+    } else {
+      canvasWidth = loaded.reduce((sum, item) => sum + item.width, 0) + spacing * (loaded.length - 1);
+      canvasHeight = cellHeight;
     }
+    assertCanvasResourceLimits(canvasWidth, canvasHeight);
+    const canvas = createCanvas(canvasWidth, canvasHeight);
+    const ctx = getCanvasContext(canvas);
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    const columnHeights = new Array<number>(columns).fill(0);
+    let carouselX = 0;
 
-    canvasWidth = Math.max(...colWidths) * columns + spacing * (columns - 1);
-    canvasHeight = Math.max(...colHeights);
-  } else if (type === 'carousel') {
-    canvasWidth = loadedImages.reduce((sum, img) => sum + img.width, 0) + spacing * (loadedImages.length - 1);
-    canvasHeight = Math.max(...loadedImages.map(img => img.height));
-  } else {
-    canvasWidth = 800;
-    canvasHeight = 600;
+    for (let i = 0; i < loaded.length; i++) {
+      const item = loaded[i]!;
+      let x: number, y: number;
+      if (type === "grid") {
+        const col = i % columns, row = Math.floor(i / columns);
+        x = col * (cellWidth + spacing);
+        y = row * (cellHeight + spacing);
+      } else if (type === "masonry") {
+        const col = i % columns;
+        x = col * (cellWidth + spacing);
+        y = columnHeights[col]!;
+        columnHeights[col] = y + item.height + spacing;
+      } else {
+        x = carouselX;
+        y = (canvasHeight - item.height) / 2;
+        carouselX += item.width + spacing;
+      }
+      if (borderRadius > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(x, y, item.width, item.height, Math.min(borderRadius, item.width / 2, item.height / 2));
+        ctx.clip();
+      }
+      ctx.drawImage(item.image, x, y, item.width, item.height);
+      if (borderRadius > 0) ctx.restore();
+    }
+    return canvas.toBuffer("image/png");
+  } catch (cause) {
+    if (cause instanceof ApexifyError) throw cause;
+    throw new ApexifyDecodeError("createCollage failed.", { cause });
   }
-
-  assertCanvasResourceLimits(canvasWidth, canvasHeight);
-  const canvas = createCanvas(canvasWidth, canvasHeight);
-  const ctx = getCanvasContext(canvas);
-
-  ctx.fillStyle = background;
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-  let currentX = 0;
-  let currentY = 0;
-  const colHeights: number[] = new Array(columns).fill(0);
-
-  for (let i = 0; i < loadedImages.length; i++) {
-    const imgData = loadedImages[i];
-
-    if (type === 'grid') {
-      const col = i % columns;
-      const row = Math.floor(i / columns);
-      const cellWidth = Math.max(...loadedImages.map(img => img.width));
-      const cellHeight = Math.max(...loadedImages.map(img => img.height));
-      currentX = col * (cellWidth + spacing);
-      currentY = row * (cellHeight + spacing);
-    } else if (type === 'masonry') {
-      const col = i % columns;
-      currentX = col * (Math.max(...loadedImages.map(img => img.width)) + spacing);
-      currentY = colHeights[col];
-      colHeights[col] += imgData.height + spacing;
-    } else if (type === 'carousel') {
-      if (i > 0) currentX += spacing;
-      currentY = (canvasHeight - imgData.height) / 2;
-    }
-
-    if (borderRadius > 0) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(currentX, currentY, imgData.width, imgData.height, borderRadius);
-      ctx.clip();
-    }
-
-    ctx.drawImage(imgData.image, currentX, currentY, imgData.width, imgData.height);
-
-    if (borderRadius > 0) {
-      ctx.restore();
-    }
-
-    if (type === 'carousel') currentX += imgData.width;
-  }
-
-  return canvas.toBuffer('image/png');
 }
