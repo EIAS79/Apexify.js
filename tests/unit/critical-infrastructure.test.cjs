@@ -76,7 +76,7 @@ test('bounded cache enforces TTL, LRU, byte/entry bounds and failed-factory evic
   assert.equal(cache.get('missing'), undefined);
   cache.set('a', 'aa');
   cache.set('b', 'bb');
-  assert.equal(cache.get('a'), 'aa'); // refresh LRU
+  assert.equal(cache.get('a'), 'aa');
   cache.set('c', 'cc');
   assert.equal(cache.get('b'), undefined);
   assert.equal(cache.get('a'), 'aa');
@@ -127,8 +127,14 @@ test('trusted allowlist is explicit and wildcard matching does not trust the bar
   const direct = await api.validateRemoteTarget('http://127.0.0.1:1234/x', trusted);
   assert.equal(direct.trusted, true);
   assert.deepEqual(direct.addresses, ['127.0.0.1']);
-  const child = await api.validateRemoteTarget('http://x.localhost:1234/x', trusted);
-  assert.equal(child.trusted, true);
+
+  // Test wildcard semantics as a pure policy primitive rather than assuming the
+  // operating system synthesizes DNS records for arbitrary *.localhost names.
+  assert.equal(api.hostMatchesAllowlist('x.localhost', ['*.localhost']), true);
+  assert.equal(api.hostMatchesAllowlist('X.LOCALHOST.', ['*.localhost']), true);
+  assert.equal(api.hostMatchesAllowlist('localhost', ['*.localhost']), false);
+  assert.equal(api.hostMatchesAllowlist('notlocalhost', ['*.localhost']), false);
+
   const wildcardOnly = api.resolveApexifyRuntimeConfig({ network: { trustedNetworkAccess: true, allowedHosts: ['*.localhost'] } }).network;
   await assert.rejects(api.validateRemoteTarget('http://localhost/x', wildcardOnly), /local and blocked/i);
 });
