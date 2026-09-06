@@ -70,7 +70,7 @@ const badAlign = clone(wav); badAlign.writeUInt16LE(4, 32); expectDecode(badAlig
 
 const oversizedFmt = clone(wav); oversizedFmt.writeUInt32LE(0xffffffff, 16); expectDecode(oversizedFmt, /exceeds RIFF bounds/);
 const oversizedData = clone(wav); oversizedData.writeUInt32LE(0xffffffff, 40); expectDecode(oversizedData, /exceeds RIFF bounds/);
-const partialFrame = clone(wav); partialFrame.writeUInt32LE(9, 40); const partialFrameSized = setRiffSize(partialFrame.subarray(0, 53)); expectDecode(partialFrameSized, /complete audio frames/);
+const partialFrame = clone(wav); partialFrame.writeUInt32LE(9, 40); expectDecode(partialFrame, /complete audio frames/);
 
 const fmtOnly = setRiffSize(Buffer.from(wav.subarray(0, 36)));
 expectDecode(fmtOnly, /missing data/);
