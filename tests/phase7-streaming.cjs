@@ -32,6 +32,15 @@ function close(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
+async function waitForFileBytes(file, minBytes, timeoutMs = 250) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(file) && fs.statSync(file).size > minBytes) return true;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return fs.existsSync(file) && fs.statSync(file).size > minBytes;
+}
+
 async function main() {
   api.resetApexifyRuntimeConfig();
   const painter = new api.ApexPainter();
@@ -39,7 +48,11 @@ async function main() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apexify-phase7-stream-'));
 
   try {
-    // True incremental consumption: second pull observes encoded bytes from the first frame.
+    // True incremental consumption: while the producer is blocked inside its second
+    // pull, encoded bytes from the first frame must become visible. Waiting here keeps
+    // the semantic proof intact while allowing Node writable-stream flush scheduling
+    // to vary across supported runtimes. An eager collector cannot satisfy this check
+    // because it is itself blocked awaiting the second pull before encoding anything.
     const lazyFile = path.join(dir, 'lazy.gif');
     let nextCalls = 0;
     let activeNext = 0;
@@ -55,8 +68,7 @@ async function main() {
             maxActiveNext = Math.max(maxActiveNext, activeNext);
             try {
               if (index === 1) {
-                await new Promise((resolve) => setImmediate(resolve));
-                encodedBeforeSecondPull = fs.existsSync(lazyFile) && fs.statSync(lazyFile).size > 6;
+                encodedBeforeSecondPull = await waitForFileBytes(lazyFile, 6);
               }
               if (index >= 5) return { done: true };
               const value = { buffer: frame, duration: 10 };

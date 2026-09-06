@@ -1,1 +1,1 @@
-export { VideoHelpers } from "./video-helpers";
+export { FrameOperations } from "./operations/frames";

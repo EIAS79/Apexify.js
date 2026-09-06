@@ -1,6 +1,7 @@
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import { ApexifyProcessError } from "../runtime/errors";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { emitDiagnostic } from "../runtime/diagnostics";
 import { redactUrlsInText } from "../media/network-policy";
 
 export interface MediaProcessPaths {
@@ -12,15 +13,18 @@ export interface MediaProcessRunOptions {
   timeoutMs?: number;
   maxStdoutBytes?: number;
   maxStderrBytes?: number;
+  /** Grace period before SIGKILL after timeout/abort. */
+  killGraceMs?: number;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
-  /** Receives decoded stderr chunks, e.g. for FFmpeg progress parsing. */
+  /** Receives decoded stderr chunks. Callback errors are isolated and reported diagnostically. */
   onStderr?: (chunk: string) => void;
 }
 
 export interface MediaProcessResult {
   stdout: string;
+  /** Bounded tail of stderr. */
   stderr: string;
   exitCode: number;
 }
@@ -50,7 +54,7 @@ export class MediaProcessError extends ApexifyProcessError {
       : options.aborted
         ? "was aborted"
         : options.outputLimitExceeded
-          ? "exceeded its output limit"
+          ? "exceeded its stdout limit"
           : options.exitCode === null
             ? "failed to start"
             : `exited with code ${options.exitCode}`;
@@ -81,11 +85,31 @@ function validateProcessToken(value: string, label: string): void {
   }
 }
 
+function appendBoundedTail(chunks: Buffer[], currentBytes: number, raw: Buffer, maximum: number): number {
+  if (raw.length >= maximum) {
+    chunks.length = 0;
+    chunks.push(raw.subarray(raw.length - maximum));
+    return maximum;
+  }
+  chunks.push(raw);
+  currentBytes += raw.length;
+  while (currentBytes > maximum && chunks.length > 0) {
+    const first = chunks[0]!;
+    const excess = currentBytes - maximum;
+    if (first.length <= excess) {
+      chunks.shift();
+      currentBytes -= first.length;
+    } else {
+      chunks[0] = first.subarray(excess);
+      currentBytes -= excess;
+    }
+  }
+  return currentBytes;
+}
+
 /**
- * The sole FFmpeg/ffprobe process boundary for Apexify.js.
- *
- * Every invocation is an executable plus argv array and always uses `shell: false`.
- * No shell command string is accepted by this API.
+ * Sole FFmpeg/ffprobe child-process boundary.
+ * Invocations are argv-only with `shell:false`; stdout is bounded strictly while stderr keeps a bounded tail.
  */
 export class MediaProcessRunner {
   private ffmpegPath: string;
@@ -121,11 +145,7 @@ export class MediaProcessRunner {
     return this.runExecutable(this.ffprobePath, args, options);
   }
 
-  runExecutable(
-    executable: string,
-    args: readonly string[],
-    options: MediaProcessRunOptions = {}
-  ): Promise<MediaProcessResult> {
+  runExecutable(executable: string, args: readonly string[], options: MediaProcessRunOptions = {}): Promise<MediaProcessResult> {
     validateProcessToken(executable, "executable");
     for (const [index, arg] of args.entries()) {
       if (typeof arg !== "string" || arg.includes("\0")) {
@@ -137,32 +157,32 @@ export class MediaProcessRunner {
     const timeoutMs = Math.max(1, options.timeoutMs ?? runtime.processTimeoutMs);
     const maxStdoutBytes = Math.max(1, options.maxStdoutBytes ?? runtime.maxStdoutBytes);
     const maxStderrBytes = Math.max(1, options.maxStderrBytes ?? runtime.maxStderrBytes);
+    const killGraceMs = Math.max(50, options.killGraceMs ?? 2_000);
 
     if (options.signal?.aborted) {
-      return Promise.reject(
-        new MediaProcessError({
-          executable,
-          exitCode: null,
-          signal: null,
-          stderr: "",
-          timedOut: false,
-          aborted: true,
-          outputLimitExceeded: false,
-          cause: options.signal.reason,
-        })
-      );
+      return Promise.reject(new MediaProcessError({
+        executable,
+        exitCode: null,
+        signal: null,
+        stderr: "",
+        timedOut: false,
+        aborted: true,
+        outputLimitExceeded: false,
+        cause: options.signal.reason,
+      }));
     }
 
     return new Promise<MediaProcessResult>((resolve, reject) => {
       let stdoutBytes = 0;
       let stderrBytes = 0;
       const stdoutChunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
+      const stderrTail: Buffer[] = [];
       let timedOut = false;
       let aborted = false;
       let outputLimitExceeded = false;
       let settled = false;
       let spawnError: unknown;
+      let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
 
       const child = spawn(executable, [...args], {
         shell: false,
@@ -172,13 +192,17 @@ export class MediaProcessRunner {
         stdio: ["ignore", "pipe", "pipe"],
       });
 
+      const forceKill = (): void => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
+        try { child.kill("SIGKILL"); } catch { /* already exited */ }
+      };
+
       const terminate = (): void => {
-        if (!child.killed) {
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            // Process may already have exited between state check and kill.
-          }
+        if (child.exitCode !== null || child.signalCode !== null) return;
+        try { child.kill("SIGTERM"); } catch { /* already exited */ }
+        if (!forceKillTimer) {
+          forceKillTimer = setTimeout(forceKill, killGraceMs);
+          forceKillTimer.unref?.();
         }
       };
 
@@ -198,33 +222,24 @@ export class MediaProcessRunner {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         options.signal?.removeEventListener("abort", onAbort);
 
-        const stdout = Buffer.concat(stdoutChunks).toString("utf8");
-        const stderr = redactUrlsInText(Buffer.concat(stderrChunks).toString("utf8"));
-
-        if (
-          spawnError !== undefined ||
-          timedOut ||
-          aborted ||
-          outputLimitExceeded ||
-          exitCode !== 0
-        ) {
-          reject(
-            new MediaProcessError({
-              executable,
-              exitCode,
-              signal: exitSignal,
-              stderr,
-              timedOut,
-              aborted,
-              outputLimitExceeded,
-              cause: spawnError,
-            })
-          );
+        const stdout = Buffer.concat(stdoutChunks, stdoutBytes).toString("utf8");
+        const stderr = redactUrlsInText(Buffer.concat(stderrTail, stderrBytes).toString("utf8"));
+        if (spawnError !== undefined || timedOut || aborted || outputLimitExceeded || exitCode !== 0) {
+          reject(new MediaProcessError({
+            executable,
+            exitCode,
+            signal: exitSignal,
+            stderr,
+            timedOut,
+            aborted,
+            outputLimitExceeded,
+            cause: spawnError,
+          }));
           return;
         }
-
         resolve({ stdout, stderr, exitCode: 0 });
       };
 
@@ -241,19 +256,22 @@ export class MediaProcessRunner {
 
       child.stderr.on("data", (raw: Buffer | string) => {
         const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
-        stderrBytes += chunk.length;
-        if (stderrBytes > maxStderrBytes) {
-          outputLimitExceeded = true;
-          terminate();
-          return;
+        stderrBytes = appendBoundedTail(stderrTail, stderrBytes, chunk, maxStderrBytes);
+        if (options.onStderr) {
+          try {
+            options.onStderr(chunk.toString("utf8"));
+          } catch (cause) {
+            emitDiagnostic({
+              level: "warn",
+              code: "FFMPEG_PROGRESS_CALLBACK_ERROR",
+              message: "A media-process stderr/progress callback threw and was isolated.",
+              details: { cause: cause instanceof Error ? cause.message : String(cause) },
+            });
+          }
         }
-        stderrChunks.push(chunk);
-        options.onStderr?.(chunk.toString("utf8"));
       });
 
-      child.once("error", (error) => {
-        spawnError = error;
-      });
+      child.once("error", (error) => { spawnError = error; });
       child.once("close", finish);
     });
   }
@@ -265,39 +283,48 @@ export interface FfmpegProgress {
   speed: number;
 }
 
-/** Incremental parser for regular FFmpeg stderr progress lines. */
+/**
+ * Parser for FFmpeg machine progress (`-progress pipe:2 -nostats`).
+ * `durationSeconds` is optional; when unknown percent remains 0 while time/speed still advance.
+ */
 export function createFfmpegProgressParser(
-  onProgress?: (progress: FfmpegProgress) => void
+  onProgress?: (progress: FfmpegProgress) => void,
+  durationSeconds?: number
 ): (chunk: string) => void {
   if (!onProgress) return () => {};
-
   let tail = "";
-  let durationSeconds: number | undefined;
-  return (chunk: string) => {
-    tail = (tail + chunk).slice(-16_384);
+  let time = 0;
+  let speed = 1;
 
-    const durationMatches = [...tail.matchAll(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
-    const durationMatch = durationMatches[durationMatches.length - 1];
-    if (durationMatch) {
-      durationSeconds =
-        Number(durationMatch[1]) * 3600 +
-        Number(durationMatch[2]) * 60 +
-        Number(durationMatch[3]);
-    }
-
-    const timeMatches = [...tail.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
-    const timeMatch = timeMatches[timeMatches.length - 1];
-    if (!timeMatch) return;
-
-    const currentTime =
-      Number(timeMatch[1]) * 3600 + Number(timeMatch[2]) * 60 + Number(timeMatch[3]);
-    const speedMatches = [...tail.matchAll(/speed=\s*([\d.]+)x/g)];
-    const speedMatch = speedMatches[speedMatches.length - 1];
-    const speed = speedMatch ? Number(speedMatch[1]) : 1;
+  const emit = (): void => {
     const percent = durationSeconds && durationSeconds > 0
-      ? Math.min(100, (currentTime / durationSeconds) * 100)
+      ? Math.max(0, Math.min(100, (time / durationSeconds) * 100))
       : 0;
+    onProgress({ percent, time, speed: Number.isFinite(speed) ? speed : 1 });
+  };
 
-    onProgress({ percent, time: currentTime, speed: Number.isFinite(speed) ? speed : 1 });
+  return (chunk: string) => {
+    tail += chunk;
+    const lines = tail.split(/\r?\n/);
+    tail = lines.pop() ?? "";
+    for (const line of lines) {
+      const index = line.indexOf("=");
+      if (index <= 0) continue;
+      const key = line.slice(0, index).trim();
+      const value = line.slice(index + 1).trim();
+      if (key === "out_time_us") {
+        const micros = Number(value);
+        if (Number.isFinite(micros) && micros >= 0) time = micros / 1_000_000;
+      } else if (key === "out_time_ms") {
+        const micros = Number(value);
+        if (Number.isFinite(micros) && micros >= 0) time = micros / 1_000_000;
+      } else if (key === "speed") {
+        const parsed = Number(value.replace(/x$/i, ""));
+        if (Number.isFinite(parsed) && parsed >= 0) speed = parsed;
+      } else if (key === "progress") {
+        if (value === "end" && durationSeconds && durationSeconds > 0) time = durationSeconds;
+        emit();
+      }
+    }
   };
 }

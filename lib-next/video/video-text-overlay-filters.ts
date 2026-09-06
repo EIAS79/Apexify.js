@@ -46,36 +46,81 @@ function customExpression(value: string | undefined, label: string): string | un
   return value === undefined ? undefined : assertSafeFilterExpression(value, label);
 }
 
+function overlayOpacity(clip: Pick<VideoTextOverlayClip, "overlayOpacity">): number {
+  const opacity = clip.overlayOpacity ?? 1;
+  if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) throw new Error("Video text overlayOpacity must be between 0 and 1.");
+  return opacity;
+}
+
+/**
+ * Translate the public overlay-expression aliases to FFmpeg geq's frame variables.
+ * This path is used only for an explicit custom alpha expression; built-in transitions
+ * use the substantially cheaper alpha-aware fade filter.
+ */
+function toGeqExpression(expression: string): string {
+  const replacements: Readonly<Record<string, string>> = {
+    t: "T",
+    w: "W",
+    h: "H",
+    main_w: "W",
+    main_h: "H",
+    overlay_w: "W",
+    overlay_h: "H",
+    ow: "W",
+    oh: "H",
+  };
+  return expression.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (identifier) => replacements[identifier] ?? identifier);
+}
+
+/**
+ * Build filters that are valid for an RGBA overlay stream.
+ * `colorchannelmixer.aa` accepts only a scalar, so temporal opacity is implemented
+ * with alpha-aware `fade`; explicit custom alpha uses `geq` where `T` is available.
+ */
+export function buildOverlayAlphaFilters(
+  clip: Pick<VideoTextOverlayClip, "startTime" | "endTime" | "transitionIn" | "transitionOut" | "overlayOpacity">
+): string[] {
+  const s = clip.startTime;
+  const e = clip.endTime;
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new Error("Video text timing must be a finite increasing range.");
+  const opacity = overlayOpacity(clip);
+  const customIn = customExpression(clip.transitionIn?.custom?.alpha, "transitionIn.custom.alpha");
+  const customOut = customExpression(clip.transitionOut?.custom?.alpha, "transitionOut.custom.alpha");
+  const customAlpha = customIn ?? customOut;
+  if (customAlpha) {
+    const expression = toGeqExpression(customAlpha);
+    return [
+      `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*clip(${expression},0,1)'`,
+    ];
+  }
+
+  const filters: string[] = [];
+  if (opacity !== 1) filters.push(`colorchannelmixer=aa=${opacity}`);
+  const inDuration = clip.transitionIn ? transitionDuration(clip.transitionIn) : 0;
+  const outDuration = clip.transitionOut ? transitionDuration(clip.transitionOut) : 0;
+  if (inDuration > 0) filters.push(`fade=t=in:st=${s}:d=${inDuration}:alpha=1`);
+  if (outDuration > 0) filters.push(`fade=t=out:st=${Math.max(s, e - outDuration)}:d=${Math.min(outDuration, e - s)}:alpha=1`);
+  return filters;
+}
+
+/**
+ * Retained for compatibility with internal callers/tests that inspect the public alpha
+ * timeline expression. It is not passed to colorchannelmixer; see buildOverlayAlphaFilters.
+ */
 export function buildOverlayAlphaExpression(
   clip: Pick<VideoTextOverlayClip, "startTime" | "endTime" | "transitionIn" | "transitionOut" | "overlayOpacity">
 ): string {
   const s = clip.startTime;
   const e = clip.endTime;
   if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new Error("Video text timing must be a finite increasing range.");
-  const op = clip.overlayOpacity ?? 1;
-  if (!Number.isFinite(op) || op < 0 || op > 1) throw new Error("Video text overlayOpacity must be between 0 and 1.");
+  const op = overlayOpacity(clip);
   const di = clip.transitionIn ? transitionDuration(clip.transitionIn) : 0;
   const do_ = clip.transitionOut ? transitionDuration(clip.transitionOut) : 0;
-  const tin = normalizePreset(clip.transitionIn?.type ?? "none");
-  const tout = normalizePreset(clip.transitionOut?.type ?? "none");
-
-  const fadeInExpr = di > 0
-    ? `if(lt(t,${s}),0,if(lt(t,${s + di}),(t-${s})/${di},1))`
-    : `if(lt(t,${s}),0,1)`;
-  const fadeOutExpr = do_ > 0
-    ? `if(gt(t,${e}),0,if(gt(t,${e - do_}),(${e}-t)/${do_},1))`
-    : `if(gt(t,${e}),0,1)`;
-
-  let alpha = `(${fadeInExpr})*(${fadeOutExpr})*${op}`;
+  const fadeInExpr = di > 0 ? `if(lt(t,${s}),0,if(lt(t,${s + di}),(t-${s})/${di},1))` : `if(lt(t,${s}),0,1)`;
+  const fadeOutExpr = do_ > 0 ? `if(gt(t,${e}),0,if(gt(t,${e - do_}),(${e}-t)/${do_},1))` : `if(gt(t,${e}),0,1)`;
   const inCustom = customExpression(clip.transitionIn?.custom?.alpha, "transitionIn.custom.alpha");
   const outCustom = customExpression(clip.transitionOut?.custom?.alpha, "transitionOut.custom.alpha");
-  if (inCustom) alpha = inCustom;
-  else if (outCustom) alpha = outCustom;
-
-  // Touch normalized presets so unsupported future branches cannot silently bypass timing behavior.
-  void tin;
-  void tout;
-  return alpha;
+  return inCustom ?? outCustom ?? `(${fadeInExpr})*(${fadeOutExpr})*${op}`;
 }
 
 export interface OverlayMotionExprs {
@@ -129,11 +174,13 @@ export function buildOverlayMotionExpressions(
     y = y === "0" ? outSlide : `if(between(t,${e - do_},${e}),${outSlide},${y})`;
   }
 
-  if (tin === "zoomIn" && di > 0) scale = `if(lt(t,${s}),0,if(lt(t,${s + di}),(t-${s})/${di},1))`;
+  // Dynamic scale runs on a repeated RGBA stream. Keep dimensions strictly positive
+  // even before a zoom-in clip becomes enabled so FFmpeg never sees a zero-sized frame.
+  if (tin === "zoomIn" && di > 0) scale = `max(0.01,if(lt(t,${s}),0.01,if(lt(t,${s + di}),(t-${s})/${di},1)))`;
   else if (tin === "zoomOut" && di > 0) scale = `if(lt(t,${s}),1.25,if(lt(t,${s + di}),1.25-0.25*((t-${s})/${di}),1))`;
 
   if (tout === "zoomOut" && do_ > 0) {
-    const zOut = `if(gt(t,${e}),0,if(gt(t,${e - do_}),1-((t-(${e}-${do_}))/${do_}),1))`;
+    const zOut = `max(0.01,if(gt(t,${e}),0.01,if(gt(t,${e - do_}),1-((t-(${e}-${do_}))/${do_}),1)))`;
     scale = scale === "1" ? zOut : `(${scale})*(${zOut})`;
   }
   if (tin === "bounce" && di > 0) y = `if(between(t,${s},${s + di}),-20*sin(PI*(t-${s})/${di}),0)`;
