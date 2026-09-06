@@ -75,14 +75,14 @@ function png(width, height, color) {
   // PIXELS: reject bounds consistently, preserve exact channels, and apply intensity to every built-in filter.
   const pixels = new api.PixelDataCreator();
   const black = png(4, 4, '#000000');
-  await expectInputError(() => pixels.getColor(black, 4, 0), /out of bounds/i);
-  await expectInputError(() => pixels.getData(black, { x: 3, y: 3, width: 2, height: 2 }), /out of bounds/i);
-  const red = await pixels.setColor(black, 0, 0, { r: 255, g: 0, b: 0, a: 255 });
-  assert.deepEqual(await pixels.getColor(red, 0, 0), { r: 255, g: 0, b: 0, a: 255 });
-  const noOp = await pixels.manipulate(red, { filter: 'invert', intensity: 0, region: { x: 0, y: 0, width: 1, height: 1 } });
-  assert.deepEqual(await pixels.getColor(noOp, 0, 0), { r: 255, g: 0, b: 0, a: 255 });
-  await expectInputError(() => pixels.manipulate(red, { processor: () => Promise.resolve([0, 0, 0, 255]) }), /synchronously return/i);
-  await expectInputError(() => pixels.setColor(red, 0, 0, { r: NaN, g: 0, b: 0 }), /finite/i);
+  await expectInputError(() => pixels.getPixelColor(black, 4, 0), /out of bounds/i);
+  await expectInputError(() => pixels.getPixelData(black, { x: 3, y: 3, width: 2, height: 2 }), /out of bounds/i);
+  const red = await pixels.setPixelColor(black, 0, 0, { r: 255, g: 0, b: 0, a: 255 });
+  assert.deepEqual(await pixels.getPixelColor(red, 0, 0), { r: 255, g: 0, b: 0, a: 255 });
+  const noOp = await pixels.manipulatePixels(red, { filter: 'invert', intensity: 0, region: { x: 0, y: 0, width: 1, height: 1 } });
+  assert.deepEqual(await pixels.getPixelColor(noOp, 0, 0), { r: 255, g: 0, b: 0, a: 255 });
+  await expectInputError(() => pixels.manipulatePixels(red, { processor: () => Promise.resolve([0, 0, 0, 255]) }), /synchronously return/i);
+  await expectInputError(() => pixels.setPixelColor(red, 0, 0, { r: NaN, g: 0, b: 0 }), /finite/i);
 
   // OUTPUT: raw base64/data URL distinction, exact ArrayBuffer slice, Blob roundtrip.
   const backing = Buffer.alloc(64, 0xaa);
