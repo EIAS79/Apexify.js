@@ -20,6 +20,7 @@ export {
   ApexifyExternalServiceError,
   ApexifyAssetError,
   ApexifyPluginError,
+  ApexifyAudioError,
 } from "./runtime";
 export type {
   ApexifyRuntimeConfig,
