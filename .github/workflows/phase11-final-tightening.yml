@@ -41,6 +41,16 @@ jobs:
           replaceRequired(comparison, '    return props;\n', '    return {};\n');
           replaceRequired(comparison, '  const chart1Options: any = {\n', '  const chart1Options = {\n');
           replaceRequired(comparison, '  const chart2Options: any = {\n', '  const chart2Options = {\n');
+          replaceRequired(
+            comparison,
+            '    chart1Options.type = options.chart1.barType;\n',
+            '    (chart1Options as BarChartOptions).type = options.chart1.barType;\n'
+          );
+          replaceRequired(
+            comparison,
+            '    chart2Options.type = options.chart2.barType;\n',
+            '    (chart2Options as BarChartOptions).type = options.chart2.barType;\n'
+          );
 
           const audit = 'scripts/maintenance-audit.cjs';
           replaceRequired(
