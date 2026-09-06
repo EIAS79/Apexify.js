@@ -18,8 +18,8 @@ function classify(file) {
   if (/benchmarks\//.test(file) || /benchmark/i.test(path.basename(file))) return 'BENCHMARK';
   if (/tests\/golden\//.test(file) || /golden/i.test(path.basename(file))) return 'GOLDEN TEST';
   if (/tests\/security\//.test(file) || /security/i.test(path.basename(file))) return 'SECURITY TEST';
-  if (/tests\/integration\//.test(file) || /video-integration|space-shooter|smoke/i.test(file)) return 'INTEGRATION TEST';
-  if (/tests\/unit\//.test(file)) return 'PERMANENT TEST';
+  if (/tests\/integration\//.test(file) || /tests\/audio-synth\//.test(file) || /video-integration|space-shooter|smoke/i.test(file)) return 'INTEGRATION TEST';
+  if (/tests\/unit\//.test(file) || /tests\/helpers\//.test(file)) return 'PERMANENT TEST';
   if (/tests\/property\//.test(file) || /fuzz/i.test(path.basename(file))) return 'REGRESSION TEST';
   if (/tests\/phase\d+.*\.cjs$/.test(file) || /public-api-compat/.test(file)) return 'REGRESSION TEST';
   if (/tests\/.*-entry\.ts$/.test(file)) return 'PERMANENT TEST';
@@ -37,11 +37,7 @@ const candidates = [
 
 for (const file of [...new Set(candidates)].sort()) {
   const classification = classify(file);
-  if (!classification) {
-    entries.push({ file, classification: 'UNCLASSIFIED' });
-    continue;
-  }
-  entries.push({ file, classification });
+  entries.push({ file, classification: classification ?? 'UNCLASSIFIED' });
 }
 
 const unclassified = entries.filter((entry) => entry.classification === 'UNCLASSIFIED');
