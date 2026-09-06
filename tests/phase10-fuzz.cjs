@@ -54,9 +54,9 @@ function between(min, max) { return min + rnd() * (max - min); }
   ctx.fillStyle = '#123456'; ctx.fillRect(0, 0, 8, 8);
   const buffer = canvas.toBuffer('image/png');
   const pixels = new api.PixelDataCreator();
-  assert.deepEqual(await pixels.getColor(buffer, 7, 7), { r: 18, g: 52, b: 86, a: 255 });
+  assert.deepEqual(await pixels.getPixelColor(buffer, 7, 7), { r: 18, g: 52, b: 86, a: 255 });
   for (const [x, y] of [[8, 0], [0, 8], [-1, 0], [0, -1]]) {
-    await assert.rejects(() => pixels.getColor(buffer, x, y), api.ApexifyInputError);
+    await assert.rejects(() => pixels.getPixelColor(buffer, x, y), api.ApexifyInputError);
   }
 
   console.log('phase10-fuzz: bounded path/text/chart/pixel property checks passed.');
