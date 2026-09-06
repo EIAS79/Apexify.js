@@ -10,6 +10,7 @@ const exists = (rel) => fs.existsSync(path.join(ROOT, rel));
 
 const required = [
   'tests/phase10-runtime.cjs',
+  'tests/phase10-collage-semantics.cjs',
   'tests/phase10-fuzz.cjs',
   'tests/phase10-golden.cjs',
   'tests/phase10-benchmark.cjs',
@@ -24,6 +25,9 @@ if (exists('lib-next/core/general-functions.ts')) failures.push('obsolete mixed 
 const pkg = JSON.parse(read('package.json'));
 if (!pkg.scripts?.['test:phase10']) failures.push('package.json does not expose test:phase10');
 if (!String(pkg.scripts?.test || '').includes('test:phase10')) failures.push('npm test does not enforce test:phase10');
+for (const test of ['phase10-runtime.cjs','phase10-collage-semantics.cjs','phase10-fuzz.cjs','phase10-golden.cjs','phase10-benchmark.cjs']) {
+  if (!String(pkg.scripts?.['test:phase10'] || '').includes(test)) failures.push(`test:phase10 does not enforce ${test}`);
+}
 
 const outputFiles = [
   'lib-next/output/save-buffer.ts',
@@ -51,6 +55,13 @@ const chartValidation = read('lib-next/chart/chart-validation.ts');
 for (const chart of ['pie','bar','horizontalBar','line','scatter','radar','polarArea']) {
   if (!chartValidation.includes(`case "${chart}"`)) failures.push(`chart semantic validation does not explicitly cover ${chart}`);
 }
+for (const composite of ['validateCombo', 'validateComparison']) {
+  if (!chartValidation.includes(`function ${composite}`)) failures.push(`chart semantic validation missing ${composite}`);
+}
+const phase10Runtime = read('tests/phase10-runtime.cjs');
+for (const surface of ['createComboChart', 'createComparisonChart']) {
+  if (!phase10Runtime.includes(surface)) failures.push(`Phase 10 runtime suite does not exercise ${surface}`);
+}
 
 const batch = read('lib-next/batch/batch-operations.ts');
 for (const token of ['maxBatchConcurrency', 'AbortSignal', 'signal', 'concurrency']) {
@@ -61,6 +72,12 @@ const bufferEncoding = read('lib-next/output/buffer-encoding.ts');
 if (!/function base64[\s\S]*toString\("base64"\)/.test(bufferEncoding)) failures.push('raw base64 implementation missing');
 if (!/data:\$\{mime\};base64/.test(bufferEncoding)) failures.push('data URL implementation missing MIME-prefixed encoding');
 if (!/source\.buffer\.slice\(source\.byteOffset, source\.byteOffset \+ source\.byteLength\)/.test(bufferEncoding)) failures.push('ArrayBuffer exact-slice semantics missing');
+
+const stitch = read('lib-next/output/stitch.ts');
+if (!/function shortestColumn\s*\(/.test(stitch) || !/masonryPositions\s*\(/.test(stitch)) {
+  failures.push('collage masonry does not expose shortest-column placement implementation');
+}
+if (/["']custom["']/.test(read('lib-next/types/batch.ts'))) failures.push('misleading custom collage layout remains in public type surface');
 
 if (failures.length) {
   console.error('Phase 10 completeness self-challenge failed:\n' + failures.map((f) => ` - ${f}`).join('\n'));
