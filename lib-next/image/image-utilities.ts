@@ -195,6 +195,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
     const { data } = await sharp(inspected.resolved, { page: 0, pages: 1, limitInputPixels: false, sequentialRead: true })
       .rotate().resize({ width: 160, height: 160, fit: "inside", withoutEnlargement: true, kernel: sharp.kernel.lanczos3 }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const counts = new Map<number, number>();
+    const totalPixels = data.length / 4;
     let visible = 0;
     const quantize = (channel: number) => Math.min(255, Math.round(channel / 4) * 4);
     for (let i = 0; i < data.length; i += 4) {
@@ -207,7 +208,7 @@ export async function detectColors(imagePath: string): Promise<Array<{ color: st
     if (visible === 0) return [];
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 16).map(([key, count]) => ({
       color: `${(key >>> 16) & 0xff},${(key >>> 8) & 0xff},${key & 0xff}`,
-      frequency: ((count / visible) * 100).toFixed(2),
+      frequency: ((count / totalPixels) * 100).toFixed(2),
     }));
   } catch (cause) {
     if (cause instanceof ApexifyError) throw cause;
