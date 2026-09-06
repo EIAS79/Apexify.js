@@ -10,6 +10,7 @@ import { assertCollection, assertFiniteNumber, assertRecord } from "../runtime/v
 type Source = string | Buffer;
 type CollageSource = { source: Source; width?: number; height?: number };
 type Loaded = { image: Image; width: number; height: number };
+type Position = { x: number; y: number };
 
 async function mapBounded<T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const concurrency = Math.min(items.length, getDefaultApexifyRuntimeConfig().limits.maxBatchConcurrency);
@@ -70,6 +71,24 @@ async function loadCollageImages(images: CollageSource[]): Promise<Loaded[]> {
   });
 }
 
+function shortestColumn(heights: readonly number[]): number {
+  let best = 0;
+  for (let i = 1; i < heights.length; i++) if (heights[i]! < heights[best]!) best = i;
+  return best;
+}
+
+function masonryPositions(loaded: readonly Loaded[], columns: number, spacing: number, cellWidth: number): { positions: Position[]; height: number } {
+  const heights = new Array<number>(columns).fill(0);
+  const positions: Position[] = [];
+  for (const item of loaded) {
+    const col = shortestColumn(heights);
+    const y = heights[col]!;
+    positions.push({ x: col * (cellWidth + spacing), y });
+    heights[col] = y + item.height + spacing;
+  }
+  return { positions, height: Math.max(...heights) - spacing };
+}
+
 /** Stitch images horizontally, vertically, or in a square-ish grid. Differing dimensions are padded transparently. */
 export async function stitchImages(images: Source[], options: StitchOptions = {}): Promise<Buffer> {
   validateSources(images, "stitch.images");
@@ -117,8 +136,13 @@ export async function stitchImages(images: Source[], options: StitchOptions = {}
         drawY = row * (maxHeight + spacing);
       }
       ctx.drawImage(image, drawX, drawY, image.width, image.height);
-      if (blend && i > 0 && overlap > 0 && direction !== "grid") {
+      if (blend && i > 0 && overlap > spacing && direction !== "grid") {
+        const actualOverlap = overlap - spacing;
         ctx.save();
+        ctx.beginPath();
+        if (direction === "horizontal") ctx.rect(drawX, drawY, actualOverlap, image.height);
+        else ctx.rect(drawX, drawY, image.width, actualOverlap);
+        ctx.clip();
         ctx.globalCompositeOperation = "multiply";
         ctx.globalAlpha = 0.5;
         ctx.drawImage(image, drawX, drawY, image.width, image.height);
@@ -134,7 +158,7 @@ export async function stitchImages(images: Source[], options: StitchOptions = {}
   }
 }
 
-/** Create a bounded grid, masonry, or carousel collage. */
+/** Create a bounded grid, shortest-column masonry, or carousel collage. */
 export async function createCollage(images: CollageSource[], layout: CollageLayout): Promise<Buffer> {
   validateCollage(images, layout);
   try {
@@ -149,6 +173,7 @@ export async function createCollage(images: CollageSource[], layout: CollageLayo
     const cellHeight = Math.max(...loaded.map((item) => item.height));
     let canvasWidth: number;
     let canvasHeight: number;
+    let masonry: { positions: Position[]; height: number } | undefined;
 
     if (type === "grid") {
       const requiredRows = Math.ceil(loaded.length / columns);
@@ -156,13 +181,9 @@ export async function createCollage(images: CollageSource[], layout: CollageLayo
       canvasWidth = cellWidth * columns + spacing * (columns - 1);
       canvasHeight = cellHeight * actualRows + spacing * (actualRows - 1);
     } else if (type === "masonry") {
-      const heights = new Array<number>(columns).fill(0);
-      for (let i = 0; i < loaded.length; i++) {
-        const col = i % columns;
-        heights[col] = heights[col]! + loaded[i]!.height + (heights[col]! > 0 ? spacing : 0);
-      }
+      masonry = masonryPositions(loaded, columns, spacing, cellWidth);
       canvasWidth = cellWidth * columns + spacing * (columns - 1);
-      canvasHeight = Math.max(...heights);
+      canvasHeight = masonry.height;
     } else {
       canvasWidth = loaded.reduce((sum, item) => sum + item.width, 0) + spacing * (loaded.length - 1);
       canvasHeight = cellHeight;
@@ -172,7 +193,6 @@ export async function createCollage(images: CollageSource[], layout: CollageLayo
     const ctx = getCanvasContext(canvas);
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    const columnHeights = new Array<number>(columns).fill(0);
     let carouselX = 0;
 
     for (let i = 0; i < loaded.length; i++) {
@@ -183,10 +203,9 @@ export async function createCollage(images: CollageSource[], layout: CollageLayo
         x = col * (cellWidth + spacing);
         y = row * (cellHeight + spacing);
       } else if (type === "masonry") {
-        const col = i % columns;
-        x = col * (cellWidth + spacing);
-        y = columnHeights[col]!;
-        columnHeights[col] = y + item.height + spacing;
+        const position = masonry!.positions[i]!;
+        x = position.x;
+        y = position.y;
       } else {
         x = carouselX;
         y = (canvasHeight - item.height) / 2;
