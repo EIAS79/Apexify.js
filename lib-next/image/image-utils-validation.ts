@@ -30,8 +30,11 @@ export function validateStitchInputs(images: Array<string | Buffer>, options: St
   images.forEach((source, i) => assertSource(source, `image.stitchImages.images[${i}]`));
   assertRecord(options, "image.stitchImages.options");
   assertOptionalEnum(options.direction, "image.stitchImages.options.direction", ["horizontal", "vertical", "grid"] as const);
-  assertOptionalFiniteNumber(options.overlap, "image.stitchImages.options.overlap", { min: 0 });
-  assertOptionalFiniteNumber(options.spacing, "image.stitchImages.options.spacing", { min: 0 });
+  assertOptionalFiniteNumber(options.overlap, "image.stitchImages.options.overlap", { min: 0, integer: true });
+  assertOptionalFiniteNumber(options.spacing, "image.stitchImages.options.spacing", { min: 0, integer: true });
+  if (options.direction === "grid" && (options.overlap ?? 0) !== 0) {
+    throw new ApexifyInputError("image.stitchImages.options.overlap is unsupported for grid direction.");
+  }
   if (options.blend !== undefined && typeof options.blend !== "boolean") {
     throw new ApexifyInputError("image.stitchImages.options.blend must be boolean.");
   }
@@ -45,22 +48,20 @@ export function validateCollageInputs(
   images.forEach((item, i) => {
     assertRecord(item, `image.createCollage.images[${i}]`);
     assertSource(item.source, `image.createCollage.images[${i}].source`);
-    assertOptionalFiniteNumber(item.width, `image.createCollage.images[${i}].width`, { min: 0, exclusiveMin: true, integer: true });
-    assertOptionalFiniteNumber(item.height, `image.createCollage.images[${i}].height`, { min: 0, exclusiveMin: true, integer: true });
+    assertOptionalFiniteNumber(item.width, `image.createCollage.images[${i}].width`, { min: 1, integer: true });
+    assertOptionalFiniteNumber(item.height, `image.createCollage.images[${i}].height`, { min: 1, integer: true });
     if (item.width !== undefined) assertWithinLimit("maxCanvasDimension", item.width);
     if (item.height !== undefined) assertWithinLimit("maxCanvasDimension", item.height);
     if (item.width !== undefined && item.height !== undefined) assertCanvasResourceLimits(item.width, item.height);
   });
   assertRecord(layout, "image.createCollage.layout");
-  assertEnum(layout.type, "image.createCollage.layout.type", ["grid", "masonry", "carousel", "custom"] as const);
+  assertEnum(layout.type, "image.createCollage.layout.type", ["grid", "masonry", "carousel"] as const);
   assertOptionalFiniteNumber(layout.columns, "image.createCollage.layout.columns", { min: 1, integer: true });
   assertOptionalFiniteNumber(layout.rows, "image.createCollage.layout.rows", { min: 1, integer: true });
-  assertOptionalFiniteNumber(layout.spacing, "image.createCollage.layout.spacing", { min: 0 });
+  assertOptionalFiniteNumber(layout.spacing, "image.createCollage.layout.spacing", { min: 0, integer: true });
   assertOptionalFiniteNumber(layout.borderRadius, "image.createCollage.layout.borderRadius", { min: 0 });
   if (layout.background !== undefined) assertNonEmptyString(layout.background, "image.createCollage.layout.background", 512);
-  if (layout.columns !== undefined && layout.rows !== undefined) {
-    assertWithinLimit("maxCollectionItems", layout.columns * layout.rows);
-  }
+  if (layout.columns !== undefined && layout.rows !== undefined) assertWithinLimit("maxCollectionItems", layout.columns * layout.rows);
 }
 
 export function validateCompressionInputs(image: string | Buffer, options: CompressionOptions = {}): void {
@@ -68,22 +69,19 @@ export function validateCompressionInputs(image: string | Buffer, options: Compr
   assertRecord(options, "image.compress.options");
   assertOptionalFiniteNumber(options.quality, "image.compress.options.quality", { min: 1, max: 100, integer: true });
   assertOptionalEnum(options.format, "image.compress.options.format", ["jpeg", "webp", "avif"] as const);
-  assertOptionalFiniteNumber(options.maxWidth, "image.compress.options.maxWidth", { min: 0, exclusiveMin: true, integer: true });
-  assertOptionalFiniteNumber(options.maxHeight, "image.compress.options.maxHeight", { min: 0, exclusiveMin: true, integer: true });
+  assertOptionalFiniteNumber(options.maxWidth, "image.compress.options.maxWidth", { min: 1, integer: true });
+  assertOptionalFiniteNumber(options.maxHeight, "image.compress.options.maxHeight", { min: 1, integer: true });
   if (options.maxWidth !== undefined) assertWithinLimit("maxCanvasDimension", options.maxWidth);
   if (options.maxHeight !== undefined) assertWithinLimit("maxCanvasDimension", options.maxHeight);
   if (options.maxWidth !== undefined && options.maxHeight !== undefined) assertCanvasResourceLimits(options.maxWidth, options.maxHeight);
-  if (options.progressive !== undefined && typeof options.progressive !== "boolean") {
-    throw new ApexifyInputError("image.compress.options.progressive must be boolean.");
-  }
+  if (options.progressive !== undefined && typeof options.progressive !== "boolean") throw new ApexifyInputError("image.compress.options.progressive must be boolean.");
 }
 
 export function validatePaletteInputs(image: string | Buffer, options: PaletteOptions = {}): void {
   assertSource(image, "image.extractPalette.source");
   assertRecord(options, "image.extractPalette.options");
   const count = options.count ?? 10;
-  assertFiniteNumber(count, "image.extractPalette.options.count", { min: 1, integer: true });
-  assertWithinLimit("maxCollectionItems", count);
+  assertFiniteNumber(count, "image.extractPalette.options.count", { min: 1, max: 256, integer: true });
   assertOptionalEnum(options.method, "image.extractPalette.options.method", ["kmeans", "median-cut", "octree"] as const);
   assertOptionalEnum(options.format, "image.extractPalette.options.format", ["hex", "rgb", "hsl"] as const);
 }
@@ -93,8 +91,8 @@ export function validateResizeInputs(options: ResizeOptions): void {
   assertSource(options.imagePath, "image.resize.options.imagePath");
   if (options.size !== undefined) {
     assertRecord(options.size, "image.resize.options.size");
-    assertOptionalFiniteNumber(options.size.width, "image.resize.options.size.width", { min: 0, exclusiveMin: true, integer: true });
-    assertOptionalFiniteNumber(options.size.height, "image.resize.options.size.height", { min: 0, exclusiveMin: true, integer: true });
+    assertOptionalFiniteNumber(options.size.width, "image.resize.options.size.width", { min: 1, integer: true });
+    assertOptionalFiniteNumber(options.size.height, "image.resize.options.size.height", { min: 1, integer: true });
     const width = options.size.width ?? 500;
     const height = options.size.height ?? 500;
     assertCanvasResourceLimits(width, height);
@@ -102,9 +100,7 @@ export function validateResizeInputs(options: ResizeOptions): void {
     assertCanvasResourceLimits(500, 500);
   }
   assertOptionalFiniteNumber(options.quality, "image.resize.options.quality", { min: 1, max: 100, integer: true });
-  if (options.maintainAspectRatio !== undefined && typeof options.maintainAspectRatio !== "boolean") {
-    throw new ApexifyInputError("image.resize.options.maintainAspectRatio must be boolean.");
-  }
+  if (options.maintainAspectRatio !== undefined && typeof options.maintainAspectRatio !== "boolean") throw new ApexifyInputError("image.resize.options.maintainAspectRatio must be boolean.");
   assertOptionalEnum(options.outputFormat, "image.resize.options.outputFormat", ["png", "jpeg"] as const);
 }
 
@@ -134,21 +130,22 @@ export function validateColorFilterInputs(source: string, opacity: number): void
 export function validateColorRemovalInputs(source: string, color: { red: number; green: number; blue: number }): void {
   assertSource(source, "image.colorsRemover.source");
   assertRecord(color, "image.colorsRemover.colorToRemove");
-  assertFiniteNumber(color.red, "image.colorsRemover.colorToRemove.red", { min: 0, max: 255 });
-  assertFiniteNumber(color.green, "image.colorsRemover.colorToRemove.green", { min: 0, max: 255 });
-  assertFiniteNumber(color.blue, "image.colorsRemover.colorToRemove.blue", { min: 0, max: 255 });
+  assertFiniteNumber(color.red, "image.colorsRemover.colorToRemove.red", { min: 0, max: 255, integer: true });
+  assertFiniteNumber(color.green, "image.colorsRemover.colorToRemove.green", { min: 0, max: 255, integer: true });
+  assertFiniteNumber(color.blue, "image.colorsRemover.colorToRemove.blue", { min: 0, max: 255, integer: true });
 }
 
 export function validateBackgroundRemovalInputs(imageURL: string, apiKey: string): void {
   assertNonEmptyString(imageURL, "image.removeBackground.imageURL", 16_384);
   assertNonEmptyString(apiKey, "image.removeBackground.apiKey", 16_384);
+  let parsed: URL;
+  try { parsed = new URL(imageURL); } catch (cause) { throw new ApexifyInputError("image.removeBackground.imageURL must be an absolute URL.", { cause }); }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new ApexifyInputError("image.removeBackground.imageURL must use http or https.");
 }
 
 export function validateBlendInputs(layers: ImageBlendLayer[], baseImageBuffer: Buffer): void {
   assertCollection(layers, "image.blend.layers", { min: 1, limit: "maxCollectionItems" });
-  if (!Buffer.isBuffer(baseImageBuffer) || baseImageBuffer.length === 0) {
-    throw new ApexifyInputError("image.blend.baseImageBuffer must be a non-empty Buffer.");
-  }
+  if (!Buffer.isBuffer(baseImageBuffer) || baseImageBuffer.length === 0) throw new ApexifyInputError("image.blend.baseImageBuffer must be a non-empty Buffer.");
   layers.forEach((layer, i) => {
     assertRecord(layer, `image.blend.layers[${i}]`);
     assertFiniteNumericLeaves(layer, `image.blend.layers[${i}]`);
@@ -170,9 +167,7 @@ export function validateCropInputs(options: cropOptions): void {
     assertOptionalFiniteNumber(coordinate.tension, `image.cropImage.options.coordinates[${i}].tension`);
   });
   assertEnum(options.crop, "image.cropImage.options.crop", ["inner", "outer"] as const);
-  if (options.radius !== undefined && options.radius !== "circular") {
-    assertFiniteNumber(options.radius, "image.cropImage.options.radius", { min: 0 });
-  }
+  if (options.radius !== undefined && options.radius !== "circular") assertFiniteNumber(options.radius, "image.cropImage.options.radius", { min: 0 });
 }
 
 export function validateMaskInputs(source: unknown, maskSource: unknown, options: MaskOptions): void {
