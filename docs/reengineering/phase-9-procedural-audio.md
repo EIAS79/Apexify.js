@@ -43,7 +43,7 @@ Callers that need stricter deployment policy can lower these values with the exi
 - string seeds are deterministically hashed;
 - noise and pink-noise generation use operation-local PRNG state;
 - sequence events, composition clips, mix inputs, and individual layers receive independently derived streams;
-- no synthesis path uses `Math.random()`;
+- seeded synthesis does not depend on the process-global random stream; unseeded synthesis intentionally obtains nondeterministic values through the centralized audio RNG factory;
 - seeded concurrent/reentrant renders are byte-stable and do not share filter or RNG state.
 
 Locked deterministic WAV SHA-256 goldens:
@@ -118,7 +118,7 @@ Beyond the master-plan completion gates, Phase 9 includes:
 - deterministic bounded fuzzing of oscillators, ADSR, filters, noise, and malformed WAV mutations;
 - concurrent/reentrant seeded-render tests with memory stability checks;
 - integration of generated procedural WAVs into the Phase-8 FFmpeg audio/video pipeline;
-- a static audio self-challenge scan that rejects `Math.random()`, unfinished markers, legacy retained-buffer paths, missing WAV hardening, and unguarded allocation sites.
+- a static audio self-challenge scan that rejects uncontrolled RNG use outside the centralized factory, unfinished markers, legacy retained-buffer paths, missing WAV hardening, and unguarded allocation sites.
 
 ## Benchmark evidence
 
