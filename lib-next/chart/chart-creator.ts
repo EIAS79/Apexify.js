@@ -2,7 +2,7 @@ import { getErrorMessage } from "../core/errors";
 import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 import { createPieChart } from "./impl/piechart";
 import { createBarChart } from "./impl/barchart";
-import { createHorizontalBarChart } from "./impl/horizontalbarchart";
+import { createHorizontalBarChart } from "./horizontalbar-public";
 import { createLineChart } from "./impl/linechart";
 import { createScatterChart } from "./impl/scatterchart";
 import { createRadarChart } from "./impl/radarchart";
