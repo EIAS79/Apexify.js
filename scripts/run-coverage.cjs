@@ -15,11 +15,10 @@ const args = [
   '--test-reporter=spec',
   '--test-reporter-destination=stdout',
   '--test-reporter=lcov',
-  '--test-reporter-destination=artifacts/coverage/lcov.info',
+  '--test-reporter-destination=artifacts/coverage/critical-lcov.info',
   'tests/unit/critical-infrastructure.test.cjs',
   'tests/security/phase12-security.test.cjs',
   'tests/integration/remote-fetch.test.cjs',
-  'tests/property/core-properties.test.cjs',
 ];
 
 const result = spawnSync(process.execPath, args, { stdio: 'inherit', env: process.env });
