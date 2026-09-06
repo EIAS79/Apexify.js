@@ -1,203 +1,133 @@
-import { emitDiagnostic } from "../runtime/diagnostics";
 import { createCanvas } from "@napi-rs/canvas";
-import { resolveTextDecorations, resolveTextLayout, resolveTextPlacement, type TextProperties, type TextMetrics } from "../types";
-import { getErrorMessage, getCanvasContext } from "../core/errors";
+import { resolveTextLayout, type TextProperties, type TextMetrics } from "../types";
+import { getCanvasContext } from "../core/errors";
+import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 import { curvedArcBoundingChord, resolveArcRadiusAndSweep } from "./text-curved";
-import { computeWrappedTextLines, registerTextFontFromPath } from "./text-layout";
+import {
+  computeWrappedTextLines,
+  registerTextFontFromPath,
+  resolveTextFontSize,
+  resolveTextLineHeight,
+  setupTextAlignment,
+  setupTextFont,
+} from "./text-layout";
+import { validateTextProperties } from "./text-validation";
 
-/**
- * Text layout metrics (measurement) — same inputs as {@link TextCreator} and {@link EnhancedTextRenderer}.
- */
+type NativeMetrics = ReturnType<ReturnType<typeof getCanvasContext>["measureText"]>;
+
+type BaseMetricFields = Omit<TextMetrics, "lines" | "totalHeight" | "lineCount" | "charWidths" | "charPositions">;
+
+function optionalMetric(native: NativeMetrics, key: string): number | undefined {
+  const value = (native as unknown as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function metricFields(native: NativeMetrics, fontSize: number, lineHeight: number): BaseMetricFields {
+  const ascent = native.actualBoundingBoxAscent || fontSize * 0.8;
+  const descent = native.actualBoundingBoxDescent || fontSize * 0.2;
+  const result: BaseMetricFields = {
+    width: native.width,
+    actualBoundingBoxAscent: native.actualBoundingBoxAscent,
+    actualBoundingBoxDescent: native.actualBoundingBoxDescent,
+    actualBoundingBoxLeft: native.actualBoundingBoxLeft,
+    actualBoundingBoxRight: native.actualBoundingBoxRight,
+    fontBoundingBoxAscent: native.fontBoundingBoxAscent,
+    fontBoundingBoxDescent: native.fontBoundingBoxDescent,
+    height: ascent + descent,
+    lineHeight,
+    baseline: ascent,
+    top: -ascent,
+    bottom: descent,
+    centerX: native.width / 2,
+    centerY: (descent - ascent) / 2,
+  };
+  for (const key of ["alphabeticBaseline", "emHeightAscent", "emHeightDescent", "hangingBaseline", "ideographicBaseline"] as const) {
+    const value = optionalMetric(native, key);
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
+}
+
+function graphemes(value: string): string[] {
+  const Segmenter = (Intl as unknown as { Segmenter?: new (...args: unknown[]) => { segment(s: string): Iterable<{ segment: string }> } }).Segmenter;
+  if (Segmenter) return [...new Segmenter(undefined, { granularity: "grapheme" } as never).segment(value)].map((entry) => entry.segment);
+  return Array.from(value);
+}
+
+/** Measures text using the same font, spacing, alignment, and wrapping helpers as rendering. */
 export class TextMetricsCreator {
-  /**
-   * Measures text dimensions and properties
-   * @param textProps - Text properties to measure (same as createText)
-   * @returns Comprehensive text metrics
-   */
   async measureText(textProps: TextProperties): Promise<TextMetrics> {
+    validateTextProperties(textProps);
     try {
       const lay = resolveTextLayout(textProps);
-      const pl = resolveTextPlacement(textProps);
-      const fontSize = textProps.font?.size || textProps.fontSize || 16;
+      const fontSize = resolveTextFontSize(textProps);
+      const lineHeight = resolveTextLineHeight(textProps);
+      const fontPath = textProps.font?.path ?? textProps.fontPath;
+      const fontName = textProps.font?.name ?? textProps.fontName;
+      if (fontPath) await registerTextFontFromPath(fontPath, fontName ?? "customFont");
 
-      let canvasWidth = 2000;
-      let canvasHeight = 1000;
-
-      if (textProps.measurementCanvas) {
-        canvasWidth = textProps.measurementCanvas.width ?? canvasWidth;
-        canvasHeight = textProps.measurementCanvas.height ?? canvasHeight;
-      } else {
-        const estimatedCharWidth = fontSize * 0.6;
-        const maxTextWidth = textProps.text.length * estimatedCharWidth;
-        const letterSpacing = lay.letterSpacing ?? 0;
-        const spacingWidth = textProps.text.length * letterSpacing;
-
-        const targetWidth = lay.maxWidth ?? maxTextWidth + spacingWidth;
-
-        canvasWidth = Math.max(1000, Math.min(10000, targetWidth * 2));
-
-        const lineHeightMul = (lay.lineHeight || 1.4) * fontSize;
-        const estimatedLines = lay.maxWidth ? Math.ceil(targetWidth / lay.maxWidth) : 1;
-        const maxLines = lay.maxHeight ? Math.ceil(lay.maxHeight / lineHeightMul) : estimatedLines;
-
-        canvasHeight = Math.max(500, Math.min(5000, maxLines * lineHeightMul * 2));
-      }
-
-      const canvas = createCanvas(canvasWidth, canvasHeight);
+      const estimatedWidth = Math.max(1, textProps.text.length * fontSize * 0.7 + Math.max(0, textProps.text.length - 1) * (lay.letterSpacing ?? 0));
+      const requestedWidth = textProps.measurementCanvas?.width ?? lay.maxWidth ?? Math.min(10000, Math.max(1000, estimatedWidth * 2));
+      const estimatedLineCount = lay.maxWidth === undefined ? textProps.text.split("\n").length : Math.max(1, Math.ceil(estimatedWidth / lay.maxWidth));
+      const requestedHeight = textProps.measurementCanvas?.height ?? Math.min(5000, Math.max(500, estimatedLineCount * lineHeight * 2));
+      const canvas = createCanvas(Math.ceil(requestedWidth), Math.ceil(requestedHeight));
       const ctx = getCanvasContext(canvas);
+      setupTextFont(ctx, textProps);
+      setupTextAlignment(ctx, textProps);
 
-      const fontPath = textProps.font?.path || textProps.fontPath;
-      const fontName = textProps.font?.name || textProps.fontName;
-
-      if (fontPath) {
-        try {
-          await registerTextFontFromPath(fontPath, fontName || "customFont");
-        } catch (error) {
-          emitDiagnostic({ level: "warn", code: "APEXIFY_TEXT_METRICS_WARN", message: "A non-fatal Apexify warn diagnostic was emitted by lib-next/text/text-metrics.ts." });
-        }
-      }
-
-      const fontFamily =
-        textProps.font?.name ||
-        textProps.fontName ||
-        textProps.font?.family ||
-        textProps.fontFamily ||
-        "Arial";
-
-      let fontString = "";
-      const dec = resolveTextDecorations(textProps);
-      if (dec.bold) fontString += "bold ";
-      if (dec.italic) fontString += "italic ";
-      fontString += `${fontSize}px "${fontFamily}"`;
-
-      ctx.font = fontString;
-
-      if (lay.letterSpacing !== undefined) {
-        ctx.letterSpacing = `${lay.letterSpacing}px`;
-      }
-
-      if (lay.wordSpacing !== undefined) {
-        ctx.wordSpacing = `${lay.wordSpacing}px`;
-      }
-
-      ctx.textAlign = pl.textAlign || "left";
-      ctx.textBaseline = pl.textBaseline || "alphabetic";
-
-      const baseMetrics = ctx.measureText(textProps.text);
-
-      const lineHeight = (lay.lineHeight || 1.4) * fontSize;
-      const height = fontSize;
-      const baseline = baseMetrics.actualBoundingBoxAscent || fontSize * 0.8;
-      const top = -baseline;
-      const bottom = baseMetrics.actualBoundingBoxDescent || fontSize * 0.2;
-
-      const metrics: any = {
-        width: baseMetrics.width,
-        actualBoundingBoxAscent: baseMetrics.actualBoundingBoxAscent,
-        actualBoundingBoxDescent: baseMetrics.actualBoundingBoxDescent,
-        actualBoundingBoxLeft: baseMetrics.actualBoundingBoxLeft,
-        actualBoundingBoxRight: baseMetrics.actualBoundingBoxRight,
-        fontBoundingBoxAscent: baseMetrics.fontBoundingBoxAscent,
-        fontBoundingBoxDescent: baseMetrics.fontBoundingBoxDescent,
-        ...((baseMetrics as any).alphabeticBaseline !== undefined && {
-          alphabeticBaseline: (baseMetrics as any).alphabeticBaseline,
-        }),
-        ...((baseMetrics as any).emHeightAscent !== undefined && { emHeightAscent: (baseMetrics as any).emHeightAscent }),
-        ...((baseMetrics as any).emHeightDescent !== undefined && {
-          emHeightDescent: (baseMetrics as any).emHeightDescent,
-        }),
-        ...((baseMetrics as any).hangingBaseline !== undefined && {
-          hangingBaseline: (baseMetrics as any).hangingBaseline,
-        }),
-        ...((baseMetrics as any).ideographicBaseline !== undefined && {
-          ideographicBaseline: (baseMetrics as any).ideographicBaseline,
-        }),
-        height,
-        lineHeight,
-        baseline,
-        top,
-        bottom,
-        centerX: baseMetrics.width / 2,
-        centerY: (height - baseline) / 2,
+      const wrapped = lay.maxWidth !== undefined ? computeWrappedTextLines(ctx, textProps) : textProps.text.split("\n");
+      const lines = wrapped.length > 0 ? wrapped : [""];
+      const lineNative = lines.map((line) => ctx.measureText(line));
+      const widest = lineNative.reduce((max, metric) => Math.max(max, metric.width), 0);
+      const first = lineNative[0]!;
+      const firstFields = metricFields(first, fontSize, lineHeight);
+      const metrics: TextMetrics = {
+        ...firstFields,
+        width: widest,
+        height: lines.length * lineHeight,
+        totalHeight: lines.length * lineHeight,
+        lineCount: lines.length,
+        lines: lines.map((line, index) => ({
+          text: line,
+          width: lineNative[index]!.width,
+          height: metricFields(lineNative[index]!, fontSize, lineHeight).height,
+          metrics: metricFields(lineNative[index]!, fontSize, lineHeight),
+        })),
+        centerX: widest / 2,
+        centerY: (lines.length * lineHeight) / 2,
       };
 
       if (textProps.includeCharMetrics) {
+        const units = graphemes(textProps.text);
         const charWidths: number[] = [];
         const charPositions: Array<{ x: number; width: number }> = [];
         let currentX = 0;
-
-        for (const char of textProps.text) {
-          const charMetric = ctx.measureText(char);
-          charWidths.push(charMetric.width);
-          charPositions.push({ x: currentX, width: charMetric.width });
-          currentX += charMetric.width;
+        for (const unit of units) {
+          const width = ctx.measureText(unit).width;
+          charWidths.push(width);
+          charPositions.push({ x: currentX, width });
+          currentX += width;
         }
-
         metrics.charWidths = charWidths;
         metrics.charPositions = charPositions;
       }
 
-      if (lay.maxWidth) {
-        const lines = computeWrappedTextLines(ctx, textProps);
-        const lineMetrics = lines.map((line) => {
-          const lineMetric = ctx.measureText(line);
-          return {
-            text: line,
-            width: lineMetric.width,
-            height: fontSize,
-            metrics: {
-              width: lineMetric.width,
-              actualBoundingBoxAscent: lineMetric.actualBoundingBoxAscent,
-              actualBoundingBoxDescent: lineMetric.actualBoundingBoxDescent,
-              actualBoundingBoxLeft: lineMetric.actualBoundingBoxLeft,
-              actualBoundingBoxRight: lineMetric.actualBoundingBoxRight,
-              fontBoundingBoxAscent: lineMetric.fontBoundingBoxAscent,
-              fontBoundingBoxDescent: lineMetric.fontBoundingBoxDescent,
-              ...((lineMetric as any).alphabeticBaseline !== undefined && {
-                alphabeticBaseline: (lineMetric as any).alphabeticBaseline,
-              }),
-              ...((lineMetric as any).emHeightAscent !== undefined && { emHeightAscent: (lineMetric as any).emHeightAscent }),
-              ...((lineMetric as any).emHeightDescent !== undefined && {
-                emHeightDescent: (lineMetric as any).emHeightDescent,
-              }),
-              ...((lineMetric as any).hangingBaseline !== undefined && {
-                hangingBaseline: (lineMetric as any).hangingBaseline,
-              }),
-              ...((lineMetric as any).ideographicBaseline !== undefined && {
-                ideographicBaseline: (lineMetric as any).ideographicBaseline,
-              }),
-              height: fontSize,
-              lineHeight,
-              baseline,
-              top,
-              bottom,
-              centerX: lineMetric.width / 2,
-              centerY: (fontSize - baseline) / 2,
-            } as Omit<TextMetrics, "lines" | "totalHeight" | "lineCount">,
-          };
-        });
-
-        metrics.lines = lineMetrics;
-        metrics.totalHeight = lineMetrics.length * lineHeight;
-        metrics.lineCount = lineMetrics.length;
+      if (textProps.textOnCurve && lines.length === 1) {
+        const curve = textProps.textOnCurve;
+        const sweepRad = (curve.sweepAngle * Math.PI) / 180;
+        const { R, sweepRad: effectiveSweep } = resolveArcRadiusAndSweep(metrics.width, sweepRad, curve.radius, curve.layoutMode);
+        const { chord, sagitta } = curvedArcBoundingChord(effectiveSweep, R);
+        metrics.width = chord;
+        metrics.height = firstFields.height + sagitta;
+        metrics.totalHeight = metrics.height;
+        metrics.centerX = chord / 2;
+        metrics.centerY = metrics.height / 2;
       }
 
-      if (textProps.textOnCurve) {
-        const c = textProps.textOnCurve;
-        const sweepDeg = c.sweepAngle;
-        if (sweepDeg > 0 && sweepDeg < 360) {
-          const sweepRad = (sweepDeg * Math.PI) / 180;
-          const W = metrics.width;
-          const { R, sweepRad: effSweep } = resolveArcRadiusAndSweep(W, sweepRad, c.radius, c.layoutMode);
-          const { chord, sagitta } = curvedArcBoundingChord(effSweep, R);
-          metrics.width = chord;
-          metrics.height = fontSize + sagitta;
-        }
-      }
-
-      return metrics as TextMetrics;
-    } catch (error) {
-      throw new Error(`measureText failed: ${getErrorMessage(error)}`);
+      return metrics;
+    } catch (cause) {
+      if (cause instanceof ApexifyError) throw cause;
+      throw new ApexifyDecodeError("measureText failed.", { cause });
     }
   }
 }
