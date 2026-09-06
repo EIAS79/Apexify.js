@@ -23,6 +23,10 @@ function classify(file) {
   if (/tests\/property\//.test(file) || /fuzz/i.test(path.basename(file))) return 'REGRESSION TEST';
   if (/tests\/phase\d+.*\.cjs$/.test(file) || /public-api-compat/.test(file)) return 'REGRESSION TEST';
   if (/tests\/.*-entry\.ts$/.test(file)) return 'PERMANENT TEST';
+  // Retained historical root/fixture tests are regression evidence unless a stronger
+  // category above applies. This deliberately classifies every test asset instead of
+  // deleting useful pre-Phase-12 coverage because of its old filename/layout.
+  if (/^tests\//.test(file)) return 'REGRESSION TEST';
   if (/scripts\/phase\d+.*scan/.test(file) || /maintenance-audit/.test(file)) return 'REGRESSION TEST';
   if (/scripts\/build-phase\d+-fixture|scripts\/build-security-fixture/.test(file)) return 'TEMPORARY PHASE TEST';
   if (/scripts\/build-test-fixture|scripts\/verify-packed-package/.test(file)) return 'PERMANENT TEST';
