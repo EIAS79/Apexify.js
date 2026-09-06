@@ -1,4 +1,5 @@
-import type { SynthPresetInfo, SynthPresetName, SynthSoundOptions } from "../types";
+import type { SynthLayer, SynthPresetInfo, SynthPresetName, SynthSoundOptions } from "../types";
+import { ApexifyInputError } from "../runtime/errors";
 
 type PresetDef = SynthSoundOptions & { _duration?: number; _desc?: string };
 
@@ -149,14 +150,12 @@ const PRESETS: Record<SynthPresetName, PresetDef> = {
     _desc: "Sweep whoosh",
     layers: [
       { waveform: "pink", duration: 0.25, gain: 0.45, filter: { type: "lowpass", cutoff: 400, q: 2 }, adsr: { attack: 0.05, release: 0.15 } },
-      { waveform: "pink", duration: 0.25, gain: 0.35, filter: { type: "lowpass", cutoff: 8000, q: 2 }, frequencyEnd: 200, adsr: { attack: 0.02, release: 0.2 } },
+      { waveform: "pink", duration: 0.25, gain: 0.35, filter: { type: "lowpass", cutoff: 8000, q: 2 }, adsr: { attack: 0.02, release: 0.2 } },
     ],
   },
   whooshIn: {
     _desc: "Reverse whoosh (in)",
-    layers: [
-      { waveform: "pink", duration: 0.3, gain: 0.4, filter: { type: "lowpass", cutoff: 200, q: 1 }, adsr: { attack: 0.15, release: 0.05 } },
-    ],
+    layers: [{ waveform: "pink", duration: 0.3, gain: 0.4, filter: { type: "lowpass", cutoff: 200, q: 1 }, adsr: { attack: 0.15, release: 0.05 } }],
   },
   engine: {
     _desc: "Low engine drone",
@@ -167,9 +166,7 @@ const PRESETS: Record<SynthPresetName, PresetDef> = {
   },
   engineIdle: {
     _desc: "Idle engine rumble",
-    layers: [
-      { waveform: "sawtooth", frequency: 55, duration: 1, gain: 0.3, filter: { type: "lowpass", cutoff: 200 }, tremolo: { depth: 0.08, rate: 4 } },
-    ],
+    layers: [{ waveform: "sawtooth", frequency: 55, duration: 1, gain: 0.3, filter: { type: "lowpass", cutoff: 200 }, tremolo: { depth: 0.08, rate: 4 } }],
   },
   siren: {
     _desc: "Police-style siren",
@@ -196,9 +193,7 @@ const PRESETS: Record<SynthPresetName, PresetDef> = {
   },
   charge: {
     _desc: "Charging loop feel",
-    layers: [
-      { waveform: "sawtooth", frequency: 150, frequencyEnd: 400, duration: 0.5, gain: 0.3, tremolo: { depth: 0.2, rate: 16 } },
-    ],
+    layers: [{ waveform: "sawtooth", frequency: 150, frequencyEnd: 400, duration: 0.5, gain: 0.3, tremolo: { depth: 0.2, rate: 16 } }],
   },
   failure: {
     _desc: "Error / fail buzz",
@@ -261,32 +256,36 @@ const PRESETS: Record<SynthPresetName, PresetDef> = {
   },
 };
 
+function cloneLayer(layer: SynthLayer): SynthLayer {
+  return {
+    ...layer,
+    adsr: layer.adsr ? { ...layer.adsr } : undefined,
+    vibrato: layer.vibrato ? { ...layer.vibrato } : undefined,
+    tremolo: layer.tremolo ? { ...layer.tremolo } : undefined,
+    filter: layer.filter ? { ...layer.filter } : undefined,
+    partials: layer.partials?.map(([ratio, gain]) => [ratio, gain]),
+  };
+}
+
 function estimateDuration(def: SynthSoundOptions): number {
   let max = 0;
-  for (const layer of def.layers) {
-    const end = (layer.delay ?? 0) + layer.duration;
-    if (end > max) max = end;
-  }
+  for (const layer of def.layers) max = Math.max(max, (layer.delay ?? 0) + layer.duration);
   return max;
 }
 
 export function getPresetDefinition(name: SynthPresetName): SynthSoundOptions {
-  const p = PRESETS[name];
-  if (!p) throw new Error(`Unknown synth preset: ${name}`);
-  const { _desc, _duration, ...opts } = p;
-  return opts;
+  const preset = PRESETS[name];
+  if (!preset) throw new ApexifyInputError(`Unknown synth preset: ${String(name)}.`);
+  const { _desc, _duration, ...options } = preset;
+  return { ...options, layers: options.layers.map(cloneLayer) };
 }
 
 export function listPresets(): SynthPresetInfo[] {
-  return (Object.keys(PRESETS) as SynthPresetName[]).map((name) => {
-    const def = getPresetDefinition(name);
+  return SYNTH_PRESET_NAMES.map((name) => {
+    const definition = getPresetDefinition(name);
     const meta = PRESETS[name];
-    return {
-      name,
-      description: meta._desc ?? name,
-      defaultDuration: estimateDuration(def),
-    };
+    return { name, description: meta._desc ?? name, defaultDuration: estimateDuration(definition) };
   });
 }
 
-export const SYNTH_PRESET_NAMES = Object.keys(PRESETS) as SynthPresetName[];
+export const SYNTH_PRESET_NAMES: readonly SynthPresetName[] = Object.freeze(Object.keys(PRESETS) as SynthPresetName[]);
