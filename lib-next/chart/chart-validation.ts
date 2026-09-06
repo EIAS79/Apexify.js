@@ -114,10 +114,10 @@ function validateCartesianSeries(data: unknown[], name: string): void {
 }
 
 function validateRadar(data: unknown[], options: unknown, name: string): void {
-  if (options === undefined) throw new ApexifyInputError("chart.options.radar.categories is required for radar charts.");
-  assertRecord(options, "chart.options");
-  assertRecord(options.radar, "chart.options.radar");
-  if (!Array.isArray(options.radar.categories) || options.radar.categories.length < 3) throw new ApexifyInputError("chart.options.radar.categories must contain at least three labels.");
+  if (options === undefined) throw new ApexifyInputError(`${name} requires radar.categories.`);
+  assertRecord(options, `${name}.options`);
+  assertRecord(options.radar, `${name}.options.radar`);
+  if (!Array.isArray(options.radar.categories) || options.radar.categories.length < 3) throw new ApexifyInputError(`${name}.options.radar.categories must contain at least three labels.`);
   const count = options.radar.categories.length;
   data.forEach((series, index) => {
     assertRecord(series, `${name}[${index}]`);
@@ -125,19 +125,52 @@ function validateRadar(data: unknown[], options: unknown, name: string): void {
     if (!Array.isArray(series.values) || series.values.length !== count) throw new ApexifyInputError(`${name}[${index}].values length must match radar.categories.`);
     series.values.forEach((value, valueIndex) => assertFiniteNumber(value, `${name}[${index}].values[${valueIndex}]`, { min: 0 }));
   });
-  if (options.radar.maxValue !== undefined) assertFiniteNumber(options.radar.maxValue, "chart.options.radar.maxValue", { min: 0, exclusiveMin: true });
+  if (options.radar.maxValue !== undefined) assertFiniteNumber(options.radar.maxValue, `${name}.options.radar.maxValue`, { min: 0, exclusiveMin: true });
 }
 
-function validateTypeSemantics(chartType: SupportedChartType, data: unknown[], options: unknown): void {
+function validateTypeSemantics(chartType: SupportedChartType, data: unknown[], options: unknown, name = "chart.data"): void {
   switch (chartType) {
-    case "pie": validatePieLike(data, "chart.data"); break;
-    case "polarArea": validatePieLike(data, "chart.data"); break;
-    case "bar": validateBars(data, "chart.data", false); break;
-    case "horizontalBar": validateBars(data, "chart.data", true); break;
-    case "line": validateCartesianSeries(data, "chart.data"); break;
-    case "scatter": validateCartesianSeries(data, "chart.data"); break;
-    case "radar": validateRadar(data, options, "chart.data"); break;
+    case "pie": validatePieLike(data, name); break;
+    case "polarArea": validatePieLike(data, name); break;
+    case "bar": validateBars(data, name, false); break;
+    case "horizontalBar": validateBars(data, name, true); break;
+    case "line": validateCartesianSeries(data, name); break;
+    case "scatter": validateCartesianSeries(data, name); break;
+    case "radar": validateRadar(data, options, name); break;
   }
+}
+
+function validateCombo(options: Record<string, unknown>): void {
+  if (!Array.isArray(options.bars)) throw new ApexifyInputError("comboChart.bars must be an array.");
+  if (!Array.isArray(options.lines)) throw new ApexifyInputError("comboChart.lines must be an array.");
+  if (options.bars.length === 0 && options.lines.length === 0) throw new ApexifyInputError("comboChart requires at least one bar or line series.");
+  if (options.bars.length > 0) validateBars(options.bars, "comboChart.bars", false);
+  if (options.lines.length > 0) validateCartesianSeries(options.lines, "comboChart.lines");
+  if (options.barsType !== undefined && !["standard", "grouped", "stacked"].includes(String(options.barsType))) {
+    throw new ApexifyInputError("comboChart.barsType must be standard, grouped, or stacked.");
+  }
+}
+
+function validateComparisonChartConfig(value: unknown, name: string): void {
+  assertRecord(value, name);
+  if (typeof value.type !== "string") throw new ApexifyInputError(`${name}.type is required.`);
+  const normalized = value.type === "donut" ? "pie" : value.type;
+  if (!TYPES.includes(normalized as SupportedChartType)) throw new ApexifyInputError(`${name}.type is unsupported.`);
+  if (!Array.isArray(value.data) || value.data.length === 0) throw new ApexifyInputError(`${name}.data must be a non-empty array.`);
+  if (value.options !== undefined) {
+    validateChartValueTree(value.options, `${name}.options`);
+    validateChartDimensions(value.options, `${name}.options`);
+  }
+  validateTypeSemantics(normalized as SupportedChartType, value.data, value.options, `${name}.data`);
+}
+
+function validateComparison(options: Record<string, unknown>): void {
+  validateComparisonChartConfig(options.chart1, "comparisonChart.chart1");
+  validateComparisonChartConfig(options.chart2, "comparisonChart.chart2");
+  if (options.layout !== undefined && options.layout !== "sideBySide" && options.layout !== "topBottom") {
+    throw new ApexifyInputError("comparisonChart.layout must be sideBySide or topBottom.");
+  }
+  if (options.spacing !== undefined) assertFiniteNumber(options.spacing, "comparisonChart.spacing", { min: 0 });
 }
 
 export function validateChartRequest(chartType: unknown, data: unknown, options?: unknown): void {
@@ -153,4 +186,6 @@ export function validateCompositeChartOptions(options: unknown, name: "compariso
   assertRecord(options, name);
   validateChartValueTree(options, name);
   validateChartDimensions(options, name);
+  if (name === "comboChart") validateCombo(options);
+  else validateComparison(options);
 }
