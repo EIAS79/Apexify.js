@@ -22,7 +22,7 @@ export * from "./helpers/legendTextLayout";
 export * as pie from "./impl/piechart";
 export * as bar from "./impl/barchart";
 export * as horizontalBar from "./horizontalbar-public";
-export * as line from "./impl/linechart";
+export * as line from "./linechart-public";
 export * as scatter from "./impl/scatterchart";
 export * as radar from "./impl/radarchart";
 export * as polarArea from "./impl/polarareachart";
