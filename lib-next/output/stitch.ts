@@ -52,7 +52,7 @@ function validateCollage(images: unknown, layout: CollageLayout): asserts images
   assertFiniteNumber(layout.spacing ?? 10, "collage.layout.spacing", { min: 0, integer: true });
   assertFiniteNumber(layout.borderRadius ?? 0, "collage.layout.borderRadius", { min: 0 });
   for (let i = 0; i < images.length; i++) {
-    const item = images[i];
+    const item: unknown = images[i];
     assertRecord(item, `collage.images[${i}]`);
     if (!(typeof item.source === "string" || Buffer.isBuffer(item.source))) throw new ApexifyInputError(`collage.images[${i}].source must be a string or Buffer.`);
     if (item.width !== undefined) assertFiniteNumber(item.width, `collage.images[${i}].width`, { min: 1, integer: true });
