@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [6.0.0] - Unreleased
 
+### Phase 11 — package and API cleanup
+
+- Added `ApexPainter.toOutput()` as the consistently named output-conversion method while retaining `outPut()` as a documented deprecated compatibility alias.
+- Removed unused direct runtime dependencies `fs-extra` and `jszip`; the lockfile now reflects the smaller direct dependency graph.
+- Removed dead internal barrels, wrappers, placeholders, and the obsolete source update-checker path after repository-wide reachability audits.
+- Removed the packed-package `prepare` install hook and tightened tarball/consumer verification so maintenance scripts cannot leak into published contents.
+- Added a permanent dependency/source-tree maintenance audit for orphan source files, runtime cycles, stale deep imports, unfinished source markers, library console output, and direct dependency classification.
+
+
 ### ⚠️ Breaking
 
 - **Node.js support is now 22.x, 24.x, and 26.x.** Node 16, 18, and 20 are no longer supported. Raising the runtime floor is a breaking compatibility change, so this work is correctly staged as **6.0.0**, not a 5.4.x patch.
