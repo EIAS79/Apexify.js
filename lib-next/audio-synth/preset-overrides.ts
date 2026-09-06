@@ -1,4 +1,4 @@
-import type { SynthLayer, SynthPresetOverrides, SynthSoundOptions } from "../types";
+import type { SynthLayer, SynthLayerOverride, SynthPresetOverrides, SynthSoundOptions } from "../types";
 
 function cloneLayer(layer: SynthLayer): SynthLayer {
   const cloned: SynthLayer = {
@@ -21,7 +21,7 @@ function cloneLayer(layer: SynthLayer): SynthLayer {
   return cloned;
 }
 
-function mergeLayer(base: SynthLayer | undefined, override: Partial<SynthLayer>): SynthLayer {
+function mergeLayer(base: SynthLayer | undefined, override: SynthLayerOverride): SynthLayer {
   const merged = {
     ...(base ? cloneLayer(base) : {}),
     ...override,
