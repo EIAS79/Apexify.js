@@ -18,7 +18,7 @@ export {
   drawImageFitted,
 } from "../lib-next/canvas/background-renderer";
 export { CanvasCreator } from "../lib-next/canvas/canvas-creator";
-export { detectColors, imgEffects } from "../lib-next/core/general-functions";
+export { detectColors, imgEffects } from "../lib-next/image/image-utilities";
 export { resizingImg, converter } from "../lib-next/output/convert";
 export { cropRasterImage } from "../lib-next/image/crop-raster";
 export { applyRasterMask } from "../lib-next/image/raster-masking";
