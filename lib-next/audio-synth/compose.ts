@@ -8,6 +8,7 @@ import type {
   SynthSoundOptions,
 } from "../types";
 import { ApexifyAudioError, ApexifyInputError } from "../runtime/errors";
+import { assertAudioWavResourceLimits } from "../runtime/limits";
 import { filterInterleavedInPlace } from "./biquad-filter";
 import { createAudioRandom, deriveAudioSeed } from "./audio-random";
 import { applyLimiter, renderSound, resampleToMatch } from "./engine";
@@ -16,14 +17,16 @@ import { applyPresetOverrides } from "./preset-overrides";
 import { decodeWavPcm16, encodeWavPcm16 } from "./wav-encode";
 import { validateSynthComposeOptions } from "./audio-validation";
 
-function qualityFilter(quality: SynthClipQuality): FilterOptions {
+function qualityFilter(quality: SynthClipQuality, sampleRate: number): FilterOptions {
+  let filter: FilterOptions;
   switch (quality) {
-    case "bright": return { type: "highpass", cutoff: 280, q: 0.8 };
-    case "warm": return { type: "lowpass", cutoff: 3200, q: 1 };
-    case "muffled": return { type: "lowpass", cutoff: 700, q: 1.2 };
-    case "lofi": return { type: "lowpass", cutoff: 2200, q: 1.5 };
-    case "crisp": return { type: "highpass", cutoff: 120, q: 1 };
+    case "bright": filter = { type: "highpass", cutoff: 280, q: 0.8 }; break;
+    case "warm": filter = { type: "lowpass", cutoff: 3200, q: 1 }; break;
+    case "muffled": filter = { type: "lowpass", cutoff: 700, q: 1.2 }; break;
+    case "lofi": filter = { type: "lowpass", cutoff: 2200, q: 1.5 }; break;
+    case "crisp": filter = { type: "highpass", cutoff: 120, q: 1 }; break;
   }
+  return { ...filter, cutoff: Math.min(filter.cutoff, sampleRate * 0.45) };
 }
 
 function applyFades(samples: Float32Array, channels: 1 | 2, sampleRate: number, fadeIn?: number, fadeOut?: number): void {
@@ -89,8 +92,7 @@ function clipPitchOverrides(clip: SynthComposeClip): SynthPresetOverrides | unde
   const semitones = (clip.transpose ?? 0) + (clip.detune ?? 0) / 100;
   const ratio = clip.pitch ?? 1;
   const transpose = semitones !== 0 || ratio !== 1 ? semitones + 12 * Math.log2(ratio) : undefined;
-  if (transpose === undefined) return undefined;
-  return { transpose };
+  return transpose === undefined ? undefined : { transpose };
 }
 
 function renderClipSource(clip: SynthComposeClip, sampleRate: number, channels: 1 | 2, seed?: AudioSeed): Float32Array {
@@ -102,14 +104,13 @@ function renderClipSource(clip: SynthComposeClip, sampleRate: number, channels: 
     return resampleToMatch(decoded.samples, decoded.sampleRate, decoded.channels, sampleRate, channels, frames);
   }
 
+  const pitch = clipPitchOverrides(clip);
   let definition: SynthSoundOptions;
-  if (clip.sound !== undefined) definition = applyPresetOverrides(clip.sound, clipPitchOverrides(clip));
+  if (clip.sound !== undefined) definition = applyPresetOverrides(clip.sound, pitch);
   else if (clip.preset !== undefined) {
     definition = applyPresetOverrides(getPresetDefinition(clip.preset), {
       ...clip.overrides,
-      ...(clipPitchOverrides(clip)?.transpose !== undefined
-        ? { transpose: (clip.overrides?.transpose ?? 0) + clipPitchOverrides(clip)!.transpose! }
-        : {}),
+      ...(pitch?.transpose !== undefined ? { transpose: (clip.overrides?.transpose ?? 0) + pitch.transpose } : {}),
     });
   } else throw new ApexifyInputError("compose: each clip requires one source.");
 
@@ -129,7 +130,7 @@ function processClip(clip: SynthComposeClip, samples: Float32Array, sampleRate: 
     for (let i = 0; i < pcm.length; i += 1) pcm[i] = pcm[i]! * (1 - amount) + (random() * 2 - 1) * amount;
   }
 
-  const filter = clip.filter ?? (clip.quality ? qualityFilter(clip.quality) : undefined);
+  const filter = clip.filter ?? (clip.quality ? qualityFilter(clip.quality, sampleRate) : undefined);
   if (filter) filterInterleavedInPlace(pcm, channels, sampleRate, filter);
   if (clip.quality === "lofi" && (clip.noise ?? 0) < 0.02) {
     for (let i = 0; i < pcm.length; i += 1) pcm[i] += (random() * 2 - 1) * 0.03;
@@ -156,10 +157,11 @@ function ensureFinite(samples: Float32Array): void {
   }
 }
 
-/** Mix clips on a timeline into one PCM16 WAV. Clips are rendered/mixed one at a time so final output + one clip bounds transient memory. */
+/** Mix clips on a timeline into one PCM16 WAV. Final output plus one clip bounds transient render memory. */
 export function composeSynthAudio(options: SynthComposeOptions): Buffer {
   const validated = validateSynthComposeOptions(options);
   const { sampleRate, channels, duration } = validated;
+  assertAudioWavResourceLimits(duration, sampleRate, channels);
   const frameCount = Math.ceil(duration * sampleRate);
   const mixed = new Float32Array(frameCount * channels);
 
