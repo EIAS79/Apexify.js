@@ -30,7 +30,7 @@ function png(width, height, color) {
 
   const pixels = new api.PixelDataCreator();
   let image = png(128, 128, '#336699');
-  for (let i = 0; i < 10; i++) image = await pixels.manipulate(image, { filter: i % 2 ? 'grayscale' : 'invert', intensity: 0.5 });
+  for (let i = 0; i < 10; i++) image = await pixels.manipulatePixels(image, { filter: i % 2 ? 'grayscale' : 'invert', intensity: 0.5 });
 
   const charts = new api.ChartCreator();
   for (let i = 0; i < 6; i++) {
