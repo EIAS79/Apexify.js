@@ -66,8 +66,12 @@ jobs:
 
           const bar = 'lib-next/chart/impl/barchart.ts';
           text = fs.readFileSync(bar, 'utf8');
+          const importFrom = 'import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";';
+          const importTo = 'import { createCanvas, SKRSContext2D, type Canvas } from "@napi-rs/canvas";';
+          if (!text.includes(importFrom)) throw new Error('Expected barchart canvas import pattern missing');
+          text = text.replace(importFrom, importTo);
           const from = '): { buffer: Buffer; ctx: SKRSContext2D; canvas: any } {';
-          const to = '): { buffer: Buffer; ctx: SKRSContext2D; canvas: ReturnType<typeof createCanvas> } {';
+          const to = '): { buffer: Buffer; ctx: SKRSContext2D; canvas: Canvas } {';
           if (!text.includes(from)) throw new Error('Expected barchart canvas type pattern missing');
           fs.writeFileSync(bar, text.replace(from, to));
           NODE
