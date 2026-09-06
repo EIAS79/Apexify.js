@@ -85,7 +85,7 @@ jobs:
         run: node scripts/build-phase10-fixture.mjs
 
       - name: Phase 10 runtime regression suite
-        run: node tests/phase10-runtime.cjs
+        run: timeout --signal=TERM 60s node tests/phase10-runtime.cjs
 
       - name: Phase 10 collage semantics suite
         run: node tests/phase10-collage-semantics.cjs
