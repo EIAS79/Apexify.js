@@ -48,10 +48,6 @@ export function synthesizePreset(name: SynthPresetName, overrides?: SynthPresetO
 
 export function synthesizeSequence(options: SynthSequenceOptions): Buffer {
   const validated = validateSynthSequenceOptions(options);
-  assertWithinLimit(
-    "maxAudioBytes",
-    Math.max(validated.peakBytes, validated.peakBytes - estimatePcm16WavBytes(validated.duration, validated.sampleRate, validated.channels) + estimatePcm16WavBytes(validated.duration, validated.sampleRate, validated.channels))
-  );
   assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
   const pcm = renderSequence(options);
   return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
