@@ -1,7 +1,7 @@
 import type { SynthLayer, SynthPresetOverrides, SynthSoundOptions } from "../types";
 
 function cloneLayer(layer: SynthLayer): SynthLayer {
-  return {
+  const cloned: SynthLayer = {
     ...layer,
     adsr: layer.adsr ? { ...layer.adsr } : undefined,
     vibrato: layer.vibrato ? { ...layer.vibrato } : undefined,
@@ -9,6 +9,16 @@ function cloneLayer(layer: SynthLayer): SynthLayer {
     filter: layer.filter ? { ...layer.filter } : undefined,
     partials: layer.partials?.map(([ratio, gain]) => [ratio, gain]),
   };
+  const waveform = cloned.waveform ?? "sine";
+  if (waveform === "noise" || waveform === "pink") {
+    delete cloned.frequency;
+    delete cloned.frequencyEnd;
+    delete cloned.detune;
+    delete cloned.vibrato;
+    delete cloned.partials;
+    delete cloned.noiseMix;
+  }
+  return cloned;
 }
 
 function mergeLayer(base: SynthLayer | undefined, override: Partial<SynthLayer>): SynthLayer {
@@ -23,7 +33,7 @@ function mergeLayer(base: SynthLayer | undefined, override: Partial<SynthLayer>)
       ? base?.partials?.map(([ratio, gain]) => [ratio, gain] as [number, number])
       : override.partials.map(([ratio, gain]) => [ratio, gain] as [number, number]),
   } as SynthLayer;
-  return merged;
+  return cloneLayer(merged);
 }
 
 export function applyPresetOverrides(base: SynthSoundOptions, overrides?: SynthPresetOverrides): SynthSoundOptions {
@@ -35,13 +45,12 @@ export function applyPresetOverrides(base: SynthSoundOptions, overrides?: SynthP
     ? Array.from({ length: Math.max(clonedBaseLayers.length, layerOverrides.length) }, (_, index) => {
         const override = layerOverrides[index];
         const baseLayer = clonedBaseLayers[index];
-        return override === undefined ? cloneLayer(baseLayer!) : mergeLayer(baseLayer, override);
+        if (override === undefined) return baseLayer ? cloneLayer(baseLayer) : ({} as SynthLayer);
+        return mergeLayer(baseLayer, override);
       })
     : clonedBaseLayers;
 
-  if (volume !== undefined && volume !== 1) {
-    layers = layers.map((layer) => ({ ...layer, gain: (layer.gain ?? 0.5) * volume }));
-  }
+  if (volume !== undefined && volume !== 1) layers = layers.map((layer) => ({ ...layer, gain: (layer.gain ?? 0.5) * volume }));
   if (transpose !== undefined && transpose !== 0) {
     const ratio = Math.pow(2, transpose / 12);
     layers = layers.map((layer) => ({
