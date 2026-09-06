@@ -179,7 +179,7 @@ const envHits = [];
 const deepImportHits = [];
 for (const file of allFiles.filter((f) => TEXT_RE.test(f))) {
   const r = rel(file);
-  if (r === 'scripts/maintenance-audit.cjs' || r === 'scripts/phase11-audit.cjs') continue;
+  if (r === 'scripts/maintenance-audit.cjs') continue;
   const lines = read(file).split(/\r?\n/);
   lines.forEach((line, i) => {
     if (r.startsWith('lib-next/') && /\b(?:TODO|FIXME|HACK|XXX)\b|remove later|temporary workaround/i.test(line)) markerHits.push({ path: r, line: i + 1, text: line.trim().slice(0, 180) });
