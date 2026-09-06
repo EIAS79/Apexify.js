@@ -12,8 +12,7 @@ export function dataURL(buffer: Buffer | Uint8Array, mime = "image/png"): string
 }
 
 export function blob(buffer: Buffer | Uint8Array, mime = "image/png"): Blob {
-  const source = bytes(buffer);
-  return new Blob([new Uint8Array(source.buffer, source.byteOffset, source.byteLength)], { type: mime });
+  return new Blob([arrayBuffer(buffer)], { type: mime });
 }
 
 /** Raw base64 only; unlike dataURL(), this function never prepends a data: URL. */
