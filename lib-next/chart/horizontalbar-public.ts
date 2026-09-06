@@ -1,4 +1,5 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas } from "@napi-rs/canvas";
+import { loadImageCached } from "../image/image-properties";
 import {
   createHorizontalBarChart as createResponsiveHorizontalBarChart,
   type HorizontalBarChartData,
@@ -30,7 +31,7 @@ export async function createHorizontalBarChart(
   const requestedHeight = options.dimensions?.height;
   if (requestedHeight === undefined) return rendered;
 
-  const image = await loadImage(rendered);
+  const image = await loadImageCached(rendered);
   const requestedWidth = options.dimensions?.width ?? image.width;
   if (image.width === requestedWidth && image.height === requestedHeight) return rendered;
 
