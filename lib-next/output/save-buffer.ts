@@ -1,173 +1,127 @@
-import fs from "fs";
-import path from "path";
+import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import sharp from "sharp";
 import type { SaveOptions, SaveResult } from "../types";
-import { getErrorMessage } from "../core/errors";
-import { emitDiagnostic } from "../runtime/diagnostics";
+import { ApexifyError, ApexifyInputError, ApexifyDecodeError } from "../runtime/errors";
+import { assertFiniteNumber } from "../runtime/validation";
 
-/** Mutable counter for `naming: "counter"` (matches legacy `ApexPainter.saveCounter`). */
+/** Mutable counter for `naming: "counter"` (matches legacy ApexPainter.saveCounter). */
 export interface SaveCounterSession {
   saveCounter: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- optional sharp like legacy ApexPainter
-function requireSharp(): typeof import("sharp")["default"] {
-  return require("sharp") as typeof import("sharp")["default"];
+type NormalizedSaveOptions = Required<Omit<SaveOptions, "filename" | "counterStart">> & {
+  filename?: string;
+  counterStart?: number;
+};
+
+function normalizeSaveOptions(options?: SaveOptions): NormalizedSaveOptions {
+  const format = options?.format ?? "png";
+  if (!["png", "jpg", "jpeg", "webp", "avif", "gif"].includes(format)) {
+    throw new ApexifyInputError(`save.format is unsupported: ${String(format)}.`);
+  }
+  const quality = options?.quality ?? 90;
+  assertFiniteNumber(quality, "save.quality", { min: 1, max: 100, integer: true });
+  const naming = options?.naming ?? "timestamp";
+  if (!["timestamp", "counter", "custom"].includes(naming)) {
+    throw new ApexifyInputError(`save.naming is unsupported: ${String(naming)}.`);
+  }
+  if (options?.counterStart !== undefined) assertFiniteNumber(options.counterStart, "save.counterStart", { min: 0, integer: true });
+  return {
+    directory: options?.directory ?? "./ApexPainter_output",
+    filename: options?.filename,
+    format,
+    quality,
+    createDirectory: options?.createDirectory ?? true,
+    naming,
+    counterStart: options?.counterStart,
+    prefix: options?.prefix ?? "",
+    suffix: options?.suffix ?? "",
+    overwrite: options?.overwrite ?? false,
+  };
 }
 
-/**
- * Save a single image buffer to disk (timestamp / counter / custom naming, optional format conversion via sharp).
- */
-export async function saveImageBuffer(
-  buffer: Buffer,
-  options: SaveOptions | undefined,
-  session: SaveCounterSession
-): Promise<SaveResult> {
-  try {
-    if (!Buffer.isBuffer(buffer)) {
-      throw new Error("save: buffer must be a Buffer.");
+function timestampName(now: Date): string {
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}_${String(now.getMilliseconds()).padStart(3, "0")}`;
+}
+
+function initialFilename(opts: NormalizedSaveOptions, session: SaveCounterSession): string {
+  if (opts.filename) return path.extname(opts.filename) ? opts.filename : `${opts.filename}.${opts.format}`;
+  switch (opts.naming) {
+    case "counter": {
+      const value = session.saveCounter;
+      session.saveCounter += 1;
+      return `${opts.prefix}${value}${opts.suffix}.${opts.format}`;
     }
-
-    const opts: Required<Omit<SaveOptions, "filename" | "counterStart">> & {
-      filename?: string;
-      counterStart?: number;
-    } = {
-      directory: options?.directory ?? "./ApexPainter_output",
-      filename: options?.filename,
-      format: options?.format ?? "png",
-      quality: options?.quality ?? 90,
-      createDirectory: options?.createDirectory ?? true,
-      naming: options?.naming ?? "timestamp",
-      counterStart: options?.counterStart ?? 1,
-      prefix: options?.prefix ?? "",
-      suffix: options?.suffix ?? "",
-      overwrite: options?.overwrite ?? false,
-    };
-
-    if (opts.createDirectory && !fs.existsSync(opts.directory)) {
-      fs.mkdirSync(opts.directory, { recursive: true });
-    }
-
-    let filename: string;
-    if (opts.filename) {
-      filename = opts.filename;
-      if (!filename.includes(".")) {
-        filename += `.${opts.format}`;
-      }
-    } else {
-      switch (opts.naming) {
-        case "timestamp": {
-          const now = new Date();
-          const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-            now.getDate()
-          ).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(
-            2,
-            "0"
-          )}${String(now.getSeconds()).padStart(2, "0")}_${String(now.getMilliseconds()).padStart(3, "0")}`;
-          filename = `${opts.prefix}${timestamp}${opts.suffix}.${opts.format}`;
-          break;
-        }
-        case "counter":
-          filename = `${opts.prefix}${session.saveCounter}${opts.suffix}.${opts.format}`;
-          session.saveCounter++;
-          break;
-        case "custom":
-          filename = `${opts.prefix}${opts.suffix}.${opts.format}`;
-          break;
-        default:
-          filename = `${opts.prefix}${Date.now()}${opts.suffix}.${opts.format}`;
-      }
-    }
-
-    let filePath = path.join(opts.directory, filename);
-    if (!opts.overwrite && fs.existsSync(filePath)) {
-      let counter = 1;
-      let newPath = filePath;
-      const ext = path.extname(filePath);
-      const baseName = path.basename(filePath, ext);
-      const dir = path.dirname(filePath);
-
-      while (fs.existsSync(newPath)) {
-        newPath = path.join(dir, `${baseName}_${counter}${ext}`);
-        counter++;
-      }
-      filename = path.basename(newPath);
-      filePath = newPath;
-    }
-
-    let finalBuffer = buffer;
-    if (opts.format !== "png") {
-      const sharp = requireSharp();
-      let sharpImage = sharp(buffer);
-
-      switch (opts.format) {
-        case "jpg":
-        case "jpeg":
-          finalBuffer = await sharpImage.jpeg({ quality: opts.quality, progressive: false }).toBuffer();
-          break;
-        case "webp":
-          finalBuffer = await sharpImage.webp({ quality: opts.quality }).toBuffer();
-          break;
-        case "avif":
-          finalBuffer = await sharpImage.avif({ quality: opts.quality }).toBuffer();
-          break;
-        case "gif":
-          if (!buffer.toString("ascii", 0, 3).includes("GIF")) {
-            emitDiagnostic({
-              level: "warn",
-              code: "SAVE_GIF_PASSTHROUGH",
-              message: "Saving a non-GIF buffer with GIF format requested; source bytes are preserved.",
-            });
-            finalBuffer = buffer;
-          }
-          break;
-        default:
-          break;
-      }
-    }
-
-    const finalPath = path.join(opts.directory, filename);
-    fs.writeFileSync(finalPath, finalBuffer);
-
-    return {
-      path: finalPath,
-      filename,
-      size: finalBuffer.length,
-      format: opts.format,
-    };
-  } catch (error) {
-    throw new Error(`save failed: ${getErrorMessage(error)}`, { cause: error });
+    case "custom":
+      return `${opts.prefix}${opts.suffix}.${opts.format}`;
+    case "timestamp":
+    default:
+      return `${opts.prefix}${timestampName(new Date())}${opts.suffix}.${opts.format}`;
   }
 }
 
-/**
- * Save many buffers with the same options; counter naming advances `session.saveCounter` each file.
- */
-export async function saveImageBuffers(
-  buffers: Buffer[],
-  options: SaveOptions | undefined,
-  session: SaveCounterSession
-): Promise<SaveResult[]> {
+async function encodeForFormat(buffer: Buffer, opts: NormalizedSaveOptions): Promise<Buffer> {
+  switch (opts.format) {
+    case "png": return buffer;
+    case "jpg":
+    case "jpeg": return sharp(buffer).jpeg({ quality: opts.quality, progressive: false }).toBuffer();
+    case "webp": return sharp(buffer).webp({ quality: opts.quality }).toBuffer();
+    case "avif": return sharp(buffer).avif({ quality: opts.quality }).toBuffer();
+    case "gif": {
+      if (buffer.subarray(0, 3).toString("ascii") !== "GIF") {
+        throw new ApexifyInputError("save.format=gif requires GIF input bytes; PNG/JPEG-to-GIF conversion is not supported by save().");
+      }
+      return buffer;
+    }
+  }
+}
+
+async function writeRaceSafe(directory: string, filename: string, bytes: Buffer, overwrite: boolean): Promise<{ filename: string; path: string }> {
+  const ext = path.extname(filename);
+  const stem = path.basename(filename, ext);
+  for (let suffix = 0; ; suffix++) {
+    const candidate = suffix === 0 ? filename : `${stem}_${suffix}${ext}`;
+    const target = path.join(directory, candidate);
+    try {
+      await writeFile(target, bytes, { flag: overwrite ? "w" : "wx" });
+      return { filename: candidate, path: target };
+    } catch (cause) {
+      const code = (cause as NodeJS.ErrnoException).code;
+      if (!overwrite && code === "EEXIST") continue;
+      throw cause;
+    }
+  }
+}
+
+/** Save a single image buffer using asynchronous, non-blocking filesystem I/O. */
+export async function saveImageBuffer(buffer: Buffer, options: SaveOptions | undefined, session: SaveCounterSession): Promise<SaveResult> {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new ApexifyInputError("save.buffer must be a non-empty Buffer.");
+  const opts = normalizeSaveOptions(options);
   try {
-    if (!Array.isArray(buffers) || buffers.length === 0) {
-      throw new Error("saveMultiple: buffers must be a non-empty array.");
-    }
+    if (opts.createDirectory) await mkdir(opts.directory, { recursive: true });
+    const finalBuffer = await encodeForFormat(buffer, opts);
+    const requested = initialFilename(opts, session);
+    const written = await writeRaceSafe(opts.directory, requested, finalBuffer, opts.overwrite);
+    return { path: written.path, filename: written.filename, size: finalBuffer.length, format: opts.format };
+  } catch (cause) {
+    if (cause instanceof ApexifyError) throw cause;
+    throw new ApexifyDecodeError("save failed.", { cause, details: { directory: opts.directory, format: opts.format } });
+  }
+}
 
+/** Save many buffers sequentially so counter naming and overwrite behavior remain deterministic. */
+export async function saveImageBuffers(buffers: Buffer[], options: SaveOptions | undefined, session: SaveCounterSession): Promise<SaveResult[]> {
+  if (!Array.isArray(buffers) || buffers.length === 0) throw new ApexifyInputError("saveMultiple.buffers must be a non-empty array.");
+  const originalCounter = session.saveCounter;
+  if (options?.counterStart !== undefined) session.saveCounter = options.counterStart;
+  try {
     const results: SaveResult[] = [];
-    const baseCounter = options?.counterStart ?? session.saveCounter;
-
-    for (let i = 0; i < buffers.length; i++) {
-      const bufferOptions: SaveOptions = {
-        ...options,
-        counterStart: baseCounter + i,
-        naming: options?.naming === "counter" ? "counter" : options?.naming,
-      };
-
-      const result = await saveImageBuffer(buffers[i], bufferOptions, session);
-      results.push(result);
-    }
-
+    for (const buffer of buffers) results.push(await saveImageBuffer(buffer, options, session));
     return results;
-  } catch (error) {
-    throw new Error(`saveMultiple failed: ${getErrorMessage(error)}`, { cause: error });
+  } catch (cause) {
+    if (options?.counterStart !== undefined && session.saveCounter === options.counterStart) session.saveCounter = originalCounter;
+    if (cause instanceof ApexifyError) throw cause;
+    throw new ApexifyDecodeError("saveMultiple failed.", { cause });
   }
 }
