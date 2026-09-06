@@ -49,11 +49,14 @@ test('process runner has bounded output, timeout, abort and structured failures'
   );
 });
 
-test('temp workspaces are unique and cleanup is idempotent after success and throw', async () => {
+test('temp workspaces are unique, path-confined and cleaned after success and throw', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'apexify-phase12-workspaces-'));
   try {
     const workspaces = await Promise.all(Array.from({ length: 16 }, () => api.createTempWorkspace({ rootDirectory: root, prefix: 'job-' })));
     assert.equal(new Set(workspaces.map((workspace) => workspace.directory)).size, workspaces.length);
+    assert.throws(() => workspaces[0].path('../escape'), /may not escape/i);
+    assert.throws(() => workspaces[0].path(path.resolve(root, 'absolute')), /relative path/i);
+    assert.throws(() => workspaces[0].path('nul\0name'), /NUL/i);
     await Promise.all(workspaces.map((workspace, index) => workspace.writeFile(`x-${index}`, Buffer.from('x'))));
     await Promise.all(workspaces.map(async (workspace) => { await workspace.cleanup(); await workspace.cleanup(); }));
     assert.deepEqual(await fsp.readdir(root), []);
@@ -68,12 +71,13 @@ test('temp workspaces are unique and cleanup is idempotent after success and thr
   }
 });
 
-test('retained temp workspace is explicit and still manually cleanable', async () => {
+test('retained temp workspace is explicit and requires explicit caller removal', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'apexify-phase12-retain-'));
   try {
-    const workspace = await api.createTempWorkspace({ rootDirectory: root, prefix: 'retain-', retainFiles: true });
+    const workspace = await api.createTempWorkspace({ rootDirectory: root, prefix: 'retain-', retain: true });
     await workspace.writeFile('proof', Buffer.from('x'));
     await workspace.cleanup();
+    assert.equal(workspace.retain, true);
     assert.equal(fs.existsSync(workspace.directory), true);
     await fsp.rm(workspace.directory, { recursive: true, force: true });
   } finally {
