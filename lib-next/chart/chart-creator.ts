@@ -3,7 +3,7 @@ import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
 import { createPieChart } from "./impl/piechart";
 import { createBarChart } from "./impl/barchart";
 import { createHorizontalBarChart } from "./horizontalbar-public";
-import { createLineChart } from "./impl/linechart";
+import { createLineChart } from "./linechart-public";
 import { createScatterChart } from "./impl/scatterchart";
 import { createRadarChart } from "./impl/radarchart";
 import { createPolarAreaChart } from "./impl/polarareachart";
