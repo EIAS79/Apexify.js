@@ -22,7 +22,7 @@ export async function registerTextFontFromPath(fontPath: string, fontName: strin
     try {
       await access(fullPath);
       const registered = GlobalFonts.registerFromPath(fullPath, fontName);
-      if (registered === false) throw new ApexifyInputError(`text.font.path could not be registered: ${fontPath}`);
+      if (registered === null) throw new ApexifyInputError(`text.font.path could not be registered: ${fontPath}`);
       registeredFonts.add(key);
     } catch (cause) {
       if (cause instanceof ApexifyInputError) throw cause;
