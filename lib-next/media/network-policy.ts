@@ -81,9 +81,6 @@ const BLOCKED_IPV6: Array<{ base: bigint; prefix: number; label: string }> = [
   { base: normalizeIpv6("64:ff9b::"), prefix: 96, label: "well-known-nat64" },
   { base: normalizeIpv6("64:ff9b:1::"), prefix: 48, label: "local-use-translation" },
   { base: normalizeIpv6("100::"), prefix: 64, label: "discard-only" },
-  // IETF protocol-assignment space includes Teredo, benchmarking and ORCHID
-  // ranges. Treat it as non-public by default rather than maintaining a brittle
-  // allow-by-exception list of protocol-specific subranges.
   { base: normalizeIpv6("2001::"), prefix: 23, label: "protocol-assignment" },
   { base: normalizeIpv6("2001:db8::"), prefix: 32, label: "documentation" },
   { base: normalizeIpv6("2002::"), prefix: 16, label: "6to4" },
@@ -133,16 +130,12 @@ export function redactUrl(value: string | URL): string {
   }
 }
 
-/**
- * Redact every HTTP(S) URL embedded in arbitrary diagnostic/process text while
- * preserving the surrounding text. This is the authoritative text-level URL
- * sanitizer for library diagnostics and process output.
- */
 export function redactUrlsInText(value: string): string {
   return value.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => redactUrl(raw));
 }
 
-function hostMatchesAllowlist(hostname: string, allowedHosts: readonly string[]): boolean {
+/** Internal policy primitive exported for deterministic cross-platform verification. */
+export function hostMatchesAllowlist(hostname: string, allowedHosts: readonly string[]): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, "");
   return allowedHosts.some((entry) => {
     const allowed = entry.toLowerCase().replace(/\.$/, "");
