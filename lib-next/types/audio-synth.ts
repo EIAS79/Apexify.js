@@ -1,12 +1,10 @@
-/**
- * Procedural audio synthesis — oscillators, noise, envelopes, presets, sequencing.
- */
+/** Procedural audio synthesis — oscillators, noise, envelopes, presets, sequencing, composition, and PCM16 WAV I/O. */
 
+export type AudioSeed = number | string;
 export type Waveform = "sine" | "square" | "sawtooth" | "triangle" | "noise" | "pink";
-
 export type FilterType = "lowpass" | "highpass";
 
-/** ADSR envelope (seconds + sustain level 0–1). */
+/** ADSR envelope (seconds + sustain level 0–1). Stages are proportionally fitted when A+D+R exceeds the layer duration. */
 export interface AdsrEnvelope {
   attack?: number;
   decay?: number;
@@ -15,38 +13,39 @@ export interface AdsrEnvelope {
 }
 
 export interface VibratoOptions {
-  /** Depth in Hz. */
+  /** Frequency deviation in Hz. */
   depth: number;
   /** LFO rate in Hz. */
   rate: number;
 }
 
 export interface TremoloOptions {
-  /** Depth 0–1 (amplitude modulation). */
+  /** Depth 0–1. Output amplitude stays non-negative. */
   depth: number;
+  /** LFO rate in Hz. */
   rate: number;
 }
 
 export interface FilterOptions {
   type: FilterType;
-  /** Cutoff Hz. */
+  /** Cutoff in Hz; must be below Nyquist. */
   cutoff: number;
-  /** Resonance/Q-ish emphasis 0.5–8. */
+  /** Biquad Q/resonance. Default sqrt(1/2); supported range 0.1–20. */
   q?: number;
 }
 
 /** One tone/noise layer in a custom sound. */
 export interface SynthLayer {
   waveform?: Waveform;
-  /** Start frequency (Hz). */
+  /** Start frequency in Hz for tonal waveforms. */
   frequency?: number;
-  /** Linear sweep to this Hz by end of layer (optional). */
+  /** Linear per-sample sweep to this frequency by the final frame. */
   frequencyEnd?: number;
   /** Layer length in seconds. */
   duration: number;
   /** Delay before this layer starts (seconds, relative to sound start). */
   delay?: number;
-  /** Layer gain 0–1. */
+  /** Layer gain, validated in the range 0–4. */
   gain?: number;
   /** Detune in cents. */
   detune?: number;
@@ -54,11 +53,11 @@ export interface SynthLayer {
   vibrato?: VibratoOptions;
   tremolo?: TremoloOptions;
   filter?: FilterOptions;
-  /** Blend white noise into tonal waveforms 0–1. */
+  /** Blend white noise into tonal waveforms, 0–1. */
   noiseMix?: number;
-  /** Optional harmonic partials as `[frequencyRatio, gain][]` (e.g. `[2, 0.35]` = 2nd harmonic). */
+  /** Harmonic partials as `[frequencyRatio, gain][]`. Tonal waveforms only; aggregate partial amplitude is normalized. */
   partials?: Array<[number, number]>;
-  /** Pan -1 (left) to 1 (right); only used when `channels` is 2. */
+  /** Equal-power pan: -1 left, 0 center, +1 right. Used only for stereo output. */
   pan?: number;
 }
 
@@ -67,21 +66,24 @@ export interface SynthSoundOptions {
   layers: SynthLayer[];
   sampleRate?: number;
   channels?: 1 | 2;
-  /** Master gain 0–1 (can exceed 1 slightly before limiter). */
+  /** Master gain, validated in the range 0–4. */
   masterGain?: number;
-  /** Total duration; auto-computed from layers when omitted. */
+  /** Total duration; auto-computed from layers when omitted. Must be > 0. */
   duration?: number;
-  /** Soft-clip / limit peaks (default true). */
+  /** Peak-normalize overs to 0.98 (default true). `false` disables normalization; PCM encoding still clamps full scale. */
   limiter?: boolean;
+  /** Optional operation-local deterministic seed for noise. Numbers must be safe integers; strings are hashed deterministically. */
+  seed?: AudioSeed;
 }
 
-/** Overrides when calling {@link SynthPresetName} presets (`volume`, `transpose`, etc.). */
-export interface SynthPresetOverrides extends Partial<SynthSoundOptions> {
-  /** Multiply all layer gains. */
+/** Preset overrides. Layer entries merge by index, including nested ADSR/filter/modulation objects. */
+export type SynthPresetOverrides = Omit<Partial<SynthSoundOptions>, "layers"> & {
+  layers?: Array<Partial<SynthLayer>>;
+  /** Multiply all resulting layer gains. */
   volume?: number;
   /** Shift tonal layers by semitones. */
   transpose?: number;
-}
+};
 
 export type SynthPresetName =
   | "laser"
@@ -126,7 +128,7 @@ export type SynthPresetName =
 
 /** One event on a timeline when using {@link SynthSequenceOptions}. */
 export interface SynthSequenceEvent {
-  /** Start time on the master timeline (seconds). */
+  /** Start time on the master timeline in seconds. */
   at: number;
   preset?: SynthPresetName;
   options?: SynthSoundOptions;
@@ -139,8 +141,10 @@ export interface SynthSequenceOptions {
   sampleRate?: number;
   channels?: 1 | 2;
   masterGain?: number;
-  /** Padding after last event (seconds). */
+  /** Padding after the last event in seconds. */
   tail?: number;
+  /** Optional seed; each event receives an independently derived deterministic stream. */
+  seed?: AudioSeed;
 }
 
 export interface SynthPresetInfo {
@@ -152,75 +156,70 @@ export interface SynthPresetInfo {
 /** Tone shaping applied to a composed clip after synthesis. */
 export type SynthClipQuality = "bright" | "warm" | "muffled" | "lofi" | "crisp";
 
-/**
- * One sound placed on a timeline inside a single output WAV ({@link SynthComposeOptions}).
- * Multiple clips may overlap (same or different time ranges) with independent pitch, volume, and tone.
- */
+/** One source placed on a timeline. Multiple clips may overlap. */
 export interface SynthComposeClip {
-  /** Start time on the master timeline (seconds). Default `0`. */
+  /** Start time on the master timeline in seconds. Default 0. */
   at?: number;
-  /** Max length on the timeline (seconds); trims the tail. */
+  /** Maximum source length in seconds; trims the source tail. */
   duration?: number;
-  /** Skip into the clip before playback (seconds). */
+  /** Skip into the source before playback in seconds. */
   sourceStart?: number;
 
   preset?: SynthPresetName;
-  /** Custom multi-layer definition (alias: treated as full sound). */
   sound?: SynthSoundOptions;
-  /** Existing WAV buffer from {@link synth} / {@link preset} / files. */
+  /** Existing PCM16 mono/stereo WAV. */
   wav?: Buffer;
   /** Alias of {@link wav}. */
   buffer?: Buffer;
 
-  /** Linear gain (default `1`). */
+  /** Linear gain. Default 1. */
   gain?: number;
   /** Alias of {@link gain}. */
   volume?: number;
-  /** Pitch shift in semitones (tonal layers). */
+  /** Procedural sources only: pitch shift in semitones without changing duration. */
   transpose?: number;
-  /** Detune in cents (added to semitone shift). */
+  /** Procedural sources only: detune in cents. */
   detune?: number;
-  /** Extra pitch multiplier (e.g. `1.5` = perfect fifth up). */
+  /** Procedural sources only: frequency multiplier. */
   pitch?: number;
-  /** Playback speed (`1` = normal; `2` = twice as fast, higher pitch). */
+  /** Playback-rate resampling. `2` halves duration and raises pitch by one octave; this is not pitch-preserving time stretch. */
   speed?: number;
 
+  /** Equal-power/balance pan from -1 to +1 for stereo output. */
   pan?: number;
   fadeIn?: number;
   fadeOut?: number;
 
   overrides?: SynthPresetOverrides;
-  /** Blend white noise over the rendered clip (0–1). */
+  /** Blend white noise over the rendered clip, 0–1. */
   noise?: number;
-  /** Post-filter on the whole clip. */
+  /** Explicit post-filter. When present, it takes precedence over `quality`. */
   filter?: FilterOptions;
-  /** Shorthand tone; merged with {@link filter} when both set. */
+  /** Shorthand post-filter profile. */
   quality?: SynthClipQuality;
+  /** Optional clip-local deterministic noise seed. Overrides a derived compose seed. */
+  seed?: AudioSeed;
 }
 
 export interface SynthComposeOptions {
   clips: SynthComposeClip[];
-  /** Total output length (seconds); auto from clip ends when omitted. */
+  /** Minimum total output length; actual output still includes later clip ends. */
   duration?: number;
   sampleRate?: number;
   channels?: 1 | 2;
   masterGain?: number;
-  /** Padding after the last clip ends (seconds). */
+  /** Padding after the last clip ends. */
   tail?: number;
   limiter?: boolean;
-  /**
-   * High-pass the final mix (Hz). Removes DC/rumble from stacked square waves and explosions.
-   * Recommended ~180–280 for dense game SFX beds.
-   */
+  /** High-pass the final mix in Hz. */
   postHighpassHz?: number;
-  /**
-   * Silence samples whose abs level is below this (0–1) after the mix. Reduces “speaker hiss”
-   * from hundreds of quiet overlaps in quiet sections.
-   */
+  /** Soft-gate threshold, 0–1. */
   noiseGateThreshold?: number;
+  /** Optional seed; clips receive independently derived deterministic streams unless they provide `seed`. */
+  seed?: AudioSeed;
 }
 
-/** Argument to {@link PainterCreateAudio.mix} and `mixSynthSounds`. */
+/** Argument to {@link PainterCreateAudio.mix} and internal `mixSynthSounds`. */
 export type SynthMixInput =
   | Buffer
   | SynthSoundOptions
@@ -231,4 +230,6 @@ export interface SynthMixOptions {
   sampleRate?: number;
   channels?: 1 | 2;
   masterGain?: number;
+  /** Optional seed used to derive independent noise streams for mixed procedural inputs. */
+  seed?: AudioSeed;
 }
