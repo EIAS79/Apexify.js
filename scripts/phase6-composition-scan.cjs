@@ -98,8 +98,17 @@ const cache = fs.readFileSync(path.join(ROOT, 'lib-next/image/image-properties.t
 if (!/buffer:\$\{raw\.length\}/.test(cache)) failures.push('image-properties.ts: Buffer image cache key/deduplication missing');
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-if (!packageJson.scripts?.['test:phase6'] || !String(packageJson.scripts.test).includes('test:phase6')) {
-  failures.push('package.json: Phase 6 suite is not part of required npm test gate');
+function scriptReaches(start, target, seen = new Set()) {
+  if (start === target) return true;
+  if (seen.has(start)) return false;
+  seen.add(start);
+  const command = String(packageJson.scripts?.[start] ?? '');
+  if (!command) return false;
+  const calls = [...command.matchAll(/npm\s+run\s+([A-Za-z0-9:_-]+)/g)].map((match) => match[1]);
+  return calls.some((name) => name === target || scriptReaches(name, target, seen));
+}
+if (!packageJson.scripts?.['test:phase6'] || !scriptReaches('test', 'test:phase6')) {
+  failures.push('package.json: Phase 6 suite is not reachable from required npm test gate');
 }
 
 if (failures.length) {
