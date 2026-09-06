@@ -61,6 +61,14 @@ export interface SynthLayer {
   pan?: number;
 }
 
+/** Deep layer override used by preset customization. Nested DSP objects merge with the preset layer by index. */
+export type SynthLayerOverride = Omit<Partial<SynthLayer>, "adsr" | "vibrato" | "tremolo" | "filter"> & {
+  adsr?: Partial<AdsrEnvelope>;
+  vibrato?: Partial<VibratoOptions>;
+  tremolo?: Partial<TremoloOptions>;
+  filter?: Partial<FilterOptions>;
+};
+
 /** Full custom sound definition. */
 export interface SynthSoundOptions {
   layers: SynthLayer[];
@@ -78,7 +86,7 @@ export interface SynthSoundOptions {
 
 /** Preset overrides. Layer entries merge by index, including nested ADSR/filter/modulation objects. */
 export type SynthPresetOverrides = Omit<Partial<SynthSoundOptions>, "layers"> & {
-  layers?: Array<Partial<SynthLayer>>;
+  layers?: SynthLayerOverride[];
   /** Multiply all resulting layer gains. */
   volume?: number;
   /** Shift tonal layers by semitones. */
