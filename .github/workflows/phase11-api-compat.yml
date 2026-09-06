@@ -1,0 +1,94 @@
+name: Phase 11 API Compatibility Cleanup
+
+on:
+  push:
+    branches:
+      - phase11/dependency-source-api-cleanup
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: phase11/dependency-source-api-cleanup
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.1
+      - run: npm ci --ignore-scripts
+      - name: Add preferred output API and retain compatibility alias
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          function replaceRequired(file, from, to) {
+            let text = fs.readFileSync(file, 'utf8');
+            if (!text.includes(from)) throw new Error(`Expected pattern missing in ${file}: ${from.slice(0, 100)}`);
+            text = text.replace(from, to);
+            fs.writeFileSync(file, text);
+          }
+
+          replaceRequired(
+            'lib-next/apex-painter/creates/output-save.ts',
+            '/** `outPut`, `save`, `saveMultiple` — tied to painter output format + save counter session. */',
+            '/** Output conversion and persistence tied to painter output format + save counter session. */'
+          );
+          replaceRequired(
+            'lib-next/apex-painter/creates/output-save.ts',
+            '  outPut(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {\n    validateOutputBuffer(results, "outPut.results");\n    const formatType = this.getFormatType();\n    return Promise.resolve(bufferToPainterOutput(results, formatType));\n  }',
+            '  toOutput(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {\n    validateOutputBuffer(results, "toOutput.results");\n    const formatType = this.getFormatType();\n    return Promise.resolve(bufferToPainterOutput(results, formatType));\n  }\n\n  /** @deprecated Use {@link toOutput} instead. Retained for Apexify.js 5.x/6.x compatibility. */\n  outPut(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {\n    return this.toOutput(results);\n  }'
+          );
+          replaceRequired(
+            'lib-next/apex-painter/main.ts',
+            '  outPut(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {\n    return this.outputSaveCreate.outPut(results);\n  }',
+            '  /** Convert a rendered buffer to this painter instance\'s configured output representation. */\n  toOutput(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {\n    return this.outputSaveCreate.toOutput(results);\n  }\n\n  /** @deprecated Use {@link toOutput} instead. Retained for Apexify.js 5.x/6.x compatibility. */\n  outPut(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {\n    return this.toOutput(results);\n  }'
+          );
+
+          const pkgFile = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
+          pkg.scripts['test:compat'] = 'node tests/public-api-compat.cjs';
+          pkg.scripts.test = pkg.scripts.test.replace('npm run test:phase10', 'npm run test:phase10 && npm run test:compat');
+          fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + '\n');
+
+          replaceRequired(
+            'README.md',
+            '| `outPut()` | Convert buffer to configured output form |',
+            '| `toOutput()` | Convert buffer to the configured output form |\n| `outPut()` | Deprecated compatibility alias for `toOutput()` |'
+          );
+
+          const changelog = 'CHANGELOG.md';
+          let changeText = fs.readFileSync(changelog, 'utf8');
+          const heading = '## [6.0.0] — 2026-09-07\n';
+          if (!changeText.includes(heading)) throw new Error('6.0.0 changelog heading missing');
+          const cleanup = '\n### Phase 11 — package and API cleanup\n\n- Added `ApexPainter.toOutput()` as the consistently named output-conversion method while retaining `outPut()` as a documented deprecated compatibility alias.\n- Removed unused direct runtime dependencies `fs-extra` and `jszip`; the lockfile now reflects the smaller direct dependency graph.\n- Removed dead internal barrels, wrappers, placeholders, and the obsolete source update-checker path after repository-wide reachability audits.\n- Removed the packed-package `prepare` install hook and tightened tarball/consumer verification so maintenance scripts cannot leak into published contents.\n- Added a permanent dependency/source-tree maintenance audit for orphan source files, runtime cycles, stale deep imports, unfinished source markers, library console output, and direct dependency classification.\n\n';
+          changeText = changeText.replace(heading, heading + cleanup);
+          fs.writeFileSync(changelog, changeText);
+
+          const verifier = 'scripts/verify-packed-package.cjs';
+          let verifyText = fs.readFileSync(verifier, 'utf8');
+          const typeLine = "const installed: Promise<ApexPainter> = painter.use(plugin);\\nvoid painter; void canvas; void configured; void runtime; void limits; void remoteError; void assetError; void pluginError; void scene; void layer; void installed;\\n`";
+          const replacement = "const installed: Promise<ApexPainter> = painter.use(plugin);\\nconst converted: Promise<Buffer | string | Blob | ArrayBuffer> = painter.toOutput(Buffer.from([1]));\\nconst legacyConverted: Promise<Buffer | string | Blob | ArrayBuffer> = painter.outPut(Buffer.from([1]));\\nvoid painter; void canvas; void configured; void runtime; void limits; void remoteError; void assetError; void pluginError; void scene; void layer; void installed; void converted; void legacyConverted;\\n`";
+          if (!verifyText.includes(typeLine)) throw new Error('packed TypeScript fixture anchor missing');
+          verifyText = verifyText.replace(typeLine, replacement);
+          fs.writeFileSync(verifier, verifyText);
+          NODE
+      - name: Verify compatibility cleanup
+        run: |
+          npm run build
+          npm run test:compat
+          npm run audit:maintenance
+          node scripts/verify-packed-package.cjs
+      - name: Commit validated API cleanup and remove one-off workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json README.md CHANGELOG.md lib-next tests/public-api-compat.cjs scripts/verify-packed-package.cjs
+          git rm .github/workflows/phase11-api-compat.yml
+          git commit -m "refactor(phase11): add consistent output API compatibility path"
+          git push origin HEAD:phase11/dependency-source-api-cleanup
