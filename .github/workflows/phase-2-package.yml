@@ -43,17 +43,12 @@ jobs:
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
-      # Do not invoke the package's source-install `prepare` build during dependency installation.
-      # CI has an explicit build gate immediately below; separating the two makes compiler failures
-      # visible as build failures rather than misreporting them as npm-ci failures.
       - name: Install locked dependency graph
         run: npm ci --ignore-scripts
 
       - name: Build and verify emitted module formats
         run: npm run build
 
-      # Keep every historical regression gate mandatory, but expose each phase independently so
-      # a stalled or failing phase cannot hide behind one aggregate npm-test step.
       - name: Phase 1 security regression suite
         run: npm run test:security
 
@@ -83,6 +78,9 @@ jobs:
 
       - name: Phase 10 fixture build
         run: node scripts/build-phase10-fixture.mjs
+
+      - name: Phase 10 runtime boundary probe
+        run: timeout --signal=TERM 45s node tests/phase10-runtime-probe.cjs
 
       - name: Phase 10 runtime regression suite
         run: timeout --signal=TERM 60s node tests/phase10-runtime.cjs
