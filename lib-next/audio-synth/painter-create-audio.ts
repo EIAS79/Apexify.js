@@ -48,9 +48,7 @@ export function createPainterCreateAudioFacet(): PainterCreateAudio {
       return mixSynthSounds(inputs, options);
     },
     async save(wav, filePath) {
-      if (!Buffer.isBuffer(wav) || wav.length === 0) {
-        throw new ApexifyInputError("audio.save wav must be a non-empty Buffer.");
-      }
+      if (!Buffer.isBuffer(wav) || wav.length === 0) throw new ApexifyInputError("audio.save wav must be a non-empty Buffer.");
       assertNonEmptyString(filePath, "audio.save.filePath", 32_768);
       await mkdir(dirname(filePath), { recursive: true });
       await writeFile(filePath, wav);

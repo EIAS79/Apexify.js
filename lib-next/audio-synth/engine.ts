@@ -1,84 +1,81 @@
-import type {
-  AdsrEnvelope,
-  FilterOptions,
-  SynthLayer,
-  SynthSoundOptions,
-  SynthSequenceOptions,
-  Waveform,
-} from "../types";
+import type { AdsrEnvelope, SynthLayer, SynthSoundOptions, SynthSequenceOptions, Waveform } from "../types";
+import { ApexifyAudioError, ApexifyInputError } from "../runtime/errors";
+import { assertWithinLimit, estimateAudioBytes } from "../runtime/limits";
+import { createBiquadProcessor } from "./biquad-filter";
+import { PEAK_LIMIT } from "./constants";
+import { createAudioRandom, deriveAudioSeed } from "./audio-random";
+import { validateSynthSequenceOptions, validateSynthSoundOptions } from "./audio-validation";
 import { getPresetDefinition } from "./presets";
 
-const DEFAULT_SAMPLE_RATE = 44100;
-const DEFAULT_ADSR: Required<AdsrEnvelope> = {
-  attack: 0.002,
-  decay: 0.05,
-  sustain: 0.7,
-  release: 0.08,
-};
+const TAU = Math.PI * 2;
+const DEFAULT_ADSR: Required<AdsrEnvelope> = { attack: 0.002, decay: 0.05, sustain: 0.7, release: 0.08 };
+
+interface PinkNoiseState {
+  b0: number;
+  b1: number;
+  b2: number;
+  b3: number;
+  b4: number;
+  b5: number;
+  b6: number;
+}
 
 function centsToRatio(cents: number): number {
   return Math.pow(2, cents / 1200);
 }
 
-function oscSample(wave: Waveform, phase: number, pinkState: { b0: number; b1: number; b2: number }): number {
-  const t = phase % (Math.PI * 2);
+function wrapPhase(phase: number): number {
+  if (phase >= TAU || phase < 0) phase %= TAU;
+  return phase < 0 ? phase + TAU : phase;
+}
+
+function oscSample(wave: Waveform, phase: number, pink: PinkNoiseState, random: () => number): number {
+  const p = wrapPhase(phase) / TAU;
   switch (wave) {
-    case "sine":
-      return Math.sin(t);
-    case "square":
-      return Math.sin(t) >= 0 ? 1 : -1;
-    case "sawtooth":
-      return 1 - ((t / (Math.PI * 2)) % 1) * 2;
-    case "triangle": {
-      const p = (t / (Math.PI * 2)) % 1;
-      return p < 0.5 ? 4 * p - 1 : 3 - 4 * p;
-    }
-    case "noise":
-      return Math.random() * 2 - 1;
+    case "sine": return Math.sin(phase);
+    case "square": return Math.sin(phase) >= 0 ? 1 : -1;
+    case "sawtooth": return 2 * p - 1;
+    case "triangle": return 1 - 4 * Math.abs(p - 0.5);
+    case "noise": return random() * 2 - 1;
     case "pink": {
-      const white = Math.random() * 2 - 1;
-      pinkState.b0 = 0.99886 * pinkState.b0 + white * 0.0555179;
-      pinkState.b1 = 0.99332 * pinkState.b1 + white * 0.0750759;
-      pinkState.b2 = 0.969 * pinkState.b2 + white * 0.153852;
-      return (pinkState.b0 + pinkState.b1 + pinkState.b2) / 3;
+      const white = random() * 2 - 1;
+      pink.b0 = 0.99886 * pink.b0 + white * 0.0555179;
+      pink.b1 = 0.99332 * pink.b1 + white * 0.0750759;
+      pink.b2 = 0.969 * pink.b2 + white * 0.153852;
+      pink.b3 = 0.8665 * pink.b3 + white * 0.3104856;
+      pink.b4 = 0.55 * pink.b4 + white * 0.5329522;
+      pink.b5 = -0.7616 * pink.b5 - white * 0.016898;
+      const value = pink.b0 + pink.b1 + pink.b2 + pink.b3 + pink.b4 + pink.b5 + pink.b6 + white * 0.5362;
+      pink.b6 = white * 0.115926;
+      return Math.max(-1, Math.min(1, value * 0.11));
     }
-    default:
-      return Math.sin(t);
   }
 }
 
-function adsrGain(t: number, duration: number, env: Required<AdsrEnvelope>): number {
-  const { attack, decay, sustain, release } = env;
-  const sustainStart = attack + decay;
-  const releaseStart = Math.max(sustainStart, duration - release);
-
-  if (t < attack) return t / Math.max(attack, 1e-6);
-  if (t < sustainStart) {
-    const d = decay > 0 ? (t - attack) / decay : 1;
-    return 1 - (1 - sustain) * Math.min(1, d);
-  }
-  if (t < releaseStart) return sustain;
-  const r = release > 0 ? (t - releaseStart) / release : 1;
-  return sustain * (1 - Math.min(1, r));
+function fittedAdsr(duration: number, env: Required<AdsrEnvelope>): Required<AdsrEnvelope> {
+  const stageTotal = env.attack + env.decay + env.release;
+  if (stageTotal <= duration || stageTotal === 0) return env;
+  const scale = duration / stageTotal;
+  return { ...env, attack: env.attack * scale, decay: env.decay * scale, release: env.release * scale };
 }
 
-function applyFilter(
-  sample: number,
-  filter: FilterOptions | undefined,
-  state: { lp: number; hp: number },
-  sampleRate: number
-): number {
-  if (!filter) return sample;
-  const q = filter.q ?? 1;
-  const fc = Math.max(20, Math.min(sampleRate * 0.45, filter.cutoff));
-  const alpha = Math.exp((-2 * Math.PI * fc) / sampleRate) * (0.5 + q * 0.05);
+export function adsrGainAt(t: number, duration: number, envelope: AdsrEnvelope = {}): number {
+  const env = fittedAdsr(duration, { ...DEFAULT_ADSR, ...envelope });
+  const clampedT = Math.max(0, Math.min(duration, t));
+  const sustainStart = env.attack + env.decay;
+  const releaseStart = Math.max(sustainStart, duration - env.release);
 
-  if (filter.type === "lowpass") {
-    state.lp = alpha * state.lp + (1 - alpha) * sample;
-    return state.lp;
+  if (env.attack > 0 && clampedT < env.attack) return clampedT / env.attack;
+  if (clampedT < sustainStart) {
+    if (env.decay === 0) return env.sustain;
+    const progress = Math.max(0, Math.min(1, (clampedT - env.attack) / env.decay));
+    return 1 - (1 - env.sustain) * progress;
   }
-  state.hp = alpha * state.hp + (1 - alpha) * (sample - state.hp);
-  return sample - state.hp;
+  if (clampedT < releaseStart) return env.sustain;
+  if (clampedT >= duration) return 0;
+  if (env.release === 0) return env.sustain;
+  const progress = Math.max(0, Math.min(1, (clampedT - releaseStart) / env.release));
+  return env.sustain * (1 - progress);
 }
 
 function renderLayer(
@@ -86,132 +83,119 @@ function renderLayer(
   out: Float32Array,
   channels: 1 | 2,
   sampleRate: number,
-  globalStartSample: number
+  globalStartSample: number,
+  random: () => number
 ): void {
-  const delay = layer.delay ?? 0;
-  const startSample = globalStartSample + Math.floor(delay * sampleRate);
-  const duration = layer.duration;
-  const length = Math.floor(duration * sampleRate);
+  const startSample = globalStartSample + Math.floor((layer.delay ?? 0) * sampleRate);
+  const length = Math.max(1, Math.ceil(layer.duration * sampleRate));
   const wave = layer.waveform ?? "sine";
   const gain = layer.gain ?? 0.5;
-  const f0 = (layer.frequency ?? 440) * centsToRatio(layer.detune ?? 0);
-  const f1 = (layer.frequencyEnd ?? layer.frequency ?? 440) * centsToRatio(layer.detune ?? 0);
-  const env = { ...DEFAULT_ADSR, ...layer.adsr } as Required<AdsrEnvelope>;
-  const pan = Math.max(-1, Math.min(1, layer.pan ?? 0));
-  const leftGain = channels === 1 ? 1 : Math.cos(((pan + 1) / 2) * Math.PI * 0.5);
-  const rightGain = channels === 1 ? 0 : Math.sin(((pan + 1) / 2) * Math.PI * 0.5);
+  const tonal = wave !== "noise" && wave !== "pink";
+  const detuneRatio = centsToRatio(layer.detune ?? 0);
+  const f0 = tonal ? (layer.frequency ?? 440) * detuneRatio : 0;
+  const f1 = tonal ? (layer.frequencyEnd ?? layer.frequency ?? 440) * detuneRatio : 0;
+  const frequencyStep = length > 1 ? (f1 - f0) / (length - 1) : 0;
+  const pan = layer.pan ?? 0;
+  const panAngle = ((pan + 1) * Math.PI) / 4;
+  const leftGain = channels === 1 ? 1 : Math.cos(panAngle);
+  const rightGain = channels === 1 ? 0 : Math.sin(panAngle);
   const noiseMix = layer.noiseMix ?? 0;
   const partials = layer.partials ?? [];
+  const partialScale = 1 / (1 + partials.reduce((sum, [, pGain]) => sum + pGain, 0));
+  const vibratoOmega = layer.vibrato ? TAU * layer.vibrato.rate : 0;
+  const tremoloOmega = layer.tremolo ? TAU * layer.tremolo.rate : 0;
+  const filter = layer.filter ? createBiquadProcessor(layer.filter, sampleRate) : undefined;
+  const pink: PinkNoiseState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
 
   let phase = 0;
-  const pinkState = { b0: 0, b1: 0, b2: 0 };
-  const filterState = { lp: 0, hp: 0 };
+  for (let i = 0; i < length; i += 1) {
+    const clockTime = i / sampleRate;
+    const envelopeTime = length > 1 ? (i / (length - 1)) * layer.duration : layer.duration;
+    let sample: number;
 
-  for (let i = 0; i < length; i++) {
-    const t = i / sampleRate;
-    const frac = length > 1 ? i / (length - 1) : 0;
-    let freq = f0 + (f1 - f0) * frac;
-
-    if (layer.vibrato) {
-      freq += layer.vibrato.depth * Math.sin(2 * Math.PI * layer.vibrato.rate * t);
+    if (tonal) {
+      let frequency = f0 + frequencyStep * i;
+      if (layer.vibrato) frequency += layer.vibrato.depth * Math.sin(vibratoOmega * clockTime);
+      sample = oscSample(wave, phase, pink, random);
+      for (const [ratio, pGain] of partials) sample += oscSample(wave, phase * ratio, pink, random) * pGain;
+      sample *= partialScale;
+      if (noiseMix > 0) sample = sample * (1 - noiseMix) + (random() * 2 - 1) * noiseMix;
+      phase = wrapPhase(phase + (TAU * frequency) / sampleRate);
+    } else {
+      sample = oscSample(wave, 0, pink, random);
     }
 
-    const phaseInc = (2 * Math.PI * freq) / sampleRate;
-    phase += phaseInc;
-
-    let sample = oscSample(wave, phase, pinkState);
-    for (const [ratio, pGain] of partials) {
-      sample += oscSample(wave, phase * ratio, pinkState) * pGain;
-    }
-    if (noiseMix > 0 && wave !== "noise" && wave !== "pink") {
-      sample = sample * (1 - noiseMix) + (Math.random() * 2 - 1) * noiseMix;
-    }
-
-    sample = applyFilter(sample, layer.filter, filterState, sampleRate);
-
-    let amp = gain * adsrGain(t, duration, env);
+    if (filter) sample = filter.process(sample);
+    let amp = gain * adsrGainAt(envelopeTime, layer.duration, layer.adsr);
     if (layer.tremolo) {
-      amp *= 1 - layer.tremolo.depth * (0.5 + 0.5 * Math.sin(2 * Math.PI * layer.tremolo.rate * t));
+      const modulation = 0.5 + 0.5 * Math.sin(tremoloOmega * clockTime);
+      amp *= 1 - layer.tremolo.depth * modulation;
     }
     sample *= amp;
 
-    const idx = startSample + i;
-    if (idx < 0 || idx >= out.length / channels) continue;
-
-    if (channels === 1) {
-      out[idx] += sample;
-    } else {
-      const frame = idx;
+    const frame = startSample + i;
+    if (frame < 0 || frame >= out.length / channels) continue;
+    if (channels === 1) out[frame] += sample;
+    else {
       out[frame * 2] += sample * leftGain;
       out[frame * 2 + 1] += sample * rightGain;
     }
   }
 }
 
-function computeDuration(options: SynthSoundOptions): number {
-  if (options.duration != null) return options.duration;
-  let max = 0;
-  for (const layer of options.layers) {
-    const end = (layer.delay ?? 0) + layer.duration;
-    if (end > max) max = end;
+function ensureFinite(samples: Float32Array, operation: string): void {
+  for (let i = 0; i < samples.length; i += 1) {
+    if (!Number.isFinite(samples[i])) throw new ApexifyAudioError(`${operation} produced a non-finite sample.`, { details: { sampleIndex: i } });
   }
-  return Math.max(0.01, max);
 }
 
 export function applyLimiter(samples: Float32Array, enabled: boolean): void {
   if (!enabled) return;
   let peak = 0;
-  for (let i = 0; i < samples.length; i++) {
-    const a = Math.abs(samples[i]);
-    if (a > peak) peak = a;
-  }
+  for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]!));
   if (peak <= 1) return;
-  const scale = 0.98 / peak;
-  for (let i = 0; i < samples.length; i++) samples[i] *= scale;
+  const scale = PEAK_LIMIT / peak;
+  for (let i = 0; i < samples.length; i += 1) samples[i] *= scale;
 }
 
 export function renderSound(options: SynthSoundOptions): Float32Array {
-  const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
-  const channels = options.channels ?? 1;
-  const duration = computeDuration(options);
+  const validated = validateSynthSoundOptions(options);
+  const { duration, sampleRate, channels } = validated;
   const frameCount = Math.ceil(duration * sampleRate);
   const samples = new Float32Array(frameCount * channels);
 
-  for (const layer of options.layers) {
-    renderLayer(layer, samples, channels, sampleRate, 0);
+  for (let index = 0; index < options.layers.length; index += 1) {
+    const layer = options.layers[index]!;
+    renderLayer(layer, samples, channels, sampleRate, 0, createAudioRandom(deriveAudioSeed(options.seed, `layer:${index}`)));
   }
 
   const master = options.masterGain ?? 1;
-  if (master !== 1) {
-    for (let i = 0; i < samples.length; i++) samples[i] *= master;
-  }
-
+  if (master !== 1) for (let i = 0; i < samples.length; i += 1) samples[i] *= master;
+  ensureFinite(samples, "audio synthesis");
   applyLimiter(samples, options.limiter !== false);
   return samples;
 }
 
-export function mixFloatBuffers(
-  buffers: Float32Array[],
-  channels: 1 | 2,
-  masterGain = 1
-): Float32Array {
-  let maxLen = 0;
-  for (const b of buffers) {
-    const frames = b.length / channels;
-    if (frames > maxLen) maxLen = frames;
+export function mixFloatBuffers(buffers: Float32Array[], channels: 1 | 2, masterGain = 1): Float32Array {
+  if (channels !== 1 && channels !== 2) throw new ApexifyInputError("mixFloatBuffers channels must be 1 or 2.");
+  let maxLength = 0;
+  for (const buffer of buffers) {
+    if (!(buffer instanceof Float32Array) || buffer.length % channels !== 0) throw new ApexifyInputError("mixFloatBuffers requires complete Float32 audio frames.");
+    maxLength = Math.max(maxLength, buffer.length);
   }
-  const out = new Float32Array(maxLen * channels);
-  for (const buf of buffers) {
-    const frames = Math.min(maxLen, buf.length / channels);
-    for (let i = 0; i < frames * channels; i++) {
-      out[i] += buf[i];
-    }
-  }
-  if (masterGain !== 1) {
-    for (let i = 0; i < out.length; i++) out[i] *= masterGain;
-  }
+  assertWithinLimit("maxAudioBytes", maxLength * Float32Array.BYTES_PER_ELEMENT);
+  const out = new Float32Array(maxLength);
+  for (const buffer of buffers) for (let i = 0; i < buffer.length; i += 1) out[i] += buffer[i]!;
+  if (masterGain !== 1) for (let i = 0; i < out.length; i += 1) out[i] *= masterGain;
+  ensureFinite(out, "audio mix");
   applyLimiter(out, true);
   return out;
+}
+
+function sourceChannelSample(samples: Float32Array, frame: number, fromChannels: 1 | 2, toChannel: number, toChannels: 1 | 2): number {
+  if (fromChannels === 1) return samples[frame] ?? 0;
+  if (toChannels === 1) return ((samples[frame * 2] ?? 0) + (samples[frame * 2 + 1] ?? 0)) * 0.5;
+  return samples[frame * 2 + Math.min(toChannel, 1)] ?? 0;
 }
 
 export function resampleToMatch(
@@ -222,71 +206,56 @@ export function resampleToMatch(
   toChannels: 1 | 2,
   targetFrames: number
 ): Float32Array {
-  if (fromRate === toRate && fromChannels === toChannels) {
-    if (samples.length / fromChannels === targetFrames) return samples;
-    const out = new Float32Array(targetFrames * toChannels);
-    const copyFrames = Math.min(targetFrames, samples.length / fromChannels);
-    for (let i = 0; i < copyFrames * toChannels; i++) out[i] = samples[i];
-    return out;
-  }
+  if (!(samples instanceof Float32Array) || samples.length === 0) throw new ApexifyInputError("resampleToMatch requires non-empty Float32 samples.");
+  if (!Number.isInteger(fromRate) || fromRate <= 0 || !Number.isInteger(toRate) || toRate <= 0) throw new ApexifyInputError("resampleToMatch sample rates must be positive integers.");
+  if ((fromChannels !== 1 && fromChannels !== 2) || (toChannels !== 1 && toChannels !== 2)) throw new ApexifyInputError("resampleToMatch supports only mono/stereo audio.");
+  if (!Number.isSafeInteger(targetFrames) || targetFrames <= 0) throw new ApexifyInputError("resampleToMatch targetFrames must be a positive safe integer.");
+  if (samples.length % fromChannels !== 0) throw new ApexifyInputError("resampleToMatch source has incomplete frames.");
+  assertWithinLimit("maxAudioSampleRate", fromRate);
+  assertWithinLimit("maxAudioSampleRate", toRate);
+  assertWithinLimit("maxAudioBytes", targetFrames * toChannels * Float32Array.BYTES_PER_ELEMENT);
+
+  const sourceFrames = samples.length / fromChannels;
+  if (fromRate === toRate && fromChannels === toChannels && sourceFrames === targetFrames) return samples;
   const out = new Float32Array(targetFrames * toChannels);
   const ratio = fromRate / toRate;
-  for (let f = 0; f < targetFrames; f++) {
-    const srcF = f * ratio;
-    const i0 = Math.floor(srcF);
-    const i1 = Math.min(Math.floor(samples.length / fromChannels) - 1, i0 + 1);
-    const frac = srcF - i0;
-    for (let c = 0; c < toChannels; c++) {
-      const sc = c < fromChannels ? c : 0;
-      const s0 = samples[i0 * fromChannels + sc] ?? 0;
-      const s1 = samples[i1 * fromChannels + sc] ?? 0;
-      out[f * toChannels + c] = s0 + (s1 - s0) * frac;
+  for (let frame = 0; frame < targetFrames; frame += 1) {
+    const sourcePosition = Math.min(sourceFrames - 1, frame * ratio);
+    const i0 = Math.floor(sourcePosition);
+    const i1 = Math.min(sourceFrames - 1, i0 + 1);
+    const frac = sourcePosition - i0;
+    for (let channel = 0; channel < toChannels; channel += 1) {
+      const s0 = sourceChannelSample(samples, i0, fromChannels, channel, toChannels);
+      const s1 = sourceChannelSample(samples, i1, fromChannels, channel, toChannels);
+      out[frame * toChannels + channel] = s0 + (s1 - s0) * frac;
     }
   }
+  ensureFinite(out, "audio resampling");
   return out;
 }
 
 export function renderSequence(options: SynthSequenceOptions): Float32Array {
-  const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
-  const channels = options.channels ?? 1;
-  const tail = options.tail ?? 0.1;
-  let endTime = tail;
-  const chunks: { at: number; samples: Float32Array; gain: number }[] = [];
-
-  for (const ev of options.events) {
-    const soundOpts = ev.options;
-    if (!soundOpts && !ev.preset) continue;
-    const def =
-      soundOpts ??
-      (ev.preset ? getPresetDefinition(ev.preset) : null);
-    if (!def) continue;
-    const pcm = renderSound({ ...def, sampleRate, channels });
-    const dur = computeDuration(def);
-    const evEnd = ev.at + dur;
-    if (evEnd > endTime) endTime = evEnd;
-    chunks.push({ at: ev.at, samples: pcm, gain: ev.gain ?? 1 });
-  }
-
-  const frameCount = Math.ceil((endTime + tail) * sampleRate);
+  const validated = validateSynthSequenceOptions(options);
+  const { duration, sampleRate, channels } = validated;
+  const frameCount = Math.ceil(duration * sampleRate);
   const out = new Float32Array(frameCount * channels);
 
-  for (const { at, samples, gain } of chunks) {
-    const start = Math.floor(at * sampleRate);
-    const ch = channels;
-    const frames = samples.length / ch;
-    for (let f = 0; f < frames; f++) {
-      const dst = start + f;
-      if (dst >= frameCount) break;
-      for (let c = 0; c < ch; c++) {
-        out[dst * ch + c] += samples[f * ch + c] * gain;
-      }
+  for (let index = 0; index < options.events.length; index += 1) {
+    const event = options.events[index]!;
+    const base = event.options ?? getPresetDefinition(event.preset!);
+    const seed = event.options?.seed ?? deriveAudioSeed(options.seed, `event:${index}`);
+    const samples = renderSound({ ...base, sampleRate, channels, seed });
+    const start = Math.floor(event.at * sampleRate);
+    const gain = event.gain ?? 1;
+    const frames = samples.length / channels;
+    for (let frame = 0; frame < frames && start + frame < frameCount; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) out[(start + frame) * channels + channel] += samples[frame * channels + channel]! * gain;
     }
   }
 
   const master = options.masterGain ?? 1;
-  if (master !== 1) {
-    for (let i = 0; i < out.length; i++) out[i] *= master;
-  }
+  if (master !== 1) for (let i = 0; i < out.length; i += 1) out[i] *= master;
+  ensureFinite(out, "audio sequence");
   applyLimiter(out, true);
   return out;
 }
@@ -298,41 +267,40 @@ export interface ComposeTimelineOptions {
   limiter?: boolean;
 }
 
-/** Sum clips at timeline offsets into one buffer (overlapping clips are added). */
+/** Low-level same-format timeline summation. Public synthesis/composition validates richer source semantics before calling equivalent logic. */
 export function composeTimeline(
   placements: Array<{ at: number; samples: Float32Array }>,
   sampleRate: number,
   channels: 1 | 2,
   options: ComposeTimelineOptions = {}
 ): Float32Array {
-  const tail = options.tail ?? 0;
-  let endSec = tail;
-  for (const { at, samples } of placements) {
-    const clipEnd = at + samples.length / channels / sampleRate;
-    if (clipEnd > endSec) endSec = clipEnd;
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new ApexifyInputError("composeTimeline sampleRate must be a positive integer.");
+  if (channels !== 1 && channels !== 2) throw new ApexifyInputError("composeTimeline channels must be 1 or 2.");
+  if (options.duration !== undefined && (!Number.isFinite(options.duration) || options.duration <= 0)) throw new ApexifyInputError("composeTimeline duration must be > 0.");
+  if (options.tail !== undefined && (!Number.isFinite(options.tail) || options.tail < 0)) throw new ApexifyInputError("composeTimeline tail must be >= 0.");
+  let endSeconds = 0;
+  for (const placement of placements) {
+    if (!Number.isFinite(placement.at) || placement.at < 0) throw new ApexifyInputError("composeTimeline placement offsets must be finite and non-negative.");
+    if (!(placement.samples instanceof Float32Array) || placement.samples.length % channels !== 0) throw new ApexifyInputError("composeTimeline placements require complete Float32 frames.");
+    endSeconds = Math.max(endSeconds, placement.at + placement.samples.length / channels / sampleRate);
   }
-  if (options.duration != null) endSec = Math.max(endSec, options.duration);
-  const frameCount = Math.ceil(endSec * sampleRate);
+  endSeconds = Math.max(endSeconds + (options.tail ?? 0), options.duration ?? 0);
+  if (endSeconds <= 0) throw new ApexifyInputError("composeTimeline cannot produce zero-length output.");
+  const frameCount = Math.ceil(endSeconds * sampleRate);
+  assertWithinLimit("maxAudioBytes", estimateAudioBytes(endSeconds, sampleRate, channels));
   const out = new Float32Array(frameCount * channels);
-
-  for (const { at, samples } of placements) {
-    const start = Math.floor(at * sampleRate);
-    const frames = samples.length / channels;
-    for (let f = 0; f < frames; f++) {
-      const dst = start + f;
-      if (dst >= frameCount) break;
-      for (let c = 0; c < channels; c++) {
-        out[dst * channels + c] += samples[f * channels + c];
-      }
+  for (const placement of placements) {
+    const start = Math.floor(placement.at * sampleRate);
+    const frames = placement.samples.length / channels;
+    for (let frame = 0; frame < frames && start + frame < frameCount; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) out[(start + frame) * channels + channel] += placement.samples[frame * channels + channel]!;
     }
   }
-
   const master = options.masterGain ?? 1;
-  if (master !== 1) {
-    for (let i = 0; i < out.length; i++) out[i] *= master;
-  }
+  if (master !== 1) for (let i = 0; i < out.length; i += 1) out[i] *= master;
+  ensureFinite(out, "audio timeline");
   applyLimiter(out, options.limiter !== false);
   return out;
 }
 
-export { DEFAULT_SAMPLE_RATE };
+export { DEFAULT_SAMPLE_RATE } from "./constants";

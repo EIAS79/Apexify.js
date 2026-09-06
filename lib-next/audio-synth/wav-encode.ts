@@ -1,7 +1,8 @@
-/** Minimal PCM WAV encoder/decoder for internally generated 16-bit audio. */
+/** Strict RIFF/WAVE PCM16 encoder/decoder used by procedural audio and video integration. */
 
-import { ApexifyInputError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyInputError } from "../runtime/errors";
 import { assertAudioResourceLimits, assertWithinLimit } from "../runtime/limits";
+import { PCM16_BYTES_PER_SAMPLE } from "./constants";
 
 export interface WavPcm16Info {
   sampleRate: number;
@@ -11,116 +12,152 @@ export interface WavPcm16Info {
   sampleCount: number;
   frameCount: number;
   durationSeconds: number;
+  byteRate: number;
+  blockAlign: number;
+  bitsPerSample: 16;
 }
 
-/** Inspect a PCM16 WAV without allocating decoded sample storage. */
-export function inspectWavPcm16(wav: Buffer): WavPcm16Info {
-  if (!Buffer.isBuffer(wav) || wav.length < 44 || wav.toString("ascii", 0, 4) !== "RIFF") {
-    throw new ApexifyInputError("decodeWav: not a RIFF WAV buffer.");
-  }
-  if (wav.toString("ascii", 8, 12) !== "WAVE") {
-    throw new ApexifyInputError("decodeWav: RIFF container is not WAVE.");
-  }
+function decodeError(message: string, details?: Readonly<Record<string, unknown>>): ApexifyDecodeError {
+  return new ApexifyDecodeError(`decodeWav: ${message}`, { details });
+}
 
-  const channelsRaw = wav.readUInt16LE(22);
-  if (channelsRaw !== 1 && channelsRaw !== 2) {
-    throw new ApexifyInputError("decodeWav: only mono or stereo PCM is supported.");
+function requireRange(buffer: Buffer, offset: number, bytes: number, label: string): void {
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(bytes) || offset < 0 || bytes < 0 || offset + bytes > buffer.length) {
+    throw decodeError(`truncated ${label}.`, { offset, bytes, bufferBytes: buffer.length });
   }
-  const channels = channelsRaw as 1 | 2;
-  const sampleRate = wav.readUInt32LE(24);
-  if (!Number.isInteger(sampleRate) || sampleRate <= 0) {
-    throw new ApexifyInputError("decodeWav: invalid sample rate.");
+}
+
+/** Inspect a strict PCM16 RIFF/WAVE without allocating decoded sample storage. Unknown chunks and legal odd-byte padding are supported. */
+export function inspectWavPcm16(wav: Buffer): WavPcm16Info {
+  if (!Buffer.isBuffer(wav)) throw decodeError("input must be a Buffer.");
+  if (wav.length < 12) throw decodeError("header is too short.");
+  if (wav.toString("ascii", 0, 4) !== "RIFF") throw decodeError("missing RIFF signature.");
+  if (wav.toString("ascii", 8, 12) !== "WAVE") throw decodeError("RIFF container is not WAVE.");
+
+  const declaredRiffSize = wav.readUInt32LE(4);
+  const riffEnd = declaredRiffSize + 8;
+  if (!Number.isSafeInteger(riffEnd) || riffEnd < 12 || riffEnd !== wav.length) {
+    throw decodeError("RIFF size does not match the buffer length.", { declaredRiffSize, bufferBytes: wav.length });
   }
-  assertWithinLimit("maxAudioSampleRate", sampleRate);
 
   let cursor = 12;
-  while (cursor + 8 <= wav.length) {
-    const chunk = wav.toString("ascii", cursor, cursor + 4);
-    const declaredSize = wav.readUInt32LE(cursor + 4);
+  let format: { channels: 1 | 2; sampleRate: number; byteRate: number; blockAlign: number; bitsPerSample: 16 } | undefined;
+  let data: { offset: number; bytes: number } | undefined;
+
+  while (cursor < riffEnd) {
+    if (cursor + 8 > riffEnd) throw decodeError("truncated chunk header.", { cursor });
+    const id = wav.toString("ascii", cursor, cursor + 4);
+    const size = wav.readUInt32LE(cursor + 4);
     const payloadOffset = cursor + 8;
-    if (chunk === "data") {
-      const dataBytes = Math.min(declaredSize, Math.max(0, wav.length - payloadOffset));
-      const sampleCount = Math.floor(dataBytes / 2);
-      if (sampleCount === 0 || sampleCount % channels !== 0) {
-        throw new ApexifyInputError("decodeWav: PCM data must contain complete audio frames.");
-      }
-      const frameCount = sampleCount / channels;
-      const durationSeconds = frameCount / sampleRate;
-      assertAudioResourceLimits({ durationSeconds, sampleRate, channels });
-      return {
-        sampleRate,
-        channels,
-        dataOffset: payloadOffset,
-        dataBytes: sampleCount * 2,
-        sampleCount,
-        frameCount,
-        durationSeconds,
-      };
+    const payloadEnd = payloadOffset + size;
+    if (!Number.isSafeInteger(payloadEnd) || payloadEnd > riffEnd) throw decodeError(`chunk ${JSON.stringify(id)} exceeds RIFF bounds.`, { size, cursor });
+
+    if (id === "fmt ") {
+      if (format) throw decodeError("multiple fmt chunks are not supported.");
+      if (size < 16) throw decodeError("fmt chunk is shorter than 16 bytes.");
+      requireRange(wav, payloadOffset, 16, "fmt chunk");
+      const audioFormat = wav.readUInt16LE(payloadOffset);
+      const channelsRaw = wav.readUInt16LE(payloadOffset + 2);
+      const sampleRate = wav.readUInt32LE(payloadOffset + 4);
+      const byteRate = wav.readUInt32LE(payloadOffset + 8);
+      const blockAlign = wav.readUInt16LE(payloadOffset + 12);
+      const bitsPerSample = wav.readUInt16LE(payloadOffset + 14);
+      if (audioFormat !== 1) throw decodeError(`unsupported WAV format ${audioFormat}; only integer PCM format 1 is supported.`);
+      if (channelsRaw !== 1 && channelsRaw !== 2) throw decodeError("only mono or stereo PCM is supported.", { channels: channelsRaw });
+      if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw decodeError("invalid sample rate.", { sampleRate });
+      assertWithinLimit("maxAudioSampleRate", sampleRate);
+      if (bitsPerSample !== 16) throw decodeError(`unsupported bit depth ${bitsPerSample}; only PCM16 is supported.`);
+      const channels = channelsRaw as 1 | 2;
+      const expectedBlockAlign = channels * PCM16_BYTES_PER_SAMPLE;
+      const expectedByteRate = sampleRate * expectedBlockAlign;
+      if (blockAlign !== expectedBlockAlign) throw decodeError("invalid block alignment.", { blockAlign, expectedBlockAlign });
+      if (byteRate !== expectedByteRate) throw decodeError("invalid byte rate.", { byteRate, expectedByteRate });
+      format = { channels, sampleRate, byteRate, blockAlign, bitsPerSample: 16 };
+    } else if (id === "data") {
+      if (data) throw decodeError("multiple data chunks are not supported.");
+      data = { offset: payloadOffset, bytes: size };
     }
-    const next = payloadOffset + declaredSize + (declaredSize % 2);
-    if (!Number.isSafeInteger(next) || next <= cursor) {
-      throw new ApexifyInputError("decodeWav: invalid chunk size.");
-    }
-    cursor = next;
+
+    const paddedEnd = payloadEnd + (size & 1);
+    if (paddedEnd > riffEnd) throw decodeError(`odd-sized chunk ${JSON.stringify(id)} is missing its pad byte.`);
+    cursor = paddedEnd;
   }
-  throw new ApexifyInputError("decodeWav: missing data chunk.");
+
+  if (!format) throw decodeError("missing fmt chunk.");
+  if (!data) throw decodeError("missing data chunk.");
+  if (data.bytes === 0) throw decodeError("zero-length PCM data is not supported.");
+  if (data.bytes % format.blockAlign !== 0) throw decodeError("PCM data does not contain complete audio frames.", { dataBytes: data.bytes, blockAlign: format.blockAlign });
+  requireRange(wav, data.offset, data.bytes, "data chunk");
+
+  const frameCount = data.bytes / format.blockAlign;
+  const sampleCount = frameCount * format.channels;
+  const durationSeconds = frameCount / format.sampleRate;
+  assertAudioResourceLimits({ durationSeconds, sampleRate: format.sampleRate, channels: format.channels });
+  assertWithinLimit("maxAudioBytes", sampleCount * Float32Array.BYTES_PER_ELEMENT);
+  return {
+    sampleRate: format.sampleRate,
+    channels: format.channels,
+    dataOffset: data.offset,
+    dataBytes: data.bytes,
+    sampleCount,
+    frameCount,
+    durationSeconds,
+    byteRate: format.byteRate,
+    blockAlign: format.blockAlign,
+    bitsPerSample: 16,
+  };
 }
 
-export function encodeWavPcm16(
-  samples: Float32Array,
-  sampleRate: number,
-  channels: 1 | 2
-): Buffer {
-  if (!(samples instanceof Float32Array) || samples.length === 0) {
-    throw new ApexifyInputError("encodeWav: samples must be a non-empty Float32Array.");
-  }
+export function encodeWavPcm16(samples: Float32Array, sampleRate: number, channels: 1 | 2): Buffer {
+  if (!(samples instanceof Float32Array) || samples.length === 0) throw new ApexifyInputError("encodeWav: samples must be a non-empty Float32Array.");
   if (channels !== 1 && channels !== 2) throw new ApexifyInputError("encodeWav: channels must be 1 or 2.");
   if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new ApexifyInputError("encodeWav: sampleRate must be a positive integer.");
   if (samples.length % channels !== 0) throw new ApexifyInputError("encodeWav: sample count must contain complete frames.");
   assertWithinLimit("maxAudioSampleRate", sampleRate);
 
-  const numFrames = samples.length / channels;
-  const durationSeconds = numFrames / sampleRate;
+  const frameCount = samples.length / channels;
+  const durationSeconds = frameCount / sampleRate;
   assertAudioResourceLimits({ durationSeconds, sampleRate, channels });
-  const dataSize = samples.length * 2;
-  assertWithinLimit("maxAudioBytes", 44 + dataSize);
+  const dataSize = samples.length * PCM16_BYTES_PER_SAMPLE;
+  const outputBytes = 44 + dataSize;
+  if (!Number.isSafeInteger(outputBytes) || 36 + dataSize > 0xffffffff) throw new ApexifyInputError("encodeWav: output exceeds RIFF/WAVE 32-bit size limits.");
+  assertWithinLimit("maxAudioBytes", samples.byteLength + outputBytes);
 
-  const buffer = Buffer.alloc(44 + dataSize);
-  buffer.write("RIFF", 0);
+  for (let i = 0; i < samples.length; i += 1) {
+    if (!Number.isFinite(samples[i])) throw new ApexifyInputError("encodeWav: samples must contain only finite values.", { details: { sampleIndex: i } });
+  }
+
+  const buffer = Buffer.alloc(outputBytes);
+  buffer.write("RIFF", 0, "ascii");
   buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write("WAVE", 8);
-  buffer.write("fmt ", 12);
+  buffer.write("WAVE", 8, "ascii");
+  buffer.write("fmt ", 12, "ascii");
   buffer.writeUInt32LE(16, 16);
   buffer.writeUInt16LE(1, 20);
   buffer.writeUInt16LE(channels, 22);
   buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(sampleRate * channels * 2, 28);
-  buffer.writeUInt16LE(channels * 2, 32);
+  buffer.writeUInt32LE(sampleRate * channels * PCM16_BYTES_PER_SAMPLE, 28);
+  buffer.writeUInt16LE(channels * PCM16_BYTES_PER_SAMPLE, 32);
   buffer.writeUInt16LE(16, 34);
-  buffer.write("data", 36);
+  buffer.write("data", 36, "ascii");
   buffer.writeUInt32LE(dataSize, 40);
 
   let offset = 44;
-  for (let i = 0; i < samples.length; i++) {
-    const clamped = Math.max(-1, Math.min(1, samples[i]));
-    const int16 = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-    buffer.writeInt16LE(Math.round(int16), offset);
-    offset += 2;
+  for (let i = 0; i < samples.length; i += 1) {
+    const clamped = Math.max(-1, Math.min(1, samples[i]!));
+    const pcm = clamped < 0 ? Math.round(clamped * 0x8000) : Math.round(clamped * 0x7fff);
+    buffer.writeInt16LE(pcm, offset);
+    offset += PCM16_BYTES_PER_SAMPLE;
   }
   return buffer;
 }
 
-/** Decode 16-bit PCM WAV (PCM format 1) to float -1..1. */
-export function decodeWavPcm16(wav: Buffer): {
-  samples: Float32Array;
-  sampleRate: number;
-  channels: 1 | 2;
-} {
+/** Decode strict 16-bit integer PCM WAV to Float32 samples in [-1, 1). */
+export function decodeWavPcm16(wav: Buffer): { samples: Float32Array; sampleRate: number; channels: 1 | 2 } {
   const info = inspectWavPcm16(wav);
-  // inspectWavPcm16 enforces decoded Float32 memory before this allocation.
+  const decodedBytes = info.sampleCount * Float32Array.BYTES_PER_ELEMENT;
+  assertWithinLimit("maxAudioBytes", wav.length + decodedBytes);
   const samples = new Float32Array(info.sampleCount);
-  for (let i = 0; i < info.sampleCount; i++) {
-    samples[i] = wav.readInt16LE(info.dataOffset + i * 2) / 0x8000;
-  }
+  for (let i = 0; i < info.sampleCount; i += 1) samples[i] = wav.readInt16LE(info.dataOffset + i * PCM16_BYTES_PER_SAMPLE) / 0x8000;
   return { samples, sampleRate: info.sampleRate, channels: info.channels };
 }

@@ -1,4 +1,5 @@
 import type {
+  AudioSeed,
   FilterOptions,
   SynthClipQuality,
   SynthComposeClip,
@@ -6,287 +7,181 @@ import type {
   SynthPresetOverrides,
   SynthSoundOptions,
 } from "../types";
-import {
-  applyLimiter,
-  composeTimeline,
-  DEFAULT_SAMPLE_RATE,
-  renderSound,
-  resampleToMatch,
-} from "./engine";
+import { ApexifyAudioError, ApexifyInputError } from "../runtime/errors";
+import { assertAudioWavResourceLimits } from "../runtime/limits";
+import { filterInterleavedInPlace } from "./biquad-filter";
+import { createAudioRandom, deriveAudioSeed } from "./audio-random";
+import { applyLimiter, renderSound, resampleToMatch } from "./engine";
 import { getPresetDefinition } from "./presets";
 import { applyPresetOverrides } from "./preset-overrides";
 import { decodeWavPcm16, encodeWavPcm16 } from "./wav-encode";
+import { validateSynthComposeOptions } from "./audio-validation";
 
-function qualityFilter(q: SynthClipQuality): FilterOptions {
-  switch (q) {
-    case "bright":
-      return { type: "highpass", cutoff: 280, q: 0.8 };
-    case "warm":
-      return { type: "lowpass", cutoff: 3200, q: 1 };
-    case "muffled":
-      return { type: "lowpass", cutoff: 700, q: 1.2 };
-    case "lofi":
-      return { type: "lowpass", cutoff: 2200, q: 1.5 };
-    case "crisp":
-      return { type: "highpass", cutoff: 120, q: 1 };
-    default:
-      return { type: "lowpass", cutoff: 4000, q: 1 };
+function qualityFilter(quality: SynthClipQuality, sampleRate: number): FilterOptions {
+  let filter: FilterOptions;
+  switch (quality) {
+    case "bright": filter = { type: "highpass", cutoff: 280, q: 0.8 }; break;
+    case "warm": filter = { type: "lowpass", cutoff: 3200, q: 1 }; break;
+    case "muffled": filter = { type: "lowpass", cutoff: 700, q: 1.2 }; break;
+    case "lofi": filter = { type: "lowpass", cutoff: 2200, q: 1.5 }; break;
+    case "crisp": filter = { type: "highpass", cutoff: 120, q: 1 }; break;
   }
+  return { ...filter, cutoff: Math.min(filter.cutoff, sampleRate * 0.45) };
 }
 
-function applyClipFilter(
-  samples: Float32Array,
-  channels: 1 | 2,
-  sampleRate: number,
-  filter: FilterOptions
-): void {
-  const state = { lp: 0, hp: 0 };
-  const q = filter.q ?? 1;
-  const fc = Math.max(20, Math.min(sampleRate * 0.45, filter.cutoff));
-  const alpha = Math.exp((-2 * Math.PI * fc) / sampleRate) * (0.5 + q * 0.05);
+function applyFades(samples: Float32Array, channels: 1 | 2, sampleRate: number, fadeIn?: number, fadeOut?: number): void {
   const frames = samples.length / channels;
-  for (let f = 0; f < frames; f++) {
-    for (let c = 0; c < channels; c++) {
-      const i = f * channels + c;
-      let s = samples[i];
-      if (filter.type === "lowpass") {
-        state.lp = alpha * state.lp + (1 - alpha) * s;
-        s = state.lp;
-      } else {
-        state.hp = alpha * state.hp + (1 - alpha) * (s - state.hp);
-        s = s - state.hp;
-      }
-      samples[i] = s;
+  if (fadeIn !== undefined && fadeIn > 0) {
+    const count = Math.min(frames, Math.max(1, Math.ceil(fadeIn * sampleRate)));
+    for (let frame = 0; frame < count; frame += 1) {
+      const gain = count === 1 ? 1 : frame / (count - 1);
+      for (let channel = 0; channel < channels; channel += 1) samples[frame * channels + channel] *= gain;
+    }
+  }
+  if (fadeOut !== undefined && fadeOut > 0) {
+    const count = Math.min(frames, Math.max(1, Math.ceil(fadeOut * sampleRate)));
+    for (let frameFromEnd = 0; frameFromEnd < count; frameFromEnd += 1) {
+      const gain = count === 1 ? 0 : frameFromEnd / (count - 1);
+      const frame = frames - 1 - frameFromEnd;
+      for (let channel = 0; channel < channels; channel += 1) samples[frame * channels + channel] *= gain;
     }
   }
 }
 
-function applyFades(
-  samples: Float32Array,
-  channels: 1 | 2,
-  sampleRate: number,
-  fadeIn?: number,
-  fadeOut?: number
-): void {
-  const frames = samples.length / channels;
-  if (fadeIn && fadeIn > 0) {
-    const n = Math.min(frames, Math.ceil(fadeIn * sampleRate));
-    for (let f = 0; f < n; f++) {
-      const g = f / n;
-      for (let c = 0; c < channels; c++) samples[f * channels + c] *= g;
-    }
-  }
-  if (fadeOut && fadeOut > 0) {
-    const n = Math.min(frames, Math.ceil(fadeOut * sampleRate));
-    for (let f = 0; f < n; f++) {
-      const g = f / n;
-      const idx = frames - 1 - f;
-      for (let c = 0; c < channels; c++) samples[idx * channels + c] *= g;
-    }
-  }
-}
-
+/** Equal-power stereo balance. Center leaves both channels unchanged. */
 function applyPan(samples: Float32Array, pan: number): void {
-  const frames = samples.length / 2;
-  const p = Math.max(-1, Math.min(1, pan));
-  const l = Math.cos(((p + 1) / 2) * Math.PI * 0.5);
-  const r = Math.sin(((p + 1) / 2) * Math.PI * 0.5);
-  for (let f = 0; f < frames; f++) {
-    const m = (samples[f * 2] + samples[f * 2 + 1]) * 0.5;
-    samples[f * 2] = m * l;
-    samples[f * 2 + 1] = m * r;
+  const angle = ((pan + 1) * Math.PI) / 4;
+  const leftGain = Math.cos(angle) * Math.SQRT2;
+  const rightGain = Math.sin(angle) * Math.SQRT2;
+  for (let frame = 0; frame < samples.length / 2; frame += 1) {
+    samples[frame * 2] *= leftGain;
+    samples[frame * 2 + 1] *= rightGain;
   }
 }
 
+/** Linear playback-rate resampling: speed changes duration and pitch together. */
 function changeSpeed(samples: Float32Array, channels: 1 | 2, speed: number): Float32Array {
-  if (speed === 1 || !Number.isFinite(speed) || speed <= 0) return samples;
-  const srcFrames = samples.length / channels;
-  const targetFrames = Math.max(1, Math.floor(srcFrames / speed));
+  if (speed === 1) return samples;
+  const sourceFrames = samples.length / channels;
+  const targetFrames = Math.max(1, Math.round(sourceFrames / speed));
   const out = new Float32Array(targetFrames * channels);
-  for (let f = 0; f < targetFrames; f++) {
-    const srcF = f * speed;
-    const i0 = Math.floor(srcF);
-    const i1 = Math.min(srcFrames - 1, i0 + 1);
-    const frac = srcF - i0;
-    for (let c = 0; c < channels; c++) {
-      const s0 = samples[i0 * channels + c] ?? 0;
-      const s1 = samples[i1 * channels + c] ?? 0;
-      out[f * channels + c] = s0 + (s1 - s0) * frac;
+  for (let frame = 0; frame < targetFrames; frame += 1) {
+    const sourcePosition = Math.min(sourceFrames - 1, frame * speed);
+    const i0 = Math.floor(sourcePosition);
+    const i1 = Math.min(sourceFrames - 1, i0 + 1);
+    const frac = sourcePosition - i0;
+    for (let channel = 0; channel < channels; channel += 1) {
+      const s0 = samples[i0 * channels + channel] ?? 0;
+      const s1 = samples[i1 * channels + channel] ?? 0;
+      out[frame * channels + channel] = s0 + (s1 - s0) * frac;
     }
   }
   return out;
 }
 
-function trimClip(
-  samples: Float32Array,
-  channels: 1 | 2,
-  sampleRate: number,
-  sourceStart?: number,
-  duration?: number
-): Float32Array {
+/** Trimming uses a view because the source is operation-owned and subsequent processing may mutate it safely. */
+function trimClip(samples: Float32Array, channels: 1 | 2, sampleRate: number, sourceStart?: number, duration?: number): Float32Array {
   const startFrame = Math.floor((sourceStart ?? 0) * sampleRate);
-  const srcFrames = samples.length / channels;
-  if (startFrame >= srcFrames) return new Float32Array(0);
-  let endFrame = srcFrames;
-  if (duration != null && duration > 0) {
-    endFrame = Math.min(srcFrames, startFrame + Math.ceil(duration * sampleRate));
-  }
-  const len = endFrame - startFrame;
-  const out = new Float32Array(len * channels);
-  for (let i = 0; i < len * channels; i++) {
-    out[i] = samples[startFrame * channels + i] ?? 0;
-  }
-  return out;
+  const sourceFrames = samples.length / channels;
+  let endFrame = sourceFrames;
+  if (duration !== undefined) endFrame = Math.min(sourceFrames, startFrame + Math.ceil(duration * sampleRate));
+  return samples.subarray(startFrame * channels, endFrame * channels);
 }
 
 function clipPitchOverrides(clip: SynthComposeClip): SynthPresetOverrides | undefined {
   const semitones = (clip.transpose ?? 0) + (clip.detune ?? 0) / 100;
-  const pitchRatio = clip.pitch ?? 1;
-  const transpose =
-    semitones !== 0 || pitchRatio !== 1 ? semitones + 12 * Math.log2(pitchRatio) : undefined;
-  const volume = clip.volume ?? clip.gain;
-  if (transpose == null && volume == null) return undefined;
-  return { transpose, volume };
+  const ratio = clip.pitch ?? 1;
+  const transpose = semitones !== 0 || ratio !== 1 ? semitones + 12 * Math.log2(ratio) : undefined;
+  return transpose === undefined ? undefined : { transpose };
 }
 
-function renderClipSource(
-  clip: SynthComposeClip,
-  sampleRate: number,
-  channels: 1 | 2
-): Float32Array {
+function renderClipSource(clip: SynthComposeClip, sampleRate: number, channels: 1 | 2, seed?: AudioSeed): Float32Array {
   const wav = clip.wav ?? clip.buffer;
-  if (wav) {
-    const { samples, sampleRate: sr, channels: ch } = decodeWavPcm16(wav);
-    if (sr === sampleRate && ch === channels) return new Float32Array(samples);
-    const frames = Math.ceil((samples.length / ch) * (sampleRate / sr));
-    return resampleToMatch(samples, sr, ch, sampleRate, channels, frames);
+  if (wav !== undefined) {
+    const decoded = decodeWavPcm16(wav);
+    if (decoded.sampleRate === sampleRate && decoded.channels === channels) return decoded.samples;
+    const frames = Math.max(1, Math.round((decoded.samples.length / decoded.channels) * (sampleRate / decoded.sampleRate)));
+    return resampleToMatch(decoded.samples, decoded.sampleRate, decoded.channels, sampleRate, channels, frames);
   }
 
   const pitch = clipPitchOverrides(clip);
-  let def: SynthSoundOptions;
-  if (clip.sound) {
-    def = clip.sound;
-  } else if (clip.preset) {
-    def = getPresetDefinition(clip.preset);
-  } else {
-    throw new Error("compose: each clip needs preset, sound, wav, or buffer.");
-  }
+  let definition: SynthSoundOptions;
+  if (clip.sound !== undefined) definition = applyPresetOverrides(clip.sound, pitch);
+  else if (clip.preset !== undefined) {
+    definition = applyPresetOverrides(getPresetDefinition(clip.preset), {
+      ...clip.overrides,
+      ...(pitch?.transpose !== undefined ? { transpose: (clip.overrides?.transpose ?? 0) + pitch.transpose } : {}),
+    });
+  } else throw new ApexifyInputError("compose: each clip requires one source.");
 
-  def = applyPresetOverrides(def, {
-    ...clip.overrides,
-    ...(pitch?.transpose != null ? { transpose: (clip.overrides?.transpose ?? 0) + pitch.transpose } : {}),
-    ...(pitch?.volume != null ? { volume: (clip.overrides?.volume ?? 1) * pitch.volume } : {}),
-  });
-
-  return renderSound({ ...def, sampleRate, channels, limiter: false });
+  return renderSound({ ...definition, sampleRate, channels, limiter: false, seed: clip.seed ?? seed ?? definition.seed });
 }
 
-function processClip(
-  clip: SynthComposeClip,
-  samples: Float32Array,
-  sampleRate: number,
-  channels: 1 | 2
-): Float32Array {
-  let pcm = samples;
-
-  if (clip.sourceStart || (clip.duration != null && clip.duration > 0)) {
-    pcm = trimClip(pcm, channels, sampleRate, clip.sourceStart, clip.duration);
-  }
-
-  if (clip.speed != null && clip.speed !== 1) {
-    pcm = changeSpeed(pcm, channels, clip.speed);
-  }
+function processClip(clip: SynthComposeClip, samples: Float32Array, sampleRate: number, channels: 1 | 2, seed?: AudioSeed): Float32Array {
+  let pcm = trimClip(samples, channels, sampleRate, clip.sourceStart, clip.duration);
+  if (clip.speed !== undefined && clip.speed !== 1) pcm = changeSpeed(pcm, channels, clip.speed);
 
   const gain = clip.gain ?? clip.volume ?? 1;
-  if (gain !== 1) {
-    for (let i = 0; i < pcm.length; i++) pcm[i] *= gain;
+  if (gain !== 1) for (let i = 0; i < pcm.length; i += 1) pcm[i] *= gain;
+
+  const random = createAudioRandom(clip.seed ?? seed);
+  if (clip.noise !== undefined && clip.noise > 0) {
+    const amount = clip.noise;
+    for (let i = 0; i < pcm.length; i += 1) pcm[i] = pcm[i]! * (1 - amount) + (random() * 2 - 1) * amount;
   }
 
-  if (clip.noise != null && clip.noise > 0) {
-    const n = Math.min(1, clip.noise);
-    for (let i = 0; i < pcm.length; i++) {
-      pcm[i] = pcm[i] * (1 - n) + (Math.random() * 2 - 1) * n;
-    }
-  }
-
-  const filter = clip.filter ?? (clip.quality ? qualityFilter(clip.quality) : undefined);
-  if (filter) applyClipFilter(pcm, channels, sampleRate, filter);
+  const filter = clip.filter ?? (clip.quality ? qualityFilter(clip.quality, sampleRate) : undefined);
+  if (filter) filterInterleavedInPlace(pcm, channels, sampleRate, filter);
   if (clip.quality === "lofi" && (clip.noise ?? 0) < 0.02) {
-    for (let i = 0; i < pcm.length; i++) pcm[i] += (Math.random() * 2 - 1) * 0.03;
+    for (let i = 0; i < pcm.length; i += 1) pcm[i] += (random() * 2 - 1) * 0.03;
   }
-
   applyFades(pcm, channels, sampleRate, clip.fadeIn, clip.fadeOut);
-
-  if (channels === 2 && clip.pan != null && clip.pan !== 0) {
-    applyPan(pcm, clip.pan);
-  }
-
+  if (channels === 2 && clip.pan !== undefined && clip.pan !== 0) applyPan(pcm, clip.pan);
   return pcm;
-}
-
-function applyPostHighpass(
-  samples: Float32Array,
-  channels: 1 | 2,
-  sampleRate: number,
-  cutoffHz: number
-): void {
-  const fc = Math.max(40, Math.min(sampleRate * 0.45, cutoffHz));
-  const alpha = Math.exp((-2 * Math.PI * fc) / sampleRate);
-  const frames = samples.length / channels;
-  for (let c = 0; c < channels; c++) {
-    let prevIn = 0;
-    let prevOut = 0;
-    for (let f = 0; f < frames; f++) {
-      const i = f * channels + c;
-      const x = samples[i];
-      const y = alpha * (prevOut + x - prevIn);
-      samples[i] = y;
-      prevIn = x;
-      prevOut = y;
-    }
-  }
 }
 
 /** Soft gate: attenuate quiet bed noise without hard clicks. */
 function applyNoiseGate(samples: Float32Array, threshold: number): void {
-  const t = Math.max(0.0005, threshold);
-  const knee = t * 2.5;
-  for (let i = 0; i < samples.length; i++) {
-    const a = Math.abs(samples[i]);
-    if (a >= knee) continue;
-    const g = a <= t ? 0 : (a - t) / (knee - t);
-    samples[i] *= g * g;
+  const knee = threshold * 2.5;
+  for (let i = 0; i < samples.length; i += 1) {
+    const amplitude = Math.abs(samples[i]!);
+    if (amplitude >= knee) continue;
+    const gain = amplitude <= threshold ? 0 : (amplitude - threshold) / Math.max(Number.EPSILON, knee - threshold);
+    samples[i] *= gain * gain;
   }
 }
 
-/** Mix clips on a timeline into one WAV (overlaps allowed). */
+function ensureFinite(samples: Float32Array): void {
+  for (let i = 0; i < samples.length; i += 1) {
+    if (!Number.isFinite(samples[i])) throw new ApexifyAudioError("audio composition produced a non-finite sample.", { details: { sampleIndex: i } });
+  }
+}
+
+/** Mix clips on a timeline into one PCM16 WAV. Final output plus one clip bounds transient render memory. */
 export function composeSynthAudio(options: SynthComposeOptions): Buffer {
-  const sampleRate = options.sampleRate ?? DEFAULT_SAMPLE_RATE;
-  const channels = options.channels ?? 1;
-  const placements: { at: number; samples: Float32Array }[] = [];
+  const validated = validateSynthComposeOptions(options);
+  const { sampleRate, channels, duration } = validated;
+  assertAudioWavResourceLimits(duration, sampleRate, channels);
+  const frameCount = Math.ceil(duration * sampleRate);
+  const mixed = new Float32Array(frameCount * channels);
 
-  for (const clip of options.clips) {
-    let pcm = renderClipSource(clip, sampleRate, channels);
-    pcm = processClip(clip, pcm, sampleRate, channels);
-    placements.push({ at: clip.at ?? 0, samples: pcm });
+  for (let index = 0; index < options.clips.length; index += 1) {
+    const clip = options.clips[index]!;
+    const derivedSeed = deriveAudioSeed(options.seed, `clip:${index}`);
+    let pcm = renderClipSource(clip, sampleRate, channels, derivedSeed);
+    pcm = processClip(clip, pcm, sampleRate, channels, derivedSeed);
+    const startFrame = Math.floor((clip.at ?? 0) * sampleRate);
+    const frames = pcm.length / channels;
+    for (let frame = 0; frame < frames && startFrame + frame < frameCount; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) mixed[(startFrame + frame) * channels + channel] += pcm[frame * channels + channel]!;
+    }
   }
 
-  let pcm = composeTimeline(placements, sampleRate, channels, {
-    duration: options.duration,
-    tail: options.tail,
-    masterGain: options.masterGain,
-    limiter: options.limiter,
-  });
-
-  if (options.postHighpassHz != null && options.postHighpassHz > 0) {
-    applyPostHighpass(pcm, channels, sampleRate, options.postHighpassHz);
-  }
-  if (options.noiseGateThreshold != null && options.noiseGateThreshold > 0) {
-    applyNoiseGate(pcm, options.noiseGateThreshold);
-  }
-  if (options.limiter !== false) {
-    applyLimiter(pcm, true);
-  }
-
-  return encodeWavPcm16(pcm, sampleRate, channels);
+  const master = options.masterGain ?? 1;
+  if (master !== 1) for (let i = 0; i < mixed.length; i += 1) mixed[i] *= master;
+  if (options.postHighpassHz !== undefined) filterInterleavedInPlace(mixed, channels, sampleRate, { type: "highpass", cutoff: options.postHighpassHz, q: Math.SQRT1_2 });
+  if (options.noiseGateThreshold !== undefined && options.noiseGateThreshold > 0) applyNoiseGate(mixed, options.noiseGateThreshold);
+  ensureFinite(mixed);
+  applyLimiter(mixed, options.limiter !== false);
+  return encodeWavPcm16(mixed, sampleRate, channels);
 }

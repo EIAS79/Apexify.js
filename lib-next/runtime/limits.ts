@@ -8,9 +8,7 @@ function currentLimits(limits?: RenderLimits): RenderLimits {
 
 export function assertWithinLimit(name: keyof RenderLimits, actual: number, limits?: RenderLimits): void {
   const maximum = currentLimits(limits)[name];
-  if (!Number.isFinite(actual) || actual < 0 || actual > maximum) {
-    throw new ApexifyResourceLimitError(name, maximum, actual);
-  }
+  if (!Number.isFinite(actual) || actual < 0 || actual > maximum) throw new ApexifyResourceLimitError(name, maximum, actual);
 }
 
 export function assertCanvasResourceLimits(width: number, height: number, limits?: RenderLimits): void {
@@ -24,14 +22,26 @@ export function assertGifResourceLimits(width: number, height: number, frameCoun
   const resolved = currentLimits(limits);
   assertWithinLimit("maxGifDimension", width, resolved);
   assertWithinLimit("maxGifDimension", height, resolved);
-  // GIF output pixels are independently bounded before encoder/canvas allocation.
   assertWithinLimit("maxTotalPixels", width * height, resolved);
   assertWithinLimit("maxGifFrames", frameCount, resolved);
   assertWithinLimit("maxGifResourceCost", width * height * Math.max(1, frameCount), resolved);
 }
 
+export function estimateAudioFrames(durationSeconds: number, sampleRate: number): number {
+  return Math.ceil(durationSeconds * sampleRate);
+}
+
 export function estimateAudioBytes(durationSeconds: number, sampleRate: number, channels: number): number {
-  return Math.ceil(durationSeconds * sampleRate) * channels * Float32Array.BYTES_PER_ELEMENT;
+  return estimateAudioFrames(durationSeconds, sampleRate) * channels * Float32Array.BYTES_PER_ELEMENT;
+}
+
+export function estimatePcm16WavBytes(durationSeconds: number, sampleRate: number, channels: number): number {
+  return 44 + estimateAudioFrames(durationSeconds, sampleRate) * channels * 2;
+}
+
+/** Peak bytes while encoding an already-rendered Float32 buffer to PCM16 WAV. */
+export function estimateAudioWavPeakBytes(durationSeconds: number, sampleRate: number, channels: number): number {
+  return estimateAudioBytes(durationSeconds, sampleRate, channels) + estimatePcm16WavBytes(durationSeconds, sampleRate, channels);
 }
 
 export function assertAudioResourceLimits(options: {
@@ -45,10 +55,17 @@ export function assertAudioResourceLimits(options: {
   const resolved = currentLimits(limits);
   assertWithinLimit("maxAudioDurationSeconds", options.durationSeconds, resolved);
   assertWithinLimit("maxAudioSampleRate", options.sampleRate, resolved);
+  assertWithinLimit("maxAudioChannels", options.channels, resolved);
   if (options.events !== undefined) assertWithinLimit("maxAudioEvents", options.events, resolved);
   if (options.layers !== undefined) assertWithinLimit("maxAudioLayers", options.layers, resolved);
   if (options.partials !== undefined) assertWithinLimit("maxAudioPartials", options.partials, resolved);
   assertWithinLimit("maxAudioBytes", estimateAudioBytes(options.durationSeconds, options.sampleRate, options.channels), resolved);
+}
+
+export function assertAudioWavResourceLimits(durationSeconds: number, sampleRate: number, channels: number, limits?: RenderLimits): void {
+  const resolved = currentLimits(limits);
+  assertAudioResourceLimits({ durationSeconds, sampleRate, channels }, resolved);
+  assertWithinLimit("maxAudioBytes", estimateAudioWavPeakBytes(durationSeconds, sampleRate, channels), resolved);
 }
 
 export function assertVideoResourceLimits(options: {
@@ -73,8 +90,6 @@ export function assertRemoteBytes(kind: "image" | "video" | "generic", bytes: nu
   else if (kind === "video") assertWithinLimit("maxRemoteVideoBytes", bytes, resolved);
   else {
     const maximum = Math.max(resolved.maxRemoteImageBytes, resolved.maxRemoteVideoBytes);
-    if (!Number.isFinite(bytes) || bytes < 0 || bytes > maximum) {
-      throw new ApexifyResourceLimitError("maxRemoteVideoBytes", maximum, bytes);
-    }
+    if (!Number.isFinite(bytes) || bytes < 0 || bytes > maximum) throw new ApexifyResourceLimitError("maxRemoteVideoBytes", maximum, bytes);
   }
 }
