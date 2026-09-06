@@ -52,8 +52,34 @@ jobs:
       - name: Build and verify emitted module formats
         run: npm run build
 
-      - name: Run security regression suite
-        run: npm test
+      # Keep every historical regression gate mandatory, but expose each phase independently so
+      # a stalled or failing phase cannot hide behind one aggregate npm-test step.
+      - name: Phase 1 security regression suite
+        run: npm run test:security
+
+      - name: Phase 3 runtime regression suite
+        run: npm run test:phase3
+
+      - name: Phase 4 validation regression suite
+        run: npm run test:phase4
+
+      - name: Phase 5 raster regression suite
+        run: npm run test:phase5
+
+      - name: Phase 6 composition regression suite
+        run: npm run test:phase6
+
+      - name: Phase 7 GIF regression suite
+        run: npm run test:phase7
+
+      - name: Phase 8 video regression suite
+        run: npm run test:phase8
+
+      - name: Phase 9 audio regression suite
+        run: npm run test:phase9
+
+      - name: Phase 10 secondary API regression suite
+        run: npm run test:phase10
 
       - name: Install packed package into clean ESM/CJS fixtures
         run: node scripts/verify-packed-package.cjs
