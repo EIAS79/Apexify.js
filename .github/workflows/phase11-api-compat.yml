@@ -64,7 +64,7 @@ jobs:
 
           const changelog = 'CHANGELOG.md';
           let changeText = fs.readFileSync(changelog, 'utf8');
-          const heading = '## [6.0.0] — 2026-09-07\n';
+          const heading = '## [6.0.0] - Unreleased\n';
           if (!changeText.includes(heading)) throw new Error('6.0.0 changelog heading missing');
           const cleanup = '\n### Phase 11 — package and API cleanup\n\n- Added `ApexPainter.toOutput()` as the consistently named output-conversion method while retaining `outPut()` as a documented deprecated compatibility alias.\n- Removed unused direct runtime dependencies `fs-extra` and `jszip`; the lockfile now reflects the smaller direct dependency graph.\n- Removed dead internal barrels, wrappers, placeholders, and the obsolete source update-checker path after repository-wide reachability audits.\n- Removed the packed-package `prepare` install hook and tightened tarball/consumer verification so maintenance scripts cannot leak into published contents.\n- Added a permanent dependency/source-tree maintenance audit for orphan source files, runtime cycles, stale deep imports, unfinished source markers, library console output, and direct dependency classification.\n\n';
           changeText = changeText.replace(heading, heading + cleanup);
@@ -87,7 +87,7 @@ jobs:
       - name: Commit validated API cleanup and remove one-off workflow
         run: |
           git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git config user.email 41898282+EIAS79@users.noreply.github.com
           git add package.json README.md CHANGELOG.md lib-next tests/public-api-compat.cjs scripts/verify-packed-package.cjs
           git rm .github/workflows/phase11-api-compat.yml
           git commit -m "refactor(phase11): add consistent output API compatibility path"
