@@ -78,8 +78,26 @@ jobs:
       - name: Phase 9 audio regression suite
         run: npm run test:phase9
 
-      - name: Phase 10 secondary API regression suite
-        run: npm run test:phase10
+      - name: Phase 10 completeness scan
+        run: node scripts/phase10-completeness-scan.cjs
+
+      - name: Phase 10 fixture build
+        run: node scripts/build-phase10-fixture.mjs
+
+      - name: Phase 10 runtime regression suite
+        run: node tests/phase10-runtime.cjs
+
+      - name: Phase 10 collage semantics suite
+        run: node tests/phase10-collage-semantics.cjs
+
+      - name: Phase 10 fuzz suite
+        run: node tests/phase10-fuzz.cjs
+
+      - name: Phase 10 golden suite
+        run: node tests/phase10-golden.cjs
+
+      - name: Phase 10 benchmark gate
+        run: node --expose-gc tests/phase10-benchmark.cjs
 
       - name: Install packed package into clean ESM/CJS fixtures
         run: node scripts/verify-packed-package.cjs
