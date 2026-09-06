@@ -9,12 +9,21 @@ const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const expectedRuntimeKeys = 'ApexPainter,ApexifyAssetError,ApexifyConfigError,ApexifyDecodeError,ApexifyError,ApexifyExternalServiceError,ApexifyInputError,ApexifyPluginError,ApexifyProcessError,ApexifyRemoteFetchError,ApexifyResourceLimitError,DEFAULT_APEXIFY_RUNTIME_CONFIG,configureApexifyRuntime,getDefaultApexifyRuntimeConfig,resetApexifyRuntimeConfig,resolveApexifyRuntimeConfig';
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  let executable = command;
+  let executableArgs = args;
+  if (process.platform === 'win32' && command === npmCmd && process.env.npm_execpath) {
+    executable = process.execPath;
+    executableArgs = [process.env.npm_execpath, ...args];
+  }
+  const result = spawnSync(executable, executableArgs, {
     cwd: options.cwd || root,
     encoding: 'utf8',
     stdio: options.capture ? 'pipe' : 'inherit',
     env: { ...process.env, ...options.env },
   });
+  if (result.error) {
+    throw new Error(`${command} ${args.join(' ')} failed to launch: ${result.error.message}`, { cause: result.error });
+  }
   if (result.status !== 0) {
     const details = options.capture ? `\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}` : '';
     throw new Error(`${command} ${args.join(' ')} failed with exit ${result.status}.${details}`);
