@@ -8,6 +8,7 @@ export {
 } from "../lib-next/runtime/config";
 export {
   classifyIpAddress,
+  hostMatchesAllowlist,
   redactUrl,
   redactUrlsInText,
   validateRemoteTarget,
