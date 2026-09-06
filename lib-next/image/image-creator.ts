@@ -1,5 +1,5 @@
 import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions, StrokeOptions } from "../types";
+import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions, StrokeOptions, ShadowOptions, BoxBackground, ImageFilter, gradient } from "../types";
 import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
@@ -153,7 +153,7 @@ export class ImageCreator {
     style: 'groove' | 'ridge' | 'double',
     width: number,
     color: string,
-    gradient: any,
+    gradient: gradient | undefined,
     rect: { x: number; y: number; w: number; h: number }
   ): void {
     const halfWidth = width / 2;
@@ -163,7 +163,7 @@ export class ImageCreator {
         ctx.lineWidth = halfWidth;
         if (gradient) {
           const gstroke = createGradientFill(ctx, gradient, rect);
-          ctx.strokeStyle = gstroke as any;
+          ctx.strokeStyle = gstroke;
         } else {
           ctx.strokeStyle = this.darkenColor(color, 0.3);
         }
@@ -171,7 +171,7 @@ export class ImageCreator {
         ctx.lineWidth = halfWidth;
         if (gradient) {
           const gstroke = createGradientFill(ctx, gradient, rect);
-          ctx.strokeStyle = gstroke as any;
+          ctx.strokeStyle = gstroke;
         } else {
           ctx.strokeStyle = this.lightenColor(color, 0.3);
         }
@@ -181,7 +181,7 @@ export class ImageCreator {
         ctx.lineWidth = halfWidth;
         if (gradient) {
           const gstroke = createGradientFill(ctx, gradient, rect);
-          ctx.strokeStyle = gstroke as any;
+          ctx.strokeStyle = gstroke;
         } else {
           ctx.strokeStyle = this.lightenColor(color, 0.3);
         }
@@ -189,7 +189,7 @@ export class ImageCreator {
         ctx.lineWidth = halfWidth;
         if (gradient) {
           const gstroke = createGradientFill(ctx, gradient, rect);
-          ctx.strokeStyle = gstroke as any;
+          ctx.strokeStyle = gstroke;
         } else {
           ctx.strokeStyle = this.darkenColor(color, 0.3);
         }
@@ -199,7 +199,7 @@ export class ImageCreator {
         ctx.lineWidth = halfWidth;
         if (gradient) {
           const gstroke = createGradientFill(ctx, gradient, rect);
-          ctx.strokeStyle = gstroke as any;
+          ctx.strokeStyle = gstroke;
         } else {
           ctx.strokeStyle = color;
         }
@@ -207,7 +207,7 @@ export class ImageCreator {
         ctx.lineWidth = halfWidth;
         if (gradient) {
           const gstroke = createGradientFill(ctx, gradient, rect);
-          ctx.strokeStyle = gstroke as any;
+          ctx.strokeStyle = gstroke;
         } else {
           ctx.strokeStyle = color;
         }
@@ -227,8 +227,8 @@ export class ImageCreator {
     y: number,
     width: number,
     height: number,
-    shadow: any,
-    shapeProps: any
+    shadow: ShadowOptions,
+    shapeProps: ShapeProperties
   ): void {
     const {
       color = "rgba(0,0,0,1)",
@@ -245,7 +245,7 @@ export class ImageCreator {
 
     if (gradient) {
       const gfill = createGradientFill(ctx, gradient, { x: x + offsetX, y: y + offsetY, w: width, h: height });
-      ctx.fillStyle = gfill as any;
+      ctx.fillStyle = gfill;
     } else {
       ctx.fillStyle = color;
     }
@@ -269,8 +269,8 @@ export class ImageCreator {
     y: number,
     width: number,
     height: number,
-    stroke: any,
-    shapeProps: any
+    stroke: StrokeOptions,
+    shapeProps: ShapeProperties
   ): void {
     /**
      * Rectangles/squares were stroked via {@link createShapePath} → `ctx.rect()`, which ignores
@@ -297,7 +297,7 @@ export class ImageCreator {
 
     if (gradient) {
       const gstroke = createGradientFill(ctx, gradient, { x, y, w: width, h: height });
-      ctx.strokeStyle = gstroke as any;
+      ctx.strokeStyle = gstroke;
     } else {
       ctx.strokeStyle = color;
     }
@@ -336,17 +336,17 @@ export class ImageCreator {
       blur?: number;
       borderRadius?: number | 'circular';
       borderPosition?: string;
-      shadow?: any;
-      stroke?: any;
-      boxBackground?: any;
+      shadow?: ShadowOptions;
+      stroke?: StrokeOptions;
+      boxBackground?: BoxBackground;
       fill?: boolean;
       color?: string;
-      gradient?: any;
+      gradient?: gradient;
       radius?: number;
       sides?: number;
       innerRadius?: number;
       outerRadius?: number;
-      filters?: any[];
+      filters?: ImageFilter[];
       points?: Array<{ x: number; y: number }>;
       startAngle?: number;
       endAngle?: number;

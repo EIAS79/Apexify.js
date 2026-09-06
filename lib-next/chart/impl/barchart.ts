@@ -1,5 +1,5 @@
 import { emitDiagnostic } from "../../runtime/diagnostics";
-import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, SKRSContext2D, type Canvas } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "../helpers/chartBackground";
@@ -169,7 +169,7 @@ async function renderEnhancedText(
     const metrics = ctx.measureText(text);
     ctx.fillStyle = createGradientFill(ctx, textGradient, {
       x, y, w: metrics.width, h: effectiveFontSize
-    }) as any;
+    });
   } else if (color) {
     ctx.fillStyle = color;
   }
@@ -183,7 +183,7 @@ async function renderEnhancedText(
       const metrics = ctx.measureText(text);
       ctx.strokeStyle = createGradientFill(ctx, style.stroke.gradient, {
         x, y, w: metrics.width, h: effectiveFontSize
-      }) as any;
+      });
     }
     ctx.strokeText(text, x, y);
   }
@@ -208,7 +208,7 @@ function fillWithGradientOrColor(
   rect?: { x: number; y: number; w: number; h: number }
 ): void {
   if (gradient && rect) {
-    ctx.fillStyle = createGradientFill(ctx, gradient, rect) as any;
+    ctx.fillStyle = createGradientFill(ctx, gradient, rect);
   } else {
     ctx.fillStyle = color || defaultColor;
   }
@@ -267,7 +267,7 @@ export function drawBar(
     ctx.rect(x, y, width, height);
 
     if (effectiveStroke.gradient) {
-      ctx.strokeStyle = createGradientFill(ctx, effectiveStroke.gradient, { x, y, w: width, h: height }) as any;
+      ctx.strokeStyle = createGradientFill(ctx, effectiveStroke.gradient, { x, y, w: width, h: height });
     } else {
       ctx.strokeStyle = effectiveStroke.color || '#000000';
     }
@@ -929,7 +929,7 @@ export function drawAxes(
   width: number = 800,
   height: number = 600,
   options: BarChartOptions = {}
-): { buffer: Buffer; ctx: SKRSContext2D; canvas: any } {
+): { buffer: Buffer; ctx: SKRSContext2D; canvas: Canvas } {
   const padding = options.dimensions?.padding || {};
   const axisColor = options.appearance?.axisColor ?? options.axes?.x?.color ?? options.axes?.y?.color ?? '#000000';
   const axisWidth = options.appearance?.axisWidth ?? options.axes?.x?.width ?? options.axes?.y?.width ?? 2;
@@ -2024,7 +2024,7 @@ const minLegendSpacing = 10;
             y: valueY - lollipopDotSize / 2,
             w: lollipopDotSize,
             h: lollipopDotSize
-          }) as any;
+          });
         } else {
           ctx.strokeStyle = dotStroke.color || item.color || '#4A90E2';
         }

@@ -26,7 +26,7 @@ export function drawShape(
 
   if (shapeProps.gradient) {
     const gradient = createGradientFill(ctx, shapeProps.gradient, { x, y, w: width, h: height });
-    ctx.fillStyle = gradient as any;
+    ctx.fillStyle = gradient;
   } else {
     ctx.fillStyle = shapeProps.color || '#000000';
   }

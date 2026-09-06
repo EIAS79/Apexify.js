@@ -349,7 +349,7 @@ async function renderEnhancedText(
     const metrics = ctx.measureText(text);
     ctx.fillStyle = createGradientFill(ctx, textGradient, {
       x, y, w: metrics.width, h: effectiveFontSize
-    }) as any;
+    });
   } else if (color) {
     ctx.fillStyle = color;
   }
@@ -363,7 +363,7 @@ async function renderEnhancedText(
       const metrics = ctx.measureText(text);
       ctx.strokeStyle = createGradientFill(ctx, style.stroke.gradient, {
         x, y, w: metrics.width, h: effectiveFontSize
-      }) as any;
+      });
     }
     ctx.strokeText(text, x, y);
   }
@@ -388,7 +388,7 @@ function fillWithGradientOrColor(
   rect?: { x: number; y: number; w: number; h: number }
 ): void {
   if (gradient && rect) {
-    ctx.fillStyle = createGradientFill(ctx, gradient, rect) as any;
+    ctx.fillStyle = createGradientFill(ctx, gradient, rect);
   } else {
     ctx.fillStyle = color || defaultColor;
   }
