@@ -26,6 +26,7 @@ export interface RenderLimits {
   maxGifResourceCost: number;
   maxAudioDurationSeconds: number;
   maxAudioSampleRate: number;
+  maxAudioChannels: number;
   maxAudioEvents: number;
   maxAudioLayers: number;
   maxAudioPartials: number;
@@ -61,8 +62,7 @@ export interface FfmpegRuntimeConfig { ffmpegPath?: string; ffprobePath?: string
 export interface TempRuntimeConfig { rootDirectory?: string; retainFiles: boolean; }
 export interface DiagnosticsEvent { level: "debug" | "info" | "warn" | "error"; code: string; message: string; details?: Readonly<Record<string, unknown>>; }
 export type DiagnosticsHandler = (event: DiagnosticsEvent) => void;
-export interface DiagnosticsRuntimeConfig { handler?: DiagnosticsHandler; }
-export interface ApexifyRuntimeConfig { network: NetworkRuntimeConfig; limits: RenderLimits; cache: CacheRuntimeConfig; ffmpeg: FfmpegRuntimeConfig; temp: TempRuntimeConfig; diagnostics: DiagnosticsRuntimeConfig; }
+export interface DiagnosticsRuntimeConfig { network: NetworkRuntimeConfig; limits: RenderLimits; cache: CacheRuntimeConfig; ffmpeg: FfmpegRuntimeConfig; temp: TempRuntimeConfig; diagnostics: DiagnosticsRuntimeConfig; }
 export type ApexifyRuntimeConfigInput = { network?: Partial<NetworkRuntimeConfig>; limits?: Partial<RenderLimits>; cache?: Partial<CacheRuntimeConfig>; ffmpeg?: Partial<FfmpegRuntimeConfig>; temp?: Partial<TempRuntimeConfig>; diagnostics?: DiagnosticsRuntimeConfig; };
 
 export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Object.freeze({
@@ -73,7 +73,7 @@ export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Ob
     maxTextLength: 1_000_000, maxRemoteAssets: 128, maxRemoteImageBytes: 32 * 1024 * 1024, maxRemoteVideoBytes: 512 * 1024 * 1024,
     maxImageSourceBytes: 64 * 1024 * 1024, maxDecodedImagePixels: 67_108_864, maxDecodedImageFrames: 128, maxSvgElements: 10_000,
     maxGifFrames: 1_000, maxGifDimension: 4_096, maxGifResourceCost: 268_435_456,
-    maxAudioDurationSeconds: 600, maxAudioSampleRate: 192_000, maxAudioEvents: 20_000, maxAudioLayers: 1_024, maxAudioPartials: 4_096, maxAudioBytes: 256 * 1024 * 1024,
+    maxAudioDurationSeconds: 600, maxAudioSampleRate: 192_000, maxAudioChannels: 2, maxAudioEvents: 20_000, maxAudioLayers: 1_024, maxAudioPartials: 4_096, maxAudioBytes: 256 * 1024 * 1024,
     maxVideoDurationSeconds: 14_400, maxVideoFps: 240, maxVideoBitrateKbps: 200_000, maxVideoOverlays: 256,
     maxVideoMergeInputs: 32, maxVideoExtractedFrames: 2_000, maxVideoAudioTracks: 64, maxVideoPipelineLayers: 256,
     maxBatchOperations: 256, maxBatchConcurrency: 4, maxConcurrentRemoteFetches: 8,
@@ -113,6 +113,7 @@ export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {
     const key = rawKey as keyof RenderLimits;
     if (CONTINUOUS_RENDER_LIMITS.has(key)) finitePositive(`limits.${key}`, value); else finitePositiveInteger(`limits.${key}`, value);
   }
+  if (limits.maxAudioChannels > 2) throw new ApexifyConfigError("limits.maxAudioChannels cannot exceed the supported mono/stereo channel count of 2.");
   if (limits.maxSceneDepth > limits.maxNestedSurfaces) throw new ApexifyConfigError("limits.maxSceneDepth must be <= limits.maxNestedSurfaces.");
   if (limits.maxSceneTotalPixels < limits.maxTotalPixels) throw new ApexifyConfigError("limits.maxSceneTotalPixels must be >= limits.maxTotalPixels.");
   if (limits.maxBatchConcurrency > limits.maxBatchOperations) throw new ApexifyConfigError("limits.maxBatchConcurrency must be <= limits.maxBatchOperations.");
