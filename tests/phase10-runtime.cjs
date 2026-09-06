@@ -117,7 +117,7 @@ function png(width, height, color) {
     const compressed = await api.compressImage(source, { format, quality: 70, maxWidth: 32 });
     const meta = await sharp(compressed).metadata();
     assert(meta.width <= 32);
-    assert.equal(meta.format, format);
+    assert.equal(meta.format, format === 'avif' ? 'heif' : format);
   }
   await expectInputError(() => api.compressImage(source, { format: 'png' }), /unsupported/i);
   const palette = await api.extractPalette(source, { count: 4, method: 'median-cut', format: 'hex' });
