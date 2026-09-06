@@ -7,7 +7,8 @@ export type ApexifyErrorCode =
   | "APEXIFY_PROCESS"
   | "APEXIFY_EXTERNAL_SERVICE"
   | "APEXIFY_ASSET"
-  | "APEXIFY_PLUGIN";
+  | "APEXIFY_PLUGIN"
+  | "APEXIFY_AUDIO";
 
 export interface ApexifyErrorOptions {
   code: ApexifyErrorCode;
@@ -61,11 +62,7 @@ export class ApexifyRemoteFetchError extends ApexifyError {
   readonly requestUrl?: string;
 
   constructor(message: string, options: { status?: number; requestUrl?: string; cause?: unknown; details?: Readonly<Record<string, unknown>> } = {}) {
-    super(message, {
-      code: "APEXIFY_REMOTE_FETCH",
-      cause: options.cause,
-      details: options.details,
-    });
+    super(message, { code: "APEXIFY_REMOTE_FETCH", cause: options.cause, details: options.details });
     this.status = options.status;
     this.requestUrl = options.requestUrl;
   }
@@ -98,6 +95,12 @@ export class ApexifyAssetError extends ApexifyError {
 export class ApexifyPluginError extends ApexifyError {
   constructor(message: string, options: Omit<ApexifyErrorOptions, "code"> = {}) {
     super(message, { ...options, code: "APEXIFY_PLUGIN" });
+  }
+}
+
+export class ApexifyAudioError extends ApexifyError {
+  constructor(message: string, options: Omit<ApexifyErrorOptions, "code"> = {}) {
+    super(message, { ...options, code: "APEXIFY_AUDIO" });
   }
 }
 
