@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { createCanvas } = require('@napi-rs/canvas');
 const { test } = require('node:test');
-const api = require('../.build/phase12-entry.cjs');
+const api = require('../.build/phase12-properties-entry.cjs');
 
 function rng(seed) {
   let state = seed >>> 0;
