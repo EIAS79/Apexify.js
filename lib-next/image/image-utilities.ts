@@ -71,7 +71,7 @@ export async function imgEffects(imagePath: string, filters: Array<ImageFilter |
     ctx.drawImage(image, 0, 0);
     for (let index = 0; index < filters.length; index++) {
       const filter = filters[index]!;
-      assertRecord(filter, `image.effects.filters[${index}]`);
+      assertRecord(filter as unknown, `image.effects.filters[${index}]`);
       switch (filter.type) {
         case "flip": flipCanvas(ctx, image.width, image.height, filter.horizontal, filter.vertical); break;
         case "rotate": rotateCanvas(ctx, canvas, filter.deg ?? 0); break;
