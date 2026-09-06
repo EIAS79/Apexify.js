@@ -96,12 +96,20 @@ export const painterImageUtils: PainterImageUtils = {
   },
   async colorsRemover(source, colorToRemove) {
     validateColorRemovalInputs(source, colorToRemove);
-    try { await preflightCanvasSource(source); return await removeColor(source, colorToRemove); } catch (error) { rethrowDecode(error, "colorsRemover"); }
+    try {
+      await preflightCanvasSource(source);
+      const result = await removeColor(source, colorToRemove);
+      if (!result) throw new ApexifyDecodeError("colorsRemover failed to produce image bytes.");
+      return result;
+    } catch (error) { rethrowDecode(error, "colorsRemover"); }
   },
   async removeBackground(imageURL, apiKey) {
     validateBackgroundRemovalInputs(imageURL, apiKey);
-    try { return await bgRemoval(imageURL, apiKey); }
-    catch (error) {
+    try {
+      const result = await bgRemoval(imageURL, apiKey);
+      if (!result) throw new ApexifyExternalServiceError("removeBackground failed to produce image bytes.");
+      return result;
+    } catch (error) {
       if (error instanceof ApexifyError) throw error;
       throw new ApexifyExternalServiceError(`removeBackground failed: ${getErrorMessage(error)}`, { cause: error });
     }
