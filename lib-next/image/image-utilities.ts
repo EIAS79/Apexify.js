@@ -84,7 +84,11 @@ export async function imgEffects(imagePath: string, filters: Array<ImageFilter |
           await applyContextImageFilters(ctx, [{ type: "gaussianBlur", intensity: Math.min(100, Math.max(0, filter.radius ?? 0)) }], image.width, image.height);
           break;
         case "posterize": posterize(ctx, filter.levels ?? 4); break;
-        case "pixelate": pixelate(ctx, filter.size ?? 10, filter.x ?? 0, filter.y ?? 0, filter.w ?? image.width, filter.h ?? image.height); break;
+        case "pixelate": {
+          const legacy = filter as LegacyImageFilter;
+          pixelate(ctx, filter.size ?? 10, legacy.x ?? 0, legacy.y ?? 0, legacy.w ?? image.width, legacy.h ?? image.height);
+          break;
+        }
         case "grayscale":
         case "gaussianBlur":
         case "motionBlur":
