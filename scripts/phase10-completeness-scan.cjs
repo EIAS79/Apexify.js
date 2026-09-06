@@ -23,8 +23,17 @@ for (const file of required) if (!exists(file)) failures.push(`missing required 
 if (exists('lib-next/core/general-functions.ts')) failures.push('obsolete mixed lib-next/core/general-functions.ts still exists');
 
 const pkg = JSON.parse(read('package.json'));
+function scriptReaches(start, target, seen = new Set()) {
+  if (start === target) return true;
+  if (seen.has(start)) return false;
+  seen.add(start);
+  const command = String(pkg.scripts?.[start] ?? '');
+  if (!command) return false;
+  const calls = [...command.matchAll(/npm\s+run\s+([A-Za-z0-9:_-]+)/g)].map((match) => match[1]);
+  return calls.some((name) => name === target || scriptReaches(name, target, seen));
+}
 if (!pkg.scripts?.['test:phase10']) failures.push('package.json does not expose test:phase10');
-if (!String(pkg.scripts?.test || '').includes('test:phase10')) failures.push('npm test does not enforce test:phase10');
+if (!scriptReaches('test', 'test:phase10')) failures.push('npm test does not transitively enforce test:phase10');
 for (const test of ['phase10-runtime.cjs','phase10-collage-semantics.cjs','phase10-fuzz.cjs','phase10-golden.cjs','phase10-benchmark.cjs']) {
   if (!String(pkg.scripts?.['test:phase10'] || '').includes(test)) failures.push(`test:phase10 does not enforce ${test}`);
 }
