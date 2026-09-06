@@ -156,10 +156,31 @@ function png(width, height, color) {
     assert.equal(metadata.width, 320, `${type} width`);
     assert.equal(metadata.height, 240, `${type} height`);
   }
+
+  // Dedicated combo/comparison chart entry points are public and must share semantic preflight.
+  const combo = await charts.createComboChart({
+    dimensions: { width: 320, height: 240 },
+    bars: [{ label: 'B', value: 3, xStart: 0, xEnd: 1 }],
+    lines: [{ label: 'L', yAxis: 'primary', data: [{ x: 0, y: 1 }, { x: 1, y: 2 }] }],
+  });
+  assert.deepEqual(await sharp(combo).metadata().then((m) => [m.width, m.height]), [320, 240]);
+  const comparison = await charts.createComparisonChart({
+    dimensions: { width: 640, height: 240 },
+    layout: 'sideBySide',
+    chart1: { type: 'pie', data: [{ label: 'A', value: 2 }, { label: 'B', value: 1 }], options: {} },
+    chart2: { type: 'line', data: [{ label: 'L', data: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }], options: {} },
+  });
+  assert.deepEqual(await sharp(comparison).metadata().then((m) => [m.width, m.height]), [640, 240]);
+
   await expectInputError(() => charts.createChart('pie', [{ label: 'A', value: 0 }]), /total/i);
   await expectInputError(() => charts.createChart('polarArea', [{ label: 'A', value: -1 }]), /must be/i);
   await expectInputError(() => charts.createChart('radar', [{ label: 'R', values: [1, 2] }], { radar: { categories: ['A', 'B', 'C'] } }), /length/i);
   await expectInputError(() => charts.createChart('line', [{ label: 'bad', data: [{ x: 0, y: Infinity }] }]), /finite/i);
+  await expectInputError(() => charts.createComboChart({ bars: [], lines: [] }), /at least one/i);
+  await expectInputError(() => charts.createComparisonChart({
+    chart1: { type: 'pie', data: [{ label: 'A', value: 0 }], options: {} },
+    chart2: { type: 'line', data: [{ label: 'L', data: [{ x: 0, y: 0 }] }], options: {} },
+  }), /total/i);
 
   // BATCH: bounded concurrency, input-order results, fail-fast and AbortSignal.
   let active = 0;
