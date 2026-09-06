@@ -62,8 +62,23 @@ export interface FfmpegRuntimeConfig { ffmpegPath?: string; ffprobePath?: string
 export interface TempRuntimeConfig { rootDirectory?: string; retainFiles: boolean; }
 export interface DiagnosticsEvent { level: "debug" | "info" | "warn" | "error"; code: string; message: string; details?: Readonly<Record<string, unknown>>; }
 export type DiagnosticsHandler = (event: DiagnosticsEvent) => void;
-export interface DiagnosticsRuntimeConfig { network: NetworkRuntimeConfig; limits: RenderLimits; cache: CacheRuntimeConfig; ffmpeg: FfmpegRuntimeConfig; temp: TempRuntimeConfig; diagnostics: DiagnosticsRuntimeConfig; }
-export type ApexifyRuntimeConfigInput = { network?: Partial<NetworkRuntimeConfig>; limits?: Partial<RenderLimits>; cache?: Partial<CacheRuntimeConfig>; ffmpeg?: Partial<FfmpegRuntimeConfig>; temp?: Partial<TempRuntimeConfig>; diagnostics?: DiagnosticsRuntimeConfig; };
+export interface DiagnosticsRuntimeConfig { handler?: DiagnosticsHandler; }
+export interface ApexifyRuntimeConfig {
+  network: NetworkRuntimeConfig;
+  limits: RenderLimits;
+  cache: CacheRuntimeConfig;
+  ffmpeg: FfmpegRuntimeConfig;
+  temp: TempRuntimeConfig;
+  diagnostics: DiagnosticsRuntimeConfig;
+}
+export type ApexifyRuntimeConfigInput = {
+  network?: Partial<NetworkRuntimeConfig>;
+  limits?: Partial<RenderLimits>;
+  cache?: Partial<CacheRuntimeConfig>;
+  ffmpeg?: Partial<FfmpegRuntimeConfig>;
+  temp?: Partial<TempRuntimeConfig>;
+  diagnostics?: DiagnosticsRuntimeConfig;
+};
 
 export const DEFAULT_APEXIFY_RUNTIME_CONFIG: Readonly<ApexifyRuntimeConfig> = Object.freeze({
   network: Object.freeze({ allowedProtocols: Object.freeze(["http:", "https:"] as const), timeoutMs: 15_000, maxRedirects: 5, retryAttempts: 3, retryBaseDelayMs: 200, retryMaxDelayMs: 3_000, retryJitterRatio: 0.2, honorRetryAfter: true, trustedNetworkAccess: false, allowedHosts: Object.freeze([] as string[]), userAgent: "Apexify.js/6" }),
@@ -91,7 +106,7 @@ function optionalNonEmptyString(name: string, value: string | undefined): string
 const CONTINUOUS_RENDER_LIMITS = new Set<keyof RenderLimits>(["maxAudioDurationSeconds", "maxVideoDurationSeconds", "maxVideoFps"]);
 
 export function resolveApexifyRuntimeConfig(input: ApexifyRuntimeConfigInput = {}): Readonly<ApexifyRuntimeConfig> {
-  const network: NetworkRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.network, ...input.network, allowedProtocols: Object.freeze([...(input.network?.allowedProtocols ?? DEFAULT_APEXIFY_RUNTIME_CONFIG.network.allowedProtocols)]), allowedHosts: Object.freeze((input.network?.allowedHosts ?? DEFAULT_APEXIFY_RUNTIME_CONFIG.network.allowedHosts).map((host) => host.toLowerCase())) };
+  const network: NetworkRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.network, ...input.network, allowedProtocols: Object.freeze([...(input.network?.allowedProtocols ?? DEFAULT_APEXIFY_RUNTIME_CONFIG.network.allowedProtocols)]), allowedHosts: Object.freeze((input.network?.allowedHosts ?? DEFAULT_APEXIFY_RUNTIME_CONFIG.network.allowedHosts).map((host: string) => host.toLowerCase())) };
   const limits: RenderLimits = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.limits, ...input.limits };
   const cache: CacheRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.cache, ...input.cache };
   const ffmpeg: FfmpegRuntimeConfig = { ...DEFAULT_APEXIFY_RUNTIME_CONFIG.ffmpeg, ...input.ffmpeg };
