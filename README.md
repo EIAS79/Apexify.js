@@ -537,7 +537,8 @@ const metrics = await painter.measureText({
 | `output.*` | Buffer encodings |
 | `batch()` / `chain()` | Parallel/sequential pipelines |
 | `save()` / `saveMultiple()` | Persist output files |
-| `outPut()` | Convert buffer to configured output form |
+| `toOutput()` | Convert buffer to the configured output form |
+| `outPut()` | Deprecated compatibility alias for `toOutput()` |
 
 ---
 

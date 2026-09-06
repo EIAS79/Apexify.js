@@ -525,8 +525,14 @@ export class ApexPainter {
     });
   }
 
+  /** Convert a rendered buffer to this painter instance's configured output representation. */
+  toOutput(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {
+    return this.outputSaveCreate.toOutput(results);
+  }
+
+  /** @deprecated Use {@link toOutput} instead. Retained for Apexify.js 5.x/6.x compatibility. */
   outPut(results: Buffer): Promise<Buffer | string | Blob | ArrayBuffer> {
-    return this.outputSaveCreate.outPut(results);
+    return this.toOutput(results);
   }
 
   save(buffer: Buffer, options?: SaveOptions): Promise<SaveResult> {

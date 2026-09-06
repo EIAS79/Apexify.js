@@ -170,7 +170,7 @@ async function renderEnhancedText(
     const metrics = ctx.measureText(text);
     ctx.fillStyle = createGradientFill(ctx, textGradient, {
       x, y, w: metrics.width, h: effectiveFontSize
-    }) as any;
+    });
   } else if (color) {
     ctx.fillStyle = color;
   }
@@ -184,7 +184,7 @@ async function renderEnhancedText(
       const metrics = ctx.measureText(text);
       ctx.strokeStyle = createGradientFill(ctx, style.stroke.gradient, {
         x, y, w: metrics.width, h: effectiveFontSize
-      }) as any;
+      });
     }
     ctx.strokeText(text, x, y);
   }
@@ -337,11 +337,10 @@ export async function createComparisonChart(
   let chart2Buffer: Buffer;
 
   const getLegendProps = (chartType: ComparisonChartType, chartOptions: IndividualChartOptions) => {
-    const props: any = {};
     if (chartType === 'pie' || chartType === 'donut') {
       const pieOptions = chartOptions as PieChartOptions;
       if (pieOptions.legends) {
-        props.legends = pieOptions.legends;
+        return { legends: pieOptions.legends };
       }
     } else {
       const otherOptions = chartOptions as
@@ -352,13 +351,13 @@ export async function createComparisonChart(
         | RadarChartOptions
         | PolarAreaChartOptions;
       if (otherOptions.legend && otherOptions.legend.entries && otherOptions.legend.entries.length > 0) {
-        props.legend = otherOptions.legend;
+        return { legend: otherOptions.legend };
       }
     }
-    return props;
+    return {};
   };
 
-  const chart1Options: any = {
+  const chart1Options = {
     ...options.chart1.options,
     dimensions: {
       ...options.chart1.options.dimensions,
@@ -382,7 +381,7 @@ export async function createComparisonChart(
   };
 
   if (options.chart1.type === 'bar' && options.chart1.barType) {
-    chart1Options.type = options.chart1.barType;
+    (chart1Options as BarChartOptions).type = options.chart1.barType;
   }
 
   if (options.chart1.type === 'line') {
@@ -401,7 +400,7 @@ export async function createComparisonChart(
     }
   }
 
-  const chart2Options: any = {
+  const chart2Options = {
     ...options.chart2.options,
     dimensions: {
       ...options.chart2.options.dimensions,
@@ -425,7 +424,7 @@ export async function createComparisonChart(
   };
 
   if (options.chart2.type === 'bar' && options.chart2.barType) {
-    chart2Options.type = options.chart2.barType;
+    (chart2Options as BarChartOptions).type = options.chart2.barType;
   }
 
   if (options.chart2.type === 'line') {

@@ -49,6 +49,9 @@ jobs:
       - name: Build and verify emitted module formats
         run: npm run build
 
+      - name: Maintenance/dependency/source-tree audit
+        run: npm run audit:maintenance
+
       - name: Phase 1 security regression suite
         run: npm run test:security
 
@@ -97,7 +100,7 @@ jobs:
       - name: Phase 10 benchmark gate
         run: node --expose-gc tests/phase10-benchmark.cjs
 
-      - name: Install packed package into clean ESM/CJS fixtures
+      - name: Install packed package into clean ESM/CJS/TypeScript fixtures
         run: node scripts/verify-packed-package.cjs
 
       - name: Prove prepack rebuilds clean dist
@@ -136,8 +139,15 @@ jobs:
       - name: Inspect npm pack contents
         run: npm pack --dry-run --ignore-scripts --json > phase2-pack-node-${{ matrix.node }}.json
 
+      - name: Audit all dependencies
+        run: npm audit --audit-level=high --json > dependency-audit-all-node-${{ matrix.node }}.json
+
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high --json > phase2-audit-node-${{ matrix.node }}.json
+
+      - name: Capture direct dependency modernity
+        shell: bash
+        run: npm outdated --json > dependency-outdated-node-${{ matrix.node }}.json || test $? -eq 1
 
       - name: Upload package evidence
         if: always()
@@ -149,5 +159,9 @@ jobs:
             phase2-prepack-node-${{ matrix.node }}.json
             phase2-pack-node-${{ matrix.node }}.json
             phase2-audit-node-${{ matrix.node }}.json
+            dependency-audit-all-node-${{ matrix.node }}.json
+            dependency-outdated-node-${{ matrix.node }}.json
             phase10-benchmark-node-${{ matrix.node }}.json
+            maintenance-audit-node-${{ matrix.node }}.json
+            package-verification-node-${{ matrix.node }}.json
           if-no-files-found: warn
