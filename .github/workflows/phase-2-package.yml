@@ -49,6 +49,9 @@ jobs:
       - name: Build and verify emitted module formats
         run: npm run build
 
+      - name: Phase 11 repository audit snapshot
+        run: node scripts/phase11-audit.cjs
+
       - name: Phase 1 security regression suite
         run: npm run test:security
 
@@ -150,4 +153,5 @@ jobs:
             phase2-pack-node-${{ matrix.node }}.json
             phase2-audit-node-${{ matrix.node }}.json
             phase10-benchmark-node-${{ matrix.node }}.json
+            phase11-audit-node-${{ matrix.node }}.json
           if-no-files-found: warn
