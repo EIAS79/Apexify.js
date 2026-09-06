@@ -2,7 +2,7 @@ import type { AdsrEnvelope, SynthLayer, SynthSoundOptions, SynthSequenceOptions,
 import { ApexifyAudioError, ApexifyInputError } from "../runtime/errors";
 import { assertWithinLimit, estimateAudioBytes } from "../runtime/limits";
 import { createBiquadProcessor } from "./biquad-filter";
-import { DEFAULT_SAMPLE_RATE, PEAK_LIMIT } from "./constants";
+import { PEAK_LIMIT } from "./constants";
 import { createAudioRandom, deriveAudioSeed } from "./audio-random";
 import { validateSynthSequenceOptions, validateSynthSoundOptions } from "./audio-validation";
 import { getPresetDefinition } from "./presets";
