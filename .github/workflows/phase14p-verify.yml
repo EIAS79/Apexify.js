@@ -7,10 +7,12 @@ on:
       - phase14p-performance-recovery
     paths:
       - 'lib-next/**'
+      - 'benchmarks/phase14p/**'
       - 'tests/phase9-*.cjs'
       - 'tests/phase14-regressions.cjs'
       - 'scripts/build-phase9-fixture.mjs'
       - 'scripts/build-test-fixture.mjs'
+      - 'scripts/build-phase14p-benchmark-fixture.mjs'
       - '.github/workflows/phase14p-verify.yml'
 
 permissions:
@@ -35,11 +37,17 @@ jobs:
       - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
       - name: Typecheck and build package
         run: npm run build
+      - name: Build Phase 14-P internal benchmark fixture
+        run: node scripts/build-phase14p-benchmark-fixture.mjs
+      - name: Text stage benchmark
+        env:
+          APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+        run: node --expose-gc benchmarks/phase14p/text-stage-bench.cjs
       - name: Phase 9 audio regression suite
         run: npm run test:phase9
       - name: Phase 14 regression suite
