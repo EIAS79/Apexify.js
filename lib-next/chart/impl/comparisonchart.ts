@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, type SKRSContext2D, type Image } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
@@ -472,7 +473,7 @@ export async function createComparisonChart(
       chart1Buffer = await createPolarAreaChart(options.chart1.data as PolarAreaSlice[], chart1Options as PolarAreaChartOptions);
       break;
     default:
-      throw new Error(`Unsupported chart type for chart 1: ${options.chart1.type}`);
+      throw new ApexifyInputError(`Unsupported chart type for chart 1: ${options.chart1.type}`);
   }
 
   switch (options.chart2.type) {
@@ -504,7 +505,7 @@ export async function createComparisonChart(
       chart2Buffer = await createPolarAreaChart(options.chart2.data as PolarAreaSlice[], chart2Options as PolarAreaChartOptions);
       break;
     default:
-      throw new Error(`Unsupported chart type for chart 2: ${options.chart2.type}`);
+      throw new ApexifyInputError(`Unsupported chart type for chart 2: ${options.chart2.type}`);
   }
 
   const chart1Image = await decodeImageSource(chart1Buffer, {

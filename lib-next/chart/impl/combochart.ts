@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "../helpers/chartBackground";
@@ -613,7 +614,7 @@ export async function createComboChart(
   const lines = options.lines ?? [];
 
   if (bars.length === 0 && lines.length === 0) {
-    throw new Error("Combo chart requires at least one bar or one line series.");
+    throw new ApexifyInputError("Combo chart requires at least one bar or one line series.");
   }
 
   const height = options.dimensions?.height ?? 600;

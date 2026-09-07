@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
@@ -92,12 +93,12 @@ export async function createPolarAreaChart(
   options: PolarAreaChartOptions = {}
 ): Promise<Buffer> {
   if (!slices || slices.length === 0) {
-    throw new Error("polar area chart requires at least one slice");
+    throw new ApexifyInputError("polar area chart requires at least one slice");
   }
 
   const total = slices.reduce((s, x) => s + Math.max(0, x.value), 0);
   if (total <= 0) {
-    throw new Error("polar area chart requires positive total value");
+    throw new ApexifyInputError("polar area chart requires positive total value");
   }
 
   const width = options.dimensions?.width ?? 800;

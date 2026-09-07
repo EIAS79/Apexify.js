@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
 import { paintChartCanvasBackground, type ChartAppearanceExtended } from "../helpers/chartBackground";
@@ -121,12 +122,12 @@ export async function createRadarChart(
 ): Promise<Buffer> {
   const cats = options.radar?.categories;
   if (!cats || cats.length < 3) {
-    throw new Error("radar.categories must have at least 3 entries");
+    throw new ApexifyInputError("radar.categories must have at least 3 entries");
   }
   const N = cats.length;
   for (const s of seriesList) {
     if (!s.values || s.values.length !== N) {
-      throw new Error(`Radar series "${s.label}" must have ${N} values`);
+      throw new ApexifyInputError(`Radar series "${s.label}" must have ${N} values`);
     }
   }
 

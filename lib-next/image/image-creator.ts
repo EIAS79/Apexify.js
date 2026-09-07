@@ -6,7 +6,7 @@ import { getErrorMessage, getCanvasContext } from "../core/errors";
 import { isShapeSource, drawShape, createShapePath } from "./shapes/shapes";
 import { loadImageCached, fitInto, drawBoxBackground } from "./image-properties";
 import { decodeImageSource } from "./image-source-validation";
-import { ApexifyError } from "../runtime/errors";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { buildPath, applyRotation } from "../render/clip-path";
 import { applyShadow } from "../render/shadow-renderer";
 import { applyStroke } from "../render/stroke-renderer";
@@ -37,7 +37,7 @@ export class ImageCreator {
    */
   private validateImageProperties(ip: ImageProperties): void {
     if (!ip.source || ip.x == null || ip.y == null) {
-      throw new Error("createImage: source, x, and y are required.");
+      throw new ApexifyInputError("createImage: source, x, and y are required.");
     }
   }
 
@@ -49,7 +49,7 @@ export class ImageCreator {
   private validateImageArray(images: ImageProperties | ImageProperties[]): void {
     const list = Array.isArray(images) ? images : [images];
     if (list.length === 0) {
-      throw new Error("createImage: At least one image/shape is required.");
+      throw new ApexifyInputError("createImage: At least one image/shape is required.");
     }
     for (const ip of list) {
       this.validateImageProperties(ip);
@@ -891,7 +891,7 @@ export class ImageCreator {
   ): Promise<Buffer> {
     try {
       if (!canvasBuffer) {
-        throw new Error("createImage: canvasBuffer is required.");
+        throw new ApexifyInputError("createImage: canvasBuffer is required.");
       }
       this.validateImageArray(images);
 
@@ -918,7 +918,7 @@ export class ImageCreator {
       return assignCanvasResultsBuffer(canvasBuffer, cv.toBuffer("image/png"));
     } catch (error) {
       if (error instanceof ApexifyError) throw error;
-      throw new Error(`createImage failed: ${getErrorMessage(error)}`);
+      throw new ApexifyDecodeError(`createImage failed: ${getErrorMessage(error)}`, { cause: error });
     }
   }
 }

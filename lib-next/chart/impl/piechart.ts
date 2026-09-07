@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
@@ -629,7 +630,7 @@ const titleHeight = chartTitle ? chartTitleFontSize + 30 : 0;
 
   const total = data.reduce((sum, slice) => sum + slice.value, 0);
   if (total === 0) {
-    throw new Error('Pie Chart Error: Total value of all slices must be greater than 0');
+    throw new ApexifyInputError('Pie Chart Error: Total value of all slices must be greater than 0');
   }
 
   const tempCanvas = createCanvas(1, 1);

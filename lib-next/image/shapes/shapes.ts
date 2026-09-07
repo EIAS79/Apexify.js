@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { SKRSContext2D } from "@napi-rs/canvas";
 import type { ShapeType, ShapeProperties } from "../../types";
 import { createGradientFill } from "../../render/gradient-fill";
@@ -62,7 +63,7 @@ export function drawShape(
       drawArc(ctx, x, y, width, height, shapeProps);
       break;
     default:
-      throw new Error(`Unknown shape type: ${shapeType}`);
+      throw new ApexifyInputError(`Unknown shape type: ${shapeType}`);
   }
 
   ctx.restore();
@@ -118,7 +119,7 @@ export function createShapePath(
       createArcPath(ctx, x, y, width, height, shapeProps);
       break;
     default:
-      throw new Error(`Unknown shape type: ${shapeType}`);
+      throw new ApexifyInputError(`Unknown shape type: ${shapeType}`);
   }
 }
 

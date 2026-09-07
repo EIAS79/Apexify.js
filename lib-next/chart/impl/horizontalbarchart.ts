@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
@@ -1006,7 +1007,7 @@ const minLegendSpacing = 10;
     data.forEach((item, itemIndex) => {
 
       if (item.value !== undefined && (item.value < effectiveXMin || item.value > effectiveXMax)) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Horizontal Bar Chart Error: Data value out of X-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has value ${item.value}, ` +
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
@@ -1014,14 +1015,14 @@ const minLegendSpacing = 10;
       }
 
       if (item.xStart !== undefined && (item.xStart < effectiveXMin || item.xStart > effectiveXMax)) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Horizontal Bar Chart Error: Data value out of X-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has xStart value ${item.xStart}, ` +
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
         );
       }
       if (item.xEnd !== undefined && (item.xEnd < effectiveXMin || item.xEnd > effectiveXMax)) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Horizontal Bar Chart Error: Data value out of X-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has xEnd value ${item.xEnd}, ` +
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
@@ -1031,7 +1032,7 @@ const minLegendSpacing = 10;
       if (item.values && item.values.length > 0) {
         item.values.forEach((seg, segIndex) => {
           if (seg.value < effectiveXMin || seg.value > effectiveXMax) {
-            throw new Error(
+            throw new ApexifyInputError(
               `Horizontal Bar Chart Error: Data value out of X-axis bounds.\n` +
               `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" segment ${segIndex} has value ${seg.value}, ` +
               `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
@@ -1049,14 +1050,14 @@ const minLegendSpacing = 10;
     data.forEach((item, itemIndex) => {
 
       if (item.yStart !== undefined && (item.yStart < effectiveYMin || item.yStart > effectiveYMax)) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Horizontal Bar Chart Error: Data value out of Y-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has yStart value ${item.yStart}, ` +
           `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`
         );
       }
       if (item.yEnd !== undefined && (item.yEnd < effectiveYMin || item.yEnd > effectiveYMax)) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Horizontal Bar Chart Error: Data value out of Y-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has yEnd value ${item.yEnd}, ` +
           `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`

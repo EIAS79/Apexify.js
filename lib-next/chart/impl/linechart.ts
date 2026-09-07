@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
@@ -2001,7 +2002,7 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
     series.forEach((serie) => {
       serie.data.forEach((point, pointIndex) => {
         if (point.x < effectiveXMin || point.x > effectiveXMax) {
-          throw new Error(
+          throw new ApexifyInputError(
             `Line Chart Error: Data value out of X-axis bounds.\n` +
             `Series "${serie.label}" point ${pointIndex} has X value ${point.x}, ` +
             `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
@@ -2018,7 +2019,7 @@ const legendPlacement = normalizeLegendPosition(options.legend?.position);
     series.forEach((serie) => {
       serie.data.forEach((point, pointIndex) => {
         if (point.y < effectiveYMin || point.y > effectiveYMax) {
-          throw new Error(
+          throw new ApexifyInputError(
             `Line Chart Error: Data value out of Y-axis bounds.\n` +
             `Series "${serie.label}" point ${pointIndex} has Y value ${point.y}, ` +
             `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`
@@ -2327,7 +2328,7 @@ fillColor = `rgba(74, 144, 226, ${areaOpacity})`;
           const maxY = Math.max(...allYValues);
 
           if (areaConfig.toValue >= minY) {
-            throw new Error(
+            throw new ApexifyInputError(
               `Line Chart Error: Invalid area shading configuration.\n` +
               `For area type "below", the toValue (${areaConfig.toValue}) must be below all Y values in the line.\n` +
               `Line Y range: [${minY}, ${maxY}].\n` +
@@ -2384,7 +2385,7 @@ shadeToYCanvas = localShadeToYCanvas;
           const maxY = Math.max(...allYValues);
 
           if (areaConfig.toValue <= maxY) {
-            throw new Error(
+            throw new ApexifyInputError(
               `Line Chart Error: Invalid area shading configuration.\n` +
               `For area type "above", the toValue (${areaConfig.toValue}) must be above all Y values in the line.\n` +
               `Line Y range: [${minY}, ${maxY}].\n` +

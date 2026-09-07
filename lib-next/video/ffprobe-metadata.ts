@@ -44,7 +44,7 @@ function parseProbeJson(stdout: string): {
   try {
     const parsed = JSON.parse(stdout) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("ffprobe JSON root was not an object");
+      throw new ApexifyDecodeError("ffprobe JSON root was not an object");
     }
     return parsed as { streams?: Array<Record<string, unknown>>; format?: Record<string, unknown> };
   } catch (cause) {

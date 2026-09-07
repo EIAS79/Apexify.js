@@ -1,3 +1,4 @@
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { createCanvas, type CanvasGradient } from "@napi-rs/canvas";
 import type { PathLike } from "fs";
 import type { BlendOptions } from "../types";
@@ -10,23 +11,23 @@ function validateGradientBlendInputs(
   options: BlendOptions
 ): void {
   if (!source) {
-    throw new Error("gradientBlend: source is required.");
+    throw new ApexifyInputError("gradientBlend: source is required.");
   }
   if (!options || typeof options !== "object") {
-    throw new Error("gradientBlend: options object is required.");
+    throw new ApexifyInputError("gradientBlend: options object is required.");
   }
   if (!options.colors || !Array.isArray(options.colors) || options.colors.length === 0) {
-    throw new Error("gradientBlend: options.colors array with at least one color stop is required.");
+    throw new ApexifyInputError("gradientBlend: options.colors array with at least one color stop is required.");
   }
   if (options.type && !["linear", "radial", "conic"].includes(options.type)) {
-    throw new Error("gradientBlend: type must be 'linear', 'radial', or 'conic'.");
+    throw new ApexifyInputError("gradientBlend: type must be 'linear', 'radial', or 'conic'.");
   }
   for (const colorStop of options.colors) {
     if (typeof colorStop.stop !== "number" || colorStop.stop < 0 || colorStop.stop > 1) {
-      throw new Error("gradientBlend: Each color stop must have a stop value between 0 and 1.");
+      throw new ApexifyInputError("gradientBlend: Each color stop must have a stop value between 0 and 1.");
     }
     if (!colorStop.color || typeof colorStop.color !== "string") {
-      throw new Error("gradientBlend: Each color stop must have a valid color string.");
+      throw new ApexifyInputError("gradientBlend: Each color stop must have a valid color string.");
     }
   }
 }
@@ -87,6 +88,7 @@ export async function blendGradientOverImage(
     ctx.globalCompositeOperation = "source-over";
     return canvas.toBuffer("image/png");
   } catch (error) {
-    throw new Error(`gradientBlend failed: ${getErrorMessage(error)}`, { cause: error });
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError(`gradientBlend failed: ${getErrorMessage(error)}`, { cause: error });
   }
 }
