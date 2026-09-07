@@ -81,12 +81,17 @@ jobs:
             echo "kernel=$(uname -a)"
             echo "font=$(fc-match 'DejaVu Sans' | head -n 1)"
             echo "ffmpeg=$(ffmpeg -version | head -n 1)"
+            echo "phase0_install=npm install --ignore-scripts --no-audit --no-fund (historical subject has no lockfile)"
+            echo "current_install=npm ci --ignore-scripts (frozen current lockfile)"
           } > phase14p/artifacts/phase14p/environment.txt
 
       - name: Install and build Phase 0 subject
         working-directory: subjects/phase0
         run: |
-          npm ci --ignore-scripts
+          # Phase 0 did not commit package-lock.json. Its original benchmark workflow
+          # therefore used npm install. Preserve that historical constraint rather than
+          # synthesizing a lockfile and pretending npm ci is available for this subject.
+          npm install --ignore-scripts --no-audit --no-fund
           npm run build
           test -f dist/cjs/index.js
 
