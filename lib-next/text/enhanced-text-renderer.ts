@@ -1,5 +1,5 @@
 import type { SKRSContext2D } from "@napi-rs/canvas";
-import { resolveTextDecorations, resolveTextEffects, resolveTextLayout, type TextCurveConfig, type TextProperties } from "../types";
+import { resolveTextDecorations, resolveTextEffects, type TextCurveConfig, type TextProperties } from "../types";
 import {
   applyTextTransformations,
   computeWrappedTextLines,
