@@ -40,7 +40,11 @@ const requiredBoundaries = [
   ['canvas façade', 'lib-next/apex-painter/creates/canvas-create.ts', /validateCanvasConfig\s*\(/],
   ['image façade', 'lib-next/apex-painter/creates/image-text-create.ts', /validateImageInput\s*\(/],
   ['text façade', 'lib-next/apex-painter/creates/image-text-create.ts', /validateTextInput\s*\(/],
-  ['base canvas decode preflight', 'lib-next/apex-painter/creates/image-text-create.ts', /inspectDecodedImageSource\s*\(/],
+  // The base canvas path may reuse the central decoded-image cache. loadImageCached() is
+  // authoritative because every miss enters decodeImageSource(), while every hit is a
+  // previously validated decoded Image. Ordering checks below require a fresh canvas
+  // resource assertion before the decoded surface reaches the text renderer.
+  ['base canvas validated decode', 'lib-next/apex-painter/creates/image-text-create.ts', /loadImageCached\s*\(/],
   ['scene core', 'lib-next/scene/scene-creator.ts', /validateSceneRenderInput\s*\(/],
   ['GIF generated frames', 'lib-next/gif/gif-creator.ts', /validateGeneratedGIFFrame\s*\(/],
   ['audio façade', 'lib-next/audio-synth/painter-create-audio.ts', /validateSynthSoundOptions\s*\(/],
@@ -62,6 +66,33 @@ const requiredBoundaries = [
 for (const [label, rel, pattern] of requiredBoundaries) {
   assert.match(read(rel), pattern, `${label} is missing its Phase 4 validation boundary`);
 }
+
+const imageTextCreate = read('lib-next/apex-painter/creates/image-text-create.ts');
+assert.match(
+  imageTextCreate,
+  /const\s+decoded\s*=\s*await\s+loadImageCached\s*\(\s*buffer\s*\)/,
+  'base canvas must use the authoritative validated decoded-image cache'
+);
+assert.match(
+  imageTextCreate,
+  /assertCanvasResourceLimits\s*\(\s*decoded\.width\s*,\s*decoded\.height\s*\)/,
+  'cached base canvas must reassert current canvas resource limits'
+);
+assert.ok(
+  imageTextCreate.indexOf('loadImageCached(buffer)') < imageTextCreate.indexOf('assertCanvasResourceLimits(decoded.width, decoded.height)'),
+  'base canvas decode must complete before its dimensions are checked'
+);
+assert.ok(
+  imageTextCreate.indexOf('assertCanvasResourceLimits(decoded.width, decoded.height)') < imageTextCreate.indexOf('createTextFromDecodedBase'),
+  'base canvas resource validation must precede text rendering'
+);
+
+const imageProperties = read('lib-next/image/image-properties.ts');
+assert.match(
+  imageProperties,
+  /decodeImageSource\s*\(\s*src\s*,\s*\{\s*label:\s*"image source"\s*\}\s*\)/,
+  'decoded-image cache misses must pass through the authoritative image decoder'
+);
 
 const scene = read('lib-next/scene/scene-creator.ts');
 assert.doesNotMatch(scene, /options\?\.validate\s*!==\s*false/, 'scene safety validation must not be disableable');
