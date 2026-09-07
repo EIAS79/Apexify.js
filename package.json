@@ -49,6 +49,7 @@
     "build:js": "node scripts/build-package.mjs",
     "build:types": "tsc -p tsconfig.types.json && node scripts/process-declarations.cjs",
     "build": "npm run clean && npm run typecheck && npm run build:js && npm run build:types && node scripts/verify-dist.cjs",
+    "prepare": "node scripts/prepare-git-install.cjs",
     "audit:maintenance": "node scripts/maintenance-audit.cjs --strict",
     "audit:tests": "node scripts/test-system-audit.cjs",
     "audit:secrets": "node scripts/secret-scan.cjs",
