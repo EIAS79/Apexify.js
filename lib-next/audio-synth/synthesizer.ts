@@ -15,7 +15,7 @@ import { mixFloatBuffers, renderSound, renderValidatedSequence, renderValidatedS
 import { deriveAudioSeed } from "./audio-random";
 import { applyPresetOverrides } from "./preset-overrides";
 import { getPresetDefinition } from "./presets";
-import { decodeWavPcm16, encodeWavPcm16 } from "./wav-encode";
+import { decodeWavPcm16, encodeValidatedWavPcm16 } from "./wav-encode";
 import {
   isTimelineMixInput,
   validateSynthComposeOptions,
@@ -39,7 +39,7 @@ export function synthesizeSound(options: SynthSoundOptions): Buffer {
   const validated = validateSynthSoundOptions(options);
   assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
   const pcm = renderValidatedSound(options, validated);
-  return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
+  return encodeValidatedWavPcm16(pcm, validated.sampleRate, validated.channels);
 }
 
 export function synthesizePreset(name: SynthPresetName, overrides?: SynthPresetOverrides): Buffer {
@@ -50,7 +50,7 @@ export function synthesizeSequence(options: SynthSequenceOptions): Buffer {
   const validated = validateSynthSequenceOptions(options);
   assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
   const pcm = renderValidatedSequence(options, validated);
-  return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
+  return encodeValidatedWavPcm16(pcm, validated.sampleRate, validated.channels);
 }
 
 /** Mix multiple sounds into one WAV — simultaneous mix, or timeline composition when any input uses timeline controls. */
@@ -106,7 +106,7 @@ export function mixSynthSounds(inputs: SynthMixInput[], options: SynthMixOptions
   }
 
   const mixed = mixFloatBuffers(floats, channels, options.masterGain ?? 1);
-  return encodeWavPcm16(mixed, sampleRate, channels);
+  return encodeValidatedWavPcm16(mixed, sampleRate, channels);
 }
 
 export type { SynthComposeClip, SynthComposeOptions };
