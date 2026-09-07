@@ -11,7 +11,7 @@ import type {
 import { ApexifyInputError } from "../runtime/errors";
 import { assertAudioWavResourceLimits, assertWithinLimit, estimatePcm16WavBytes } from "../runtime/limits";
 import { composeSynthAudio } from "./compose";
-import { mixFloatBuffers, renderSequence, renderSound, renderValidatedSequence, renderValidatedSound, resampleToMatch } from "./engine";
+import { mixFloatBuffers, renderSound, renderValidatedSequence, renderValidatedSound, resampleToMatch } from "./engine";
 import { deriveAudioSeed } from "./audio-random";
 import { applyPresetOverrides } from "./preset-overrides";
 import { getPresetDefinition } from "./presets";
