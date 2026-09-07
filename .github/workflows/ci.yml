@@ -1,0 +1,137 @@
+name: Apexify CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apexify-ci-v2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-full:
+    name: Linux / Node ${{ matrix.node }} / full gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Pin npm toolchain
+        run: npm install --global npm@11.19.1
+
+      - name: Runtime snapshot
+        run: |
+          node --version
+          npm --version
+
+      - name: Install controlled FFmpeg integration dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Install locked dependency graph
+        run: npm ci --ignore-scripts
+
+      - name: Full Phase 12 gate
+        run: npm run test:ci
+
+      - name: Audit all dependencies
+        run: npm audit --audit-level=high --json > artifacts/dependency-audit-all-node-${{ matrix.node }}.json
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high --json > artifacts/dependency-audit-production-node-${{ matrix.node }}.json
+
+      - name: Inspect packed contents
+        run: npm pack --dry-run --ignore-scripts --json > artifacts/package-dry-run-node-${{ matrix.node }}.json
+
+      - name: Upload Phase 12 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase12-linux-node-${{ matrix.node }}
+          path: |
+            artifacts/
+            phase5-benchmark-node-*.json
+            phase6-benchmark-node-*.json
+            phase7-benchmark-node-*.json
+            phase8-benchmark-node-*.json
+            phase9-benchmark-node-*.json
+            phase10-benchmark-node-*.json
+            maintenance-audit-node-*.json
+            package-verification-node-*.json
+          if-no-files-found: warn
+
+  platform-smoke:
+    name: ${{ matrix.os }} / Node 24 / package-runtime smoke
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Pin npm toolchain
+        run: npm install --global npm@11.19.1
+
+      - name: Install locked dependency graph
+        run: npm ci --ignore-scripts
+
+      - name: Build and typecheck
+        run: npm run build
+
+      - name: Test inventory
+        run: npm run audit:tests
+
+      - name: Critical unit tests
+        run: npm run test:unit
+
+      - name: Deterministic network integration
+        run: npm run test:integration
+
+      - name: Process and temp-workspace security
+        run: npm run test:security:core:run
+
+      - name: Golden raster tests
+        run: npm run test:golden
+
+      - name: Property and fuzz tests
+        run: npm run test:fuzz
+
+      - name: Packed ESM/CJS/types fixtures
+        run: npm run test:package
+
+      - name: Upload platform evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase12-${{ matrix.os }}-node-24
+          path: |
+            artifacts/
+            package-verification-node-*.json
+          if-no-files-found: warn

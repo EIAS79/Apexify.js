@@ -36,6 +36,8 @@ chart-verify-output/
 # Test outputs
 coverage/
 .nyc_output/
+artifacts/
+tests/.build/
 
 # Example script outputs
 examples/output/

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "regressionTolerance": 0.1,
+  "calibration": {
+    "method": "conservative maximum median observed across successful Linux full-gate benchmark jobs",
+    "workflowRuns": [34073922518, 34074426539, 34074706070],
+    "samplesPerRun": 5
+  },
+  "baselines": {
+    "linux-x64-node22": {
+      "medianElapsedMs": 36.19,
+      "medianRssDeltaMb": 2.38
+    },
+    "linux-x64-node24": {
+      "medianElapsedMs": 34.42,
+      "medianRssDeltaMb": 3.75
+    },
+    "linux-x64-node26": {
+      "medianElapsedMs": 44.3,
+      "medianRssDeltaMb": 3.88
+    }
+  }
+}
