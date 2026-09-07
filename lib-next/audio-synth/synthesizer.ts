@@ -11,7 +11,7 @@ import type {
 import { ApexifyInputError } from "../runtime/errors";
 import { assertAudioWavResourceLimits, assertWithinLimit, estimatePcm16WavBytes } from "../runtime/limits";
 import { composeSynthAudio } from "./compose";
-import { mixFloatBuffers, renderSequence, renderSound, resampleToMatch } from "./engine";
+import { mixFloatBuffers, renderSequence, renderSound, renderValidatedSequence, renderValidatedSound, resampleToMatch } from "./engine";
 import { deriveAudioSeed } from "./audio-random";
 import { applyPresetOverrides } from "./preset-overrides";
 import { getPresetDefinition } from "./presets";
@@ -38,7 +38,7 @@ function resolvePreset(name: SynthPresetName, overrides?: SynthPresetOverrides):
 export function synthesizeSound(options: SynthSoundOptions): Buffer {
   const validated = validateSynthSoundOptions(options);
   assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
-  const pcm = renderSound(options);
+  const pcm = renderValidatedSound(options, validated);
   return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
 }
 
@@ -49,7 +49,7 @@ export function synthesizePreset(name: SynthPresetName, overrides?: SynthPresetO
 export function synthesizeSequence(options: SynthSequenceOptions): Buffer {
   const validated = validateSynthSequenceOptions(options);
   assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels);
-  const pcm = renderSequence(options);
+  const pcm = renderValidatedSequence(options, validated);
   return encodeWavPcm16(pcm, validated.sampleRate, validated.channels);
 }
 
