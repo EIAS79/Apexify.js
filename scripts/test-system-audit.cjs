@@ -29,7 +29,7 @@ function classify(file) {
   if (/^tests\//.test(file)) return 'REGRESSION TEST';
   if (/scripts\/phase\d+.*scan/.test(file) || /maintenance-audit/.test(file)) return 'REGRESSION TEST';
   if (/scripts\/build-phase\d+-fixture|scripts\/build-security-fixture/.test(file)) return 'TEMPORARY PHASE TEST';
-  if (/scripts\/build-test-fixture|scripts\/verify-packed-package|scripts\/test-system-audit/.test(file)) return 'PERMANENT TEST';
+  if (/scripts\/build-(?:test|coverage)-fixture|scripts\/verify-packed-package|scripts\/test-system-audit/.test(file)) return 'PERMANENT TEST';
   return null;
 }
 
