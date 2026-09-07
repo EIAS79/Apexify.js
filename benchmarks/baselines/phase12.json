@@ -1,10 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "regressionTolerance": 0.1,
   "calibration": {
     "method": "conservative maximum median observed across successful Linux full-gate benchmark jobs",
     "workflowRuns": [34073922518, 34074426539, 34074706070],
-    "samplesPerRun": 5
+    "samplesPerRun": 5,
+    "regressionGate": {
+      "initialSamples": 5,
+      "confirmationSamplesOnInitialBreach": 6,
+      "policy": "Keep the committed 10% threshold unchanged. When the initial five-sample median breaches elapsed or RSS limits, collect six additional samples and require the median across all eleven samples to pass. This confirms sustained regressions while rejecting transient hosted-runner contention."
+    }
   },
   "baselines": {
     "linux-x64-node22": {
