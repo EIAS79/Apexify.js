@@ -5,17 +5,15 @@ const { performance } = require('node:perf_hooks');
 const { createCanvas } = require('@napi-rs/canvas');
 const sharp = require('sharp');
 
-const width = 1200;
-const height = 630;
 const fontFamily = process.env.APEXIFY_BENCH_FONT_FAMILY || 'DejaVu Sans';
 const warmups = Number(process.env.APEXIFY_PNG_PROBE_WARMUPS || 5);
 const samples = Number(process.env.APEXIFY_PNG_PROBE_SAMPLES || 20);
 
 function textCanvas() {
-  const canvas = createCanvas(width, height);
+  const canvas = createCanvas(1200, 630);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#101820';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, 1200, 630);
   ctx.font = `56px ${fontFamily}`;
   ctx.fillStyle = '#ffffff';
   ctx.fillText('Apexify.js normalized Phase 14-P baseline', 72, 160);
@@ -103,8 +101,7 @@ function hash(buffer) {
 }
 
 async function decoded(png) {
-  const image = sharp(png);
-  const metadata = await image.metadata();
+  const metadata = await sharp(png).metadata();
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return {
     hash: hash(data),
@@ -118,15 +115,36 @@ async function decoded(png) {
       density: metadata.density ?? null,
       hasAlpha: metadata.hasAlpha,
       isProgressive: metadata.isProgressive,
+      hasProfile: metadata.hasProfile,
     },
   };
 }
 
-async function sharpC6(canvas) {
-  const pixels = canvas.data();
-  return sharp(pixels, { raw: { width: canvas.width, height: canvas.height, channels: 4 } })
+function rawView(typed) {
+  return Buffer.from(typed.buffer, typed.byteOffset, typed.byteLength);
+}
+
+function sharpPipeline(pixels, canvas, premultiplied) {
+  return sharp(pixels, {
+    raw: {
+      width: canvas.width,
+      height: canvas.height,
+      channels: 4,
+      premultiplied,
+    },
+  })
     .png({ compressionLevel: 6, adaptiveFiltering: false, palette: false })
-    .toBuffer();
+    .withMetadata({ density: 72 });
+}
+
+async function encodeSharpPremultiplied(canvas) {
+  return sharpPipeline(canvas.data(), canvas, true).toBuffer();
+}
+
+async function encodeSharpImageData(canvas) {
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return sharpPipeline(rawView(imageData.data), canvas, false).toBuffer();
 }
 
 async function run(name, encode) {
@@ -149,41 +167,70 @@ async function run(name, encode) {
   };
 }
 
+async function once(name, encode) {
+  const output = await encode();
+  return {
+    name,
+    timing: null,
+    bytes: output.length,
+    encodedHash: hash(output),
+    decoded: await decoded(output),
+  };
+}
+
 async function verifyFixture(label, canvas, benchmark = false) {
-  const rawHash = hash(canvas.data());
+  const rawBackingHash = hash(canvas.data());
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const imageDataHash = hash(rawView(imageData.data));
+
   const skia = benchmark
     ? await run(`${label}-skia`, () => canvas.encode('png'))
-    : { name: `${label}-skia`, bytes: 0, timing: null, encodedHash: null, decoded: await decoded(await canvas.encode('png')) };
-  const sharpResult = benchmark
-    ? await run(`${label}-sharp-c6`, () => sharpC6(canvas))
-    : (() => sharpC6(canvas).then(async (png) => ({ name: `${label}-sharp-c6`, bytes: png.length, timing: null, encodedHash: hash(png), decoded: await decoded(png) })))();
-  const sharpResolved = await sharpResult;
+    : await once(`${label}-skia`, () => canvas.encode('png'));
+  const premul = benchmark
+    ? await run(`${label}-sharp-premul`, () => encodeSharpPremultiplied(canvas))
+    : await once(`${label}-sharp-premul`, () => encodeSharpPremultiplied(canvas));
+  const imageDataResult = benchmark
+    ? await run(`${label}-sharp-imagedata`, () => encodeSharpImageData(canvas))
+    : await once(`${label}-sharp-imagedata`, () => encodeSharpImageData(canvas));
 
-  const skiaPixelsMatchRaw = skia.decoded.hash === rawHash;
-  const sharpPixelsMatchRaw = sharpResolved.decoded.hash === rawHash;
-  const samePixels = skia.decoded.hash === sharpResolved.decoded.hash;
-  if (!skiaPixelsMatchRaw || !sharpPixelsMatchRaw || !samePixels) {
-    throw new Error(`${label}: lossless pixel invariant failed (raw/skia/sharp mismatch).`);
-  }
+  const reference = skia.decoded.hash;
+  const premulMatch = premul.decoded.hash === reference;
+  const imageDataMatch = imageDataResult.decoded.hash === reference;
+  const imageDataReferenceMatch = imageDataHash === reference;
 
   console.log(`\n[${label}] ${canvas.width}x${canvas.height}`);
-  console.log(`pixels=${rawHash} exact=true`);
+  console.log(`backing=${rawBackingHash}`);
+  console.log(`imageData=${imageDataHash} matchesSkia=${imageDataReferenceMatch}`);
+  console.log(`skiaPixels=${reference}`);
+  console.log(`premulPixels=${premul.decoded.hash} matchesSkia=${premulMatch}`);
+  console.log(`imageDataPixels=${imageDataResult.decoded.hash} matchesSkia=${imageDataMatch}`);
   console.log(`skia metadata=${JSON.stringify(skia.decoded.metadata)}`);
-  console.log(`sharp metadata=${JSON.stringify(sharpResolved.decoded.metadata)}`);
-  if (benchmark) {
-    const sizeChange = ((sharpResolved.bytes / skia.bytes) - 1) * 100;
-    console.log(`skia       median=${skia.timing.median.toFixed(3)} ms p95=${skia.timing.p95.toFixed(3)} ms bytes=${skia.bytes}`);
-    console.log(`sharp-c6   median=${sharpResolved.timing.median.toFixed(3)} ms p95=${sharpResolved.timing.p95.toFixed(3)} ms bytes=${sharpResolved.bytes} size=${sizeChange >= 0 ? '+' : ''}${sizeChange.toFixed(1)}%`);
-  } else {
-    console.log(`sharp-c6 bytes=${sharpResolved.bytes}`);
+  console.log(`premul metadata=${JSON.stringify(premul.decoded.metadata)}`);
+  console.log(`imageData metadata=${JSON.stringify(imageDataResult.decoded.metadata)}`);
+
+  const report = (result) => {
+    const sizeChange = ((result.bytes / skia.bytes) - 1) * 100;
+    const timing = result.timing ? ` median=${result.timing.median.toFixed(3)} ms p95=${result.timing.p95.toFixed(3)} ms` : '';
+    console.log(`${result.name.padEnd(30)}${timing} bytes=${result.bytes} size=${sizeChange >= 0 ? '+' : ''}${sizeChange.toFixed(1)}%`);
+  };
+  if (benchmark) report(skia);
+  report(premul);
+  report(imageDataResult);
+
+  if (!imageDataReferenceMatch) throw new Error(`${label}: Canvas getImageData pixels differ from Skia PNG decode.`);
+  if (!premulMatch) throw new Error(`${label}: Sharp premultiplied raw input differs from Skia PNG decode.`);
+  if (!imageDataMatch) throw new Error(`${label}: Sharp getImageData input differs from Skia PNG decode.`);
+  if (premul.decoded.metadata.density !== 72 || imageDataResult.decoded.metadata.density !== 72) {
+    throw new Error(`${label}: Sharp candidate failed to preserve 72 DPI output density.`);
   }
 }
 
 (async () => {
   console.log(`sharp concurrency=${sharp.concurrency()}`);
-  console.log('Phase 14-P lossless PNG semantic/performance probe');
+  console.log('Phase 14-P premultiplied lossless PNG semantic/performance probe');
   await verifyFixture('opaque-text', textCanvas(), true);
-  await verifyFixture('transparent-alpha', transparentCanvas());
+  await verifyFixture('transparent-alpha', transparentCanvas(), true);
   await verifyFixture('gradient-shadow', gradientCanvas());
   await verifyFixture('compositing', compositingCanvas());
 })().catch((error) => {
