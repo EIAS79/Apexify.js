@@ -45,6 +45,10 @@ jobs:
         run: npm run build
       - name: Build Phase 14-P internal benchmark fixture
         run: node scripts/build-phase14p-benchmark-fixture.mjs
+      - name: Validation, config, security and memory audit
+        run: |
+          node benchmarks/phase14p/validation-config-audit.cjs \
+            --output artifacts/phase14p/validation-config-audit.json
       - name: Text PNG semantic and bounded-fallback regression
         run: node benchmarks/phase14p/text-png-regression.cjs
       - name: Text stage benchmark
@@ -60,12 +64,14 @@ jobs:
           node benchmarks/phase14p/assert-stage-budgets.cjs \
             --baseline benchmarks/baselines/phase14p-stage-linux-x64-node24-schema2.json \
             --current artifacts/phase14p/stage-benchmarks.json
-      - name: Upload stage benchmark evidence
+      - name: Upload targeted Phase 14-P evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: phase14p-stage-benchmarks-node24-${{ github.sha }}
-          path: artifacts/phase14p/stage-benchmarks.json
+          name: phase14p-targeted-node24-${{ github.sha }}
+          path: |
+            artifacts/phase14p/stage-benchmarks.json
+            artifacts/phase14p/validation-config-audit.json
           if-no-files-found: error
       - name: Phase 9 audio regression suite
         run: npm run test:phase9
