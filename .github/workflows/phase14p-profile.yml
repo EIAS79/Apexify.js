@@ -40,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20.20.2
+          node-version: 24.20.0
           package-manager-cache: false
 
       - run: npm install --global npm@11.19.1
@@ -74,6 +74,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: phase14p-pre-recovery-profiles-node20
+          name: phase14p-pre-recovery-profiles-node24
           path: phase14p/artifacts/phase14p-profiles/pre/
           if-no-files-found: error
