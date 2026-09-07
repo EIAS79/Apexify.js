@@ -129,6 +129,21 @@ export class CanvasCreator {
       throw new ApexifyInputError(`createCanvas: only one of colorBg, gradientBg, or customBg may be used; received ${baseBackgrounds.join(", ")}.`);
     }
 
+    // The overwhelmingly common canvas path is a full-surface opaque solid background.
+    // It does not require a saved state, path construction, clip, transform, translation,
+    // zoom, or the generic background dispatcher. Keeping this branch semantically narrow
+    // makes it lossless while removing hot-path native context work.
+    const simpleSolid =
+      canvas.colorBg !== undefined &&
+      x === 0 && y === 0 && rotation === 0 && borderRadius === 0 && borderPosition === "all" && opacity === 1 &&
+      !customBg && !gradientBg && !videoBg && !patternBg && !noiseBg && !blendMode && !zoom && !stroke && !shadow &&
+      !blur && !(canvas.bgLayers?.length);
+    if (simpleSolid) {
+      ctx.fillStyle = canvas.colorBg!;
+      ctx.fillRect(0, 0, width, height);
+      return;
+    }
+
     ctx.save();
     try {
       ctx.globalAlpha = opacity;
