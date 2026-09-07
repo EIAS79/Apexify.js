@@ -158,6 +158,11 @@ jobs:
             --markdown phase14p/artifacts/phase14p/post-recovery-comparison.md
           cat phase14p/artifacts/phase14p/post-recovery-comparison.md
 
+      - name: Enforce final normalized Phase 14-P workload and memory gates
+        run: |
+          node phase14p/benchmarks/phase14p/assert-final-performance.cjs \
+            --comparison phase14p/artifacts/phase14p/post-recovery-comparison.json
+
       - name: Enforce normalized text recovery target
         run: |
           node phase14p/benchmarks/phase14p/assert-text-recovery.cjs \
