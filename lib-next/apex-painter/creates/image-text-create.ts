@@ -40,11 +40,11 @@ export class ImageTextCreate {
     textArray: TextProperties | TextProperties[],
     canvasBuffer: CanvasResults | Buffer
   ): Promise<Buffer> {
-    validateTextInput(textArray);
+    const textList = validateTextInput(textArray);
     const buffer = canvasBufferOf(canvasBuffer, "createText");
     const decoded = await loadImageCached(buffer);
     assertCanvasResourceLimits(decoded.width, decoded.height);
-    return this.textCreator.createTextFromDecodedBase(textArray, canvasBuffer, decoded);
+    return this.textCreator.createTextFromDecodedBase(textList, canvasBuffer, decoded);
   }
 
   measureText(textProps: TextProperties): Promise<TextMetrics> {
