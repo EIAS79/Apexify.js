@@ -27,7 +27,7 @@
   "normalizedEnvironment": {
     "osImage": "ubuntu-24.04",
     "arch": "x64",
-    "node": "20.20.2",
+    "node": "24.20.0",
     "npm": "11.19.1",
     "ffmpeg": "Ubuntu 24.04 apt package; exact version captured in every benchmark artifact",
     "fontPackage": "fonts-dejavu-core",
