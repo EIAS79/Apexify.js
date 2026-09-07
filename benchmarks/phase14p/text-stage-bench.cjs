@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const { createCanvas } = require('@napi-rs/canvas');
+const sharp = require('sharp');
 
 const root = process.cwd();
 const fixtureRoot = path.join(root, 'benchmarks', '.phase14p-source', 'lib-next');
@@ -16,6 +17,7 @@ const { ApexPainter } = require(path.join(root, 'dist', 'cjs', 'index.cjs'));
 const fontFamily = process.env.APEXIFY_BENCH_FONT_FAMILY || 'DejaVu Sans';
 const samples = Number(process.env.APEXIFY_TEXT_STAGE_SAMPLES || 40);
 const warmups = Number(process.env.APEXIFY_TEXT_STAGE_WARMUPS || 10);
+const PNG_SIGNATURE_BYTES = 8;
 
 function solidPng(width, height, color) {
   const canvas = createCanvas(width, height);
@@ -46,8 +48,35 @@ function stats(values) {
   };
 }
 
+function hash(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
 function signature(buffer) {
-  return `${buffer.length}:${crypto.createHash('sha256').update(buffer).digest('hex')}`;
+  return `${buffer.length}:${hash(buffer)}`;
+}
+
+async function pixelSignature(buffer) {
+  const { data, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return `${info.width}x${info.height}x${info.channels}:${hash(data)}`;
+}
+
+function semanticChunks(png) {
+  const result = [];
+  let offset = PNG_SIGNATURE_BYTES;
+  while (offset + 12 <= png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString('ascii', offset + 4, offset + 8);
+    const dataStart = offset + 8;
+    const end = dataStart + length + 4;
+    if (end > png.length) throw new Error(`Malformed PNG chunk ${type}.`);
+    if (['sBIT', 'sRGB', 'pHYs', 'iCCP', 'gAMA', 'cHRM'].includes(type)) {
+      result.push(`${type}:${png.subarray(dataStart, dataStart + length).toString('hex')}`);
+    }
+    offset = end;
+    if (type === 'IEND') break;
+  }
+  return result;
 }
 
 const base = solidPng(1200, 630, '#101820');
@@ -109,6 +138,8 @@ async function collectStaged(mode) {
     samples,
     stages: Object.fromEntries(fields.map((field) => [field, stats(rows.map((row) => row[field]))])),
     outputSignature: signature(representative),
+    pixelSignature: await pixelSignature(representative),
+    semanticChunks: semanticChunks(representative),
   };
 }
 
@@ -124,7 +155,13 @@ async function collectPublic() {
     wall.push(performance.now() - started);
     representative ||= output;
   }
-  return { samples, timing: stats(wall), outputSignature: signature(representative) };
+  return {
+    samples,
+    timing: stats(wall),
+    outputSignature: signature(representative),
+    pixelSignature: await pixelSignature(representative),
+    semanticChunks: semanticChunks(representative),
+  };
 }
 
 (async () => {
@@ -150,12 +187,20 @@ async function collectPublic() {
   console.log(`sync output            ${sync.outputSignature}`);
   console.log(`async output           ${asyncResult.outputSignature}`);
   console.log(`public output          ${publicResult.outputSignature}`);
+  console.log(`reference pixels       ${asyncResult.pixelSignature}`);
+  console.log(`public pixels          ${publicResult.pixelSignature}`);
+  console.log(`reference semantics    ${asyncResult.semanticChunks.join(',')}`);
+  console.log(`public semantics       ${publicResult.semanticChunks.join(',')}`);
 
   if (sync.outputSignature !== asyncResult.outputSignature) {
-    throw new Error('sync and async PNG encoding produced different text output.');
+    throw new Error('sync and async Skia PNG encoding produced different text output.');
   }
-  if (sync.outputSignature !== publicResult.outputSignature) {
-    throw new Error('staged text pipeline and public createText produced different output.');
+  if (asyncResult.pixelSignature !== publicResult.pixelSignature) {
+    throw new Error('public createText fast PNG path changed decoded RGBA pixels.');
+  }
+  const requiredSemantics = ['sBIT:08080808', 'sRGB:00'];
+  if (JSON.stringify(publicResult.semanticChunks) !== JSON.stringify(requiredSemantics)) {
+    throw new Error(`public createText PNG semantic chunks changed: ${publicResult.semanticChunks.join(',')}`);
   }
 })().catch((error) => {
   console.error(error);
