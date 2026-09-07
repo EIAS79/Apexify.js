@@ -46,7 +46,7 @@ function looksLikeSvg(buffer: Buffer): boolean {
   return /^(?:<\?xml\b[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg\b/i.test(prefix);
 }
 
-/** Parse enough PNG structure to reject oversized canvas buffers before native decode.
+/** Parse enough PNG structure to reject oversized buffers before native decode.
  * APNG is detected through acTL and deliberately falls back to the authoritative Sharp
  * metadata path so multi-frame semantics stay identical to the general image pipeline.
  */
@@ -99,9 +99,6 @@ function assertFastRasterLimits(meta: FastPngMetadata, sourceBytes: number, requ
 
 function assertSvgPolicy(text: string, label: string): void {
   const limits = getDefaultApexifyRuntimeConfig().limits;
-  // Count every opening XML element, including namespaced and less-common valid SVG
-  // elements such as stop/tspan/symbol/marker/a. A whitelist can be bypassed by
-  // repeating elements it forgot to name, so complexity accounting must be generic.
   const elementCount = (text.match(/<(?![!?/])(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*\b/g) ?? []).length;
   if (elementCount > limits.maxSvgElements) {
     throw new ApexifyResourceLimitError("maxSvgElements", limits.maxSvgElements, elementCount);
@@ -167,9 +164,6 @@ async function sourceSizeAndSvgText(resolved: string | Buffer, label: string): P
 
 async function resolveImageSource(source: MediaSource): Promise<string | Buffer> {
   const normalized = normalizeMediaSource(source);
-  // Byte-backed and data-URL images are local inputs. Do not subject them to the
-  // smaller maxRemoteImageBytes transport cap; sourceSizeAndSvgText applies the
-  // authoritative maxImageSourceBytes limit immediately afterward.
   if (Buffer.isBuffer(normalized)) return normalized;
   const trimmed = normalized.trim();
   if (/^data:/i.test(trimmed)) {
@@ -180,11 +174,7 @@ async function resolveImageSource(source: MediaSource): Promise<string | Buffer>
   return resolveMediaInput(normalized, { kind: "image" });
 }
 
-/**
- * Authoritative raster-image preflight. It resolves through the shared media layer,
- * bounds source bytes, inspects native metadata before full decode, applies decoded
- * dimension/pixel/frame limits, and enforces the explicit safe-SVG policy.
- */
+/** Authoritative raster-image preflight. */
 export async function inspectImageSource(
   source: MediaSource,
   options: { label?: string; requireCanvasBudget?: boolean } = {}
@@ -196,8 +186,6 @@ export async function inspectImageSource(
     if (svgText !== undefined) assertSvgPolicy(svgText, label);
 
     const limits = getDefaultApexifyRuntimeConfig().limits;
-    // Metadata inspection does not decode raster pixels. Apexify must see dimensions first
-    // so it can emit its own structured resource-limit error before native decode/allocation.
     const metadata = await sharp(resolved, {
       limitInputPixels: false,
       sequentialRead: true,
@@ -227,8 +215,7 @@ export async function inspectImageSource(
       throw new ApexifyResourceLimitError("maxDecodedImagePixels", limits.maxDecodedImagePixels, decodedPixels);
     }
     if (oriented.width > limits.maxCanvasDimension || oriented.height > limits.maxCanvasDimension) {
-      const actual = Math.max(oriented.width, oriented.height);
-      throw new ApexifyResourceLimitError("maxCanvasDimension", limits.maxCanvasDimension, actual);
+      throw new ApexifyResourceLimitError("maxCanvasDimension", limits.maxCanvasDimension, Math.max(oriented.width, oriented.height));
     }
     if (options.requireCanvasBudget) assertCanvasResourceLimits(oriented.width, oriented.height);
 
@@ -255,12 +242,7 @@ export async function inspectImageSource(
   }
 }
 
-/**
- * Trusted canvas-buffer decode fast path. Apexify canvas/text/image chaining overwhelmingly
- * consumes single-frame PNG buffers. Reading the PNG header lets us enforce byte/pixel/
- * dimension limits before native allocation without starting Sharp solely for metadata.
- * Multi-frame/corrupt/non-PNG inputs fall back to the authoritative general pipeline.
- */
+/** Fast safe decode for single-frame PNG canvas buffers. */
 export async function decodeCanvasImageBuffer(
   source: Buffer,
   options: { label?: string; requireCanvasBudget?: boolean } = {}
@@ -280,15 +262,29 @@ export async function decodeCanvasImageBuffer(
   }
 }
 
-/**
- * Decode a preflighted source for @napi-rs/canvas. Common canvas-native formats avoid
- * the historical Sharp→PNG→Canvas transcode; uncommon raster formats and safe SVG are
- * normalized to a single first-frame PNG only when the canvas backend needs it.
- */
+/** Decode through the safest low-copy path available. */
 export async function decodeImageSource(
   source: MediaSource,
   options: { label?: string; requireCanvasBudget?: boolean } = {}
 ): Promise<Image> {
+  const label = options.label ?? "image source";
+
+  // Buffers are the dominant internal/chaining path. For ordinary single-frame PNGs,
+  // the format header itself provides all dimensions needed for Apexify's resource gate;
+  // avoid constructing a Sharp metadata pipeline before the same native canvas decode.
+  if (Buffer.isBuffer(source)) {
+    const meta = fastPngMetadata(source);
+    if (meta && meta.pages === 1) {
+      try {
+        assertFastRasterLimits(meta, source.byteLength, options.requireCanvasBudget === true);
+        return await loadImage(source);
+      } catch (error) {
+        if (error instanceof ApexifyError) throw error;
+        throw new ApexifyDecodeError(`${label} could not be decoded.`, { cause: error });
+      }
+    }
+  }
+
   const inspected = await inspectImageSource(source, options);
   try {
     if (DIRECT_CANVAS_FORMATS.has(inspected.format) && inspected.pages === 1) {
@@ -305,7 +301,7 @@ export async function decodeImageSource(
     return await loadImage(png);
   } catch (error) {
     if (error instanceof ApexifyError) throw error;
-    throw new ApexifyDecodeError(`${options.label ?? "image source"} could not be decoded.`, { cause: error });
+    throw new ApexifyDecodeError(`${label} could not be decoded.`, { cause: error });
   }
 }
 
