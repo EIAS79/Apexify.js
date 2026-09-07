@@ -54,7 +54,11 @@ export class TextCreator {
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(existingImage, 0, 0);
     await this.renderValidatedTextsOntoContext(ctx, textList);
-    return assignCanvasResultsBuffer(canvasBuffer, canvas.toBuffer("image/png"));
+    // @napi-rs/canvas performs async PNG encoding through its native/libuv path.
+    // The Phase 14-P stage benchmark locks byte-identical output against toBuffer()
+    // and shows materially lower wall time for the normalized text workload.
+    const encoded = await canvas.encode("png");
+    return assignCanvasResultsBuffer(canvasBuffer, encoded);
   }
 
   /** Creates text on an existing canvas buffer with enhanced styling options. */
