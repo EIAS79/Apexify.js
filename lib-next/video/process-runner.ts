@@ -228,10 +228,11 @@ export class MediaProcessRunner {
         const stdout = Buffer.concat(stdoutChunks, stdoutBytes).toString("utf8");
         const stderr = redactUrlsInText(Buffer.concat(stderrTail, stderrBytes).toString("utf8"));
         if (spawnError !== undefined || timedOut || aborted || outputLimitExceeded || exitCode !== 0) {
+          const failedToStart = spawnError !== undefined;
           reject(new MediaProcessError({
             executable,
-            exitCode,
-            signal: exitSignal,
+            exitCode: failedToStart ? null : exitCode,
+            signal: failedToStart ? null : exitSignal,
             stderr,
             timedOut,
             aborted,
