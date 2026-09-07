@@ -42,6 +42,24 @@ test('AssetManager bounds nested values, palettes, and image buffers', () => {
   );
 });
 
+test('PluginHost bounds API and installed-plugin registries', async () => {
+  api.setDefaultApexifyRuntimeConfig({ limits: { maxCollectionItems: 1 } });
+
+  const apiHost = new api.PluginHost();
+  apiHost.use('first', {});
+  assert.throws(
+    () => apiHost.use('second', {}),
+    (error) => error instanceof api.ApexifyResourceLimitError && error.limit === 'maxCollectionItems'
+  );
+
+  const installHost = new api.PluginHost();
+  await installHost.install({ name: 'first', install() {} }, {});
+  await assert.rejects(
+    installHost.install({ name: 'second', install() {} }, {}),
+    (error) => error instanceof api.ApexifyResourceLimitError && error.limit === 'maxCollectionItems'
+  );
+});
+
 test('native font registration admission is bounded even while registrations are in flight', async () => {
   api.setDefaultApexifyRuntimeConfig({ limits: { maxCollectionItems: 1 } });
   const firstPath = path.join(process.cwd(), 'definitely-missing-phase14-font-a.ttf');
