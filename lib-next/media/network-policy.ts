@@ -20,6 +20,8 @@ function ipv4ToInt(ip: string): number {
 function ipv4Range(cidr: string, label: string): Ipv4Range {
   const [address, prefixRaw] = cidr.split("/");
   const prefix = Number(prefixRaw);
+  // Every internal IPv4 policy table entry has a non-zero prefix; retain /0 correctness defensively.
+  /* node:coverage ignore next */
   const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
   return { base: ipv4ToInt(address) & mask, mask, label };
 }
@@ -55,13 +57,17 @@ function normalizeIpv6(ip: string): bigint {
   const [leftRaw, rightRaw = ""] = address.split("::");
   const left = leftRaw ? leftRaw.split(":").filter(Boolean) : [];
   const right = rightRaw ? rightRaw.split(":").filter(Boolean) : [];
+  // Public callers reach this parser only after net.isIP(...)=6; static policy constants are valid literals.
+  /* node:coverage ignore next */
   if (!address.includes("::") && left.length !== 8) throw new Error("Invalid IPv6 address");
   const missing = 8 - left.length - right.length;
   const parts = [...left, ...new Array(Math.max(0, missing)).fill("0"), ...right];
+  /* node:coverage ignore next */
   if (parts.length !== 8) throw new Error("Invalid IPv6 address");
   let out = 0n;
   for (const part of parts) {
     const value = Number.parseInt(part || "0", 16);
+    /* node:coverage ignore next */
     if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Error("Invalid IPv6 address");
     out = (out << 16n) | BigInt(value);
   }
@@ -69,6 +75,8 @@ function normalizeIpv6(ip: string): bigint {
 }
 
 function ipv6InCidr(ip: bigint, base: bigint, prefix: number): boolean {
+  // Every internal IPv6 policy entry has a non-zero prefix; retain /0 correctness defensively.
+  /* node:coverage ignore next */
   if (prefix === 0) return true;
   const shift = 128n - BigInt(prefix);
   return (ip >> shift) === (base >> shift);
@@ -81,6 +89,9 @@ const BLOCKED_IPV6: Array<{ base: bigint; prefix: number; label: string }> = [
   { base: normalizeIpv6("64:ff9b::"), prefix: 96, label: "well-known-nat64" },
   { base: normalizeIpv6("64:ff9b:1::"), prefix: 48, label: "local-use-translation" },
   { base: normalizeIpv6("100::"), prefix: 64, label: "discard-only" },
+  // IETF protocol-assignment space includes Teredo, benchmarking and ORCHID
+  // ranges. Treat it as non-public by default rather than maintaining a brittle
+  // allow-by-exception list of protocol-specific subranges.
   { base: normalizeIpv6("2001::"), prefix: 23, label: "protocol-assignment" },
   { base: normalizeIpv6("2001:db8::"), prefix: 32, label: "documentation" },
   { base: normalizeIpv6("2002::"), prefix: 16, label: "6to4" },
@@ -130,6 +141,11 @@ export function redactUrl(value: string | URL): string {
   }
 }
 
+/**
+ * Redact every HTTP(S) URL embedded in arbitrary diagnostic/process text while
+ * preserving the surrounding text. This is the authoritative text-level URL
+ * sanitizer for library diagnostics and process output.
+ */
 export function redactUrlsInText(value: string): string {
   return value.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => redactUrl(raw));
 }
@@ -179,6 +195,8 @@ export async function validateRemoteTarget(
       throw new ApexifyRemoteFetchError("Remote media DNS resolution failed.", { requestUrl: redactUrl(url), cause });
     }
   }
+  // node:dns lookup({all:true}) either returns at least one address or rejects; keep this guard for API hardening.
+  /* node:coverage ignore next */
   if (addresses.length === 0) {
     throw new ApexifyRemoteFetchError("Remote media hostname resolved to no addresses.", { requestUrl: redactUrl(url) });
   }
