@@ -14,6 +14,7 @@ import { assertCanvasResourceLimits } from "../runtime/limits";
 
 const DIRECT_CANVAS_FORMATS = new Set(["jpeg", "png", "webp", "gif"]);
 const SUPPORTED_RASTER_FORMATS = new Set(["jpeg", "png", "webp", "gif", "tiff", "heif", "avif", "jp2", "jxl", "svg"]);
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 export interface DecodedImageDimensions {
   width: number;
@@ -29,6 +30,12 @@ export interface InspectedImageSource extends DecodedImageDimensions {
   svg: boolean;
 }
 
+interface FastPngMetadata {
+  width: number;
+  height: number;
+  pages: number;
+}
+
 function effectiveDimensions(width: number, height: number, orientation?: number): { width: number; height: number } {
   if (orientation !== undefined && orientation >= 5 && orientation <= 8) return { width: height, height: width };
   return { width, height };
@@ -37,6 +44,57 @@ function effectiveDimensions(width: number, height: number, orientation?: number
 function looksLikeSvg(buffer: Buffer): boolean {
   const prefix = buffer.subarray(0, Math.min(buffer.length, 4096)).toString("utf8").replace(/^\uFEFF/, "").trimStart();
   return /^(?:<\?xml\b[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg\b/i.test(prefix);
+}
+
+/** Parse enough PNG structure to reject oversized canvas buffers before native decode.
+ * APNG is detected through acTL and deliberately falls back to the authoritative Sharp
+ * metadata path so multi-frame semantics stay identical to the general image pipeline.
+ */
+function fastPngMetadata(buffer: Buffer): FastPngMetadata | undefined {
+  if (buffer.length < 33 || !buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return undefined;
+  if (buffer.readUInt32BE(8) !== 13 || buffer.toString("ascii", 12, 16) !== "IHDR") return undefined;
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (width <= 0 || height <= 0) return undefined;
+
+  let pages = 1;
+  let offset = 8;
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const dataStart = offset + 8;
+    const next = dataStart + length + 4;
+    if (!Number.isSafeInteger(next) || next > buffer.length) return undefined;
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    if (type === "acTL") {
+      if (length < 8) return undefined;
+      pages = buffer.readUInt32BE(dataStart);
+      break;
+    }
+    if (type === "IDAT" || type === "IEND") break;
+    offset = next;
+  }
+
+  return { width, height, pages };
+}
+
+function assertFastRasterLimits(meta: FastPngMetadata, sourceBytes: number, requireCanvasBudget: boolean): void {
+  const limits = getDefaultApexifyRuntimeConfig().limits;
+  if (sourceBytes <= 0) throw new ApexifyInputError("image source must not be empty.");
+  if (sourceBytes > limits.maxImageSourceBytes) {
+    throw new ApexifyResourceLimitError("maxImageSourceBytes", limits.maxImageSourceBytes, sourceBytes);
+  }
+  if (!Number.isInteger(meta.pages) || meta.pages <= 0) throw new ApexifyDecodeError("PNG frame count could not be determined safely.");
+  if (meta.pages > limits.maxDecodedImageFrames) {
+    throw new ApexifyResourceLimitError("maxDecodedImageFrames", limits.maxDecodedImageFrames, meta.pages);
+  }
+  const decodedPixels = meta.width * meta.height * meta.pages;
+  if (!Number.isSafeInteger(decodedPixels) || decodedPixels > limits.maxDecodedImagePixels) {
+    throw new ApexifyResourceLimitError("maxDecodedImagePixels", limits.maxDecodedImagePixels, decodedPixels);
+  }
+  if (meta.width > limits.maxCanvasDimension || meta.height > limits.maxCanvasDimension) {
+    throw new ApexifyResourceLimitError("maxCanvasDimension", limits.maxCanvasDimension, Math.max(meta.width, meta.height));
+  }
+  if (requireCanvasBudget) assertCanvasResourceLimits(meta.width, meta.height);
 }
 
 function assertSvgPolicy(text: string, label: string): void {
@@ -194,6 +252,31 @@ export async function inspectImageSource(
   } catch (error) {
     if (error instanceof ApexifyError) throw error;
     throw new ApexifyDecodeError(`${label} could not be inspected safely.`, { cause: error });
+  }
+}
+
+/**
+ * Trusted canvas-buffer decode fast path. Apexify canvas/text/image chaining overwhelmingly
+ * consumes single-frame PNG buffers. Reading the PNG header lets us enforce byte/pixel/
+ * dimension limits before native allocation without starting Sharp solely for metadata.
+ * Multi-frame/corrupt/non-PNG inputs fall back to the authoritative general pipeline.
+ */
+export async function decodeCanvasImageBuffer(
+  source: Buffer,
+  options: { label?: string; requireCanvasBudget?: boolean } = {}
+): Promise<Image> {
+  const label = options.label ?? "canvas image buffer";
+  try {
+    if (!Buffer.isBuffer(source) || source.length === 0) throw new ApexifyInputError(`${label} must be a non-empty Buffer.`);
+    const meta = fastPngMetadata(source);
+    if (meta && meta.pages === 1) {
+      assertFastRasterLimits(meta, source.byteLength, options.requireCanvasBudget === true);
+      return await loadImage(source);
+    }
+    return await decodeImageSource(source, options);
+  } catch (error) {
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyDecodeError(`${label} could not be decoded.`, { cause: error });
   }
 }
 
