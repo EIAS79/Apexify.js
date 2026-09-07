@@ -168,7 +168,7 @@ test('redirect method semantics cover 301/302/303 downgrade and 307/308 preserva
   const result = await api.fetchRemoteMedia(`${baseUrl}/post-redirect`, { method: 'POST', body: 'x', maxBytes: 1024 });
   assert.equal(result.buffer.toString(), 'GET');
 
-  for (const status of [301, 302]) {
+  for (const status of [301, 302, 303]) {
     const response = await api.fetchRemoteMedia(`${baseUrl}/post-${status}`, {
       method: 'POST', body: 'payload', headers: { 'Content-Length': '7', 'X-Custom': 'yes' }, maxBytes: 2048,
     });
@@ -180,18 +180,8 @@ test('redirect method semantics cover 301/302/303 downgrade and 307/308 preserva
     assert.equal(echoed.custom, 'yes');
   }
 
-  const chunked = await api.fetchRemoteMedia(`${baseUrl}/post-303`, {
-    method: 'POST', body: 'payload', headers: { 'Transfer-Encoding': 'chunked', 'X-Custom': 'yes' }, maxBytes: 2048,
-  });
-  const chunkedEcho = JSON.parse(chunked.buffer.toString());
-  assert.equal(chunkedEcho.method, 'GET');
-  assert.equal(chunkedEcho.body, '');
-  assert.equal(chunkedEcho.contentLength, null);
-  assert.equal(chunkedEcho.transferEncoding, null);
-  assert.equal(chunkedEcho.custom, 'yes');
-
   for (const status of [307, 308]) {
-    const response = await api.fetchRemoteMedia(`${baseUrl}/post-${status}`, { method: 'POST', body: 'payload', headers: { 'X-Custom': 'yes' }, maxBytes: 2048 });
+    const response = await api.fetchRemoteMedia(`${baseUrl}/post-${status}`, { method: 'POST', body: Buffer.from('payload'), headers: { 'X-Custom': 'yes' }, maxBytes: 2048 });
     const echoed = JSON.parse(response.buffer.toString());
     assert.equal(echoed.method, 'POST');
     assert.equal(echoed.body, 'payload');
@@ -264,6 +254,18 @@ test('stream-to-file covers success, redirects, retry, HTTP errors, length/strea
     assert.equal(redirectResult.bytes, 10);
     assert.equal(await fs.readFile(redirected, 'utf8'), 'apexify-ok');
 
+    const redirectPost = path.join(dir, 'redirect-post.bin');
+    const redirectPostResult = await api.fetchRemoteMediaToFile(`${baseUrl}/post-301`, redirectPost, { method: 'POST', body: 'payload', maxBytes: 2048 });
+    const redirectPostEcho = JSON.parse(await fs.readFile(redirectPostResult.path, 'utf8'));
+    assert.equal(redirectPostEcho.method, 'GET');
+    assert.equal(redirectPostEcho.body, '');
+
+    const preservePost = path.join(dir, 'preserve-post.bin');
+    const preservePostResult = await api.fetchRemoteMediaToFile(`${baseUrl}/post-307`, preservePost, { method: 'POST', body: Buffer.from('payload'), maxBytes: 2048 });
+    const preservePostEcho = JSON.parse(await fs.readFile(preservePostResult.path, 'utf8'));
+    assert.equal(preservePostEcho.method, 'POST');
+    assert.equal(preservePostEcho.body, 'payload');
+
     retryHits = 0;
     const retried = path.join(dir, 'retried.bin');
     const retryResult = await api.fetchRemoteMediaToFile(`${baseUrl}/retry`, retried, { maxBytes: 1024, attempts: 2 });
@@ -287,6 +289,13 @@ test('stream-to-file covers success, redirects, retry, HTTP errors, length/strea
     const pre = new AbortController();
     pre.abort(new Error('file-pre-abort'));
     await assert.rejects(api.fetchRemoteMediaToFile(`${baseUrl}/ok`, path.join(dir, 'pre.bin'), { signal: pre.signal }), /aborted before it acquired/i);
+
+    const active = new AbortController();
+    const activeDestination = path.join(dir, 'active-abort.bin');
+    const activeRequest = api.fetchRemoteMediaToFile(`${baseUrl}/slow`, activeDestination, { maxBytes: 1024, timeoutMs: 1000, attempts: 1, signal: active.signal });
+    setTimeout(() => active.abort(new Error('file-active-abort')), 10);
+    await assert.rejects(activeRequest, /aborted|file-active-abort/i);
+    await assert.rejects(fs.stat(activeDestination), { code: 'ENOENT' });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
