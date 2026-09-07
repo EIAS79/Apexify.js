@@ -32,10 +32,15 @@ test('process runner treats hostile shell syntax as inert argv data', async () =
 test('process runner validates executable and argv tokens and path mutation', async () => {
   assert.throws(() => new api.MediaProcessRunner({ ffmpegPath: '' }), api.ApexifyProcessError);
   assert.throws(() => new api.MediaProcessRunner({ ffprobePath: 'bad\0path' }), api.ApexifyProcessError);
+
+  const defaults = new api.MediaProcessRunner();
+  assert.deepEqual(defaults.getExecutablePaths(), { ffmpegPath: 'ffmpeg', ffprobePath: 'ffprobe' });
+
   const runner = new api.MediaProcessRunner({ ffmpegPath: process.execPath, ffprobePath: process.execPath });
   assert.deepEqual(runner.getExecutablePaths(), { ffmpegPath: process.execPath, ffprobePath: process.execPath });
   assert.throws(() => runner.setExecutablePaths({ ffmpegPath: 'bad\0path' }), api.ApexifyProcessError);
-  runner.setExecutablePaths({ ffmpegPath: process.execPath, ffprobePath: process.execPath });
+  runner.setExecutablePaths({ ffmpegPath: process.execPath });
+  runner.setExecutablePaths({ ffprobePath: process.execPath });
   assert.throws(() => runner.runExecutable('', []), api.ApexifyProcessError);
   assert.throws(() => runner.runExecutable(process.execPath, ['bad\0arg']), api.ApexifyProcessError);
   const probe = await runner.runFfprobe(['-e', 'process.stdout.write("probe")'], { timeoutMs: 5000 });
@@ -72,6 +77,30 @@ test('process runner has bounded output, timeout, pre-abort, abort and structure
   );
 });
 
+test('process runner covers cwd/env overrides and bounded stderr tail compaction', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'apexify-phase12-process-options-'));
+  try {
+    const runner = new api.MediaProcessRunner({ ffmpegPath: process.execPath, ffprobePath: process.execPath });
+    const configured = await runner.runExecutable(process.execPath, [
+      '-e',
+      'process.stdout.write(process.cwd()+"|"+process.env.APEXIFY_PHASE12_ENV)',
+    ], {
+      cwd: dir,
+      env: { APEXIFY_PHASE12_ENV: 'present' },
+      timeoutMs: 5000,
+    });
+    assert.equal(configured.stdout, `${dir}|present`);
+
+    const tailed = await runner.runExecutable(process.execPath, [
+      '-e',
+      'process.stderr.write("ab");setTimeout(()=>process.stderr.write("cdef"),5);setTimeout(()=>process.stderr.write("ghij"),10);',
+    ], { timeoutMs: 5000, maxStderrBytes: 5 });
+    assert.equal(tailed.stderr, 'fghij');
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('stderr callback isolation and FFmpeg progress parsing are deterministic', async () => {
   const runner = new api.MediaProcessRunner({ ffmpegPath: process.execPath, ffprobePath: process.execPath });
   const chunks = [];
@@ -90,6 +119,17 @@ test('stderr callback isolation and FFmpeg progress parsing are deterministic', 
   assert.equal(progress[0].time, 0.5);
   assert.equal(progress[0].speed, 2);
   assert.equal(progress.at(-1).percent, 100);
+
+  const undetermined = [];
+  const parseUndetermined = api.createFfmpegProgressParser((value) => undetermined.push(value));
+  parseUndetermined('garbage\nout_time_us=-1\nspeed=-2x\nprogress=continue\n');
+  parseUndetermined('out_time_us=100');
+  assert.equal(undetermined.length, 1);
+  parseUndetermined('000\nspeed=0x\nprogress=continue\n');
+  assert.equal(undetermined.at(-1).time, 0.1);
+  assert.equal(undetermined.at(-1).speed, 0);
+  assert.equal(undetermined.at(-1).percent, 0);
+
   const noop = api.createFfmpegProgressParser();
   assert.doesNotThrow(() => noop('anything'));
 });
@@ -130,5 +170,62 @@ test('retained temp workspace is explicit and requires explicit caller removal',
     await fsp.rm(workspace.directory, { recursive: true, force: true });
   } finally {
     await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('temp workspace policy precedence covers OS, environment, runtime and explicit options', async () => {
+  const originalDir = process.env.APEXIFY_TEMP_DIR;
+  const originalRetain = process.env.APEXIFY_RETAIN_TEMP_FILES;
+  const envRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'apexify-phase12-env-root-'));
+  const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'apexify-phase12-runtime-root-'));
+  const restoreEnv = (name, value) => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+
+  try {
+    delete process.env.APEXIFY_TEMP_DIR;
+    delete process.env.APEXIFY_RETAIN_TEMP_FILES;
+    api.resetApexifyRuntimeConfig();
+
+    const systemDefault = await api.createTempWorkspace();
+    assert.equal(path.dirname(systemDefault.directory), os.tmpdir());
+    assert.equal(systemDefault.retain, false);
+    assert.match(path.basename(systemDefault.directory), /^apexify-/);
+    await systemDefault.cleanup();
+
+    process.env.APEXIFY_TEMP_DIR = envRoot;
+    const fromEnv = await api.createTempWorkspace({ prefix: 'bad prefix!*' });
+    assert.equal(path.dirname(fromEnv.directory), envRoot);
+    assert.match(path.basename(fromEnv.directory), /^bad-prefix--/);
+    await fromEnv.cleanup();
+
+    process.env.APEXIFY_RETAIN_TEMP_FILES = 'true';
+    const retainedByEnv = await api.createTempWorkspace({ rootDirectory: envRoot });
+    assert.equal(retainedByEnv.retain, true);
+    await retainedByEnv.cleanup();
+    assert.equal(fs.existsSync(retainedByEnv.directory), true);
+    await fsp.rm(retainedByEnv.directory, { recursive: true, force: true });
+
+    const explicitFalse = await api.createTempWorkspace({ rootDirectory: envRoot, retain: false });
+    assert.equal(explicitFalse.retain, false);
+    await explicitFalse.cleanup();
+    assert.equal(fs.existsSync(explicitFalse.directory), false);
+
+    delete process.env.APEXIFY_TEMP_DIR;
+    delete process.env.APEXIFY_RETAIN_TEMP_FILES;
+    api.setDefaultApexifyRuntimeConfig({ temp: { rootDirectory: runtimeRoot, retainFiles: true } });
+    const fromRuntime = await api.createTempWorkspace();
+    assert.equal(path.dirname(fromRuntime.directory), runtimeRoot);
+    assert.equal(fromRuntime.retain, true);
+    await fromRuntime.cleanup();
+    assert.equal(fs.existsSync(fromRuntime.directory), true);
+    await fsp.rm(fromRuntime.directory, { recursive: true, force: true });
+  } finally {
+    api.resetApexifyRuntimeConfig();
+    restoreEnv('APEXIFY_TEMP_DIR', originalDir);
+    restoreEnv('APEXIFY_RETAIN_TEMP_FILES', originalRetain);
+    await fsp.rm(envRoot, { recursive: true, force: true });
+    await fsp.rm(runtimeRoot, { recursive: true, force: true });
   }
 });
