@@ -47,7 +47,10 @@ const requiredBoundaries = [
   ['base canvas validated decode', 'lib-next/apex-painter/creates/image-text-create.ts', /loadImageCached\s*\(/],
   ['scene core', 'lib-next/scene/scene-creator.ts', /validateSceneRenderInput\s*\(/],
   ['GIF generated frames', 'lib-next/gif/gif-creator.ts', /validateGeneratedGIFFrame\s*\(/],
-  ['audio façade', 'lib-next/audio-synth/painter-create-audio.ts', /validateSynthSoundOptions\s*\(/],
+  // Audio public methods deliberately delegate into synthesizer.ts. The synthesizer owns
+  // the validation/resource boundary; explicit delegation and ordering assertions below
+  // prevent the façade from bypassing it while avoiding duplicated validation work.
+  ['audio synthesis core', 'lib-next/audio-synth/synthesizer.ts', /validateSynthSoundOptions\s*\(/],
   ['video creator guard', 'lib-next/video/video-stack.ts', /validateVideoCreationOptions\s*\(/],
   ['video pipeline guard', 'lib-next/video/video-pipeline-render.ts', /validateVideoPipelineLayers\s*\(/],
   ['chart façade', 'lib-next/chart/chart-creator.ts', /validateChartRequest\s*\(/],
@@ -93,6 +96,23 @@ assert.match(
   /decodeImageSource\s*\(\s*src\s*,\s*\{\s*label:\s*"image source"\s*\}\s*\)/,
   'decoded-image cache misses must pass through the authoritative image decoder'
 );
+
+const painterAudio = read('lib-next/audio-synth/painter-create-audio.ts');
+assert.match(painterAudio, /synth\s*\(options\)\s*\{\s*return\s+synthesizeSound\s*\(options\)/, 'audio.synth must delegate to validated synthesizeSound');
+assert.match(painterAudio, /custom\s*\(options\)\s*\{\s*return\s+synthesizeSound\s*\(options\)/, 'audio.custom must delegate to validated synthesizeSound');
+assert.match(painterAudio, /preset\s*\(name,\s*overrides\)\s*\{\s*return\s+synthesizePreset\s*\(name,\s*overrides\)/, 'audio.preset must delegate to synthesizePreset');
+assert.match(painterAudio, /sequence\s*\(options\)\s*\{\s*return\s+synthesizeSequence\s*\(options\)/, 'audio.sequence must delegate to validated synthesizeSequence');
+assert.match(painterAudio, /compose\s*\(options\)\s*\{\s*return\s+composeSynthAudio\s*\(options\)/, 'audio.compose must delegate to validated composeSynthAudio');
+assert.match(painterAudio, /mix\s*\(inputs,\s*options\)\s*\{\s*return\s+mixSynthSounds\s*\(inputs,\s*options\)/, 'audio.mix must delegate to validated mixSynthSounds');
+
+const synthesizer = read('lib-next/audio-synth/synthesizer.ts');
+const soundValidation = synthesizer.indexOf('validateSynthSoundOptions(options)');
+const soundBudget = synthesizer.indexOf('assertAudioWavResourceLimits(validated.duration, validated.sampleRate, validated.channels)', soundValidation);
+const soundRender = synthesizer.indexOf('renderValidatedSound(options, validated)', soundBudget);
+assert.ok(soundValidation >= 0 && soundValidation < soundBudget && soundBudget < soundRender, 'audio sound validation and resource limits must precede rendering');
+assert.match(synthesizer, /synthesizePreset[\s\S]*?return\s+synthesizeSound\s*\(resolvePreset\(name,\s*overrides\)\)/, 'preset synthesis must funnel through validated synthesizeSound');
+assert.match(synthesizer, /synthesizeSequence[\s\S]*?validateSynthSequenceOptions\s*\(options\)[\s\S]*?assertAudioWavResourceLimits[\s\S]*?renderValidatedSequence/, 'sequence validation/resource limits must precede rendering');
+assert.match(synthesizer, /mixSynthSounds[\s\S]*?validateSynthMixInputs\s*\(inputs,\s*options\)/, 'mix synthesis must validate inputs before processing');
 
 const scene = read('lib-next/scene/scene-creator.ts');
 assert.doesNotMatch(scene, /options\?\.validate\s*!==\s*false/, 'scene safety validation must not be disableable');
