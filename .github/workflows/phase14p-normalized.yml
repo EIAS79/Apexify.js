@@ -1,0 +1,190 @@
+name: Phase 14-P Normalized Performance Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase14p-performance-recovery
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apexify-phase14p-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  normalized-ab:
+    name: Normalized Phase 0 vs Phase 14 / Node 20.20.2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+      APEXIFY_BENCH_CHEAP_WARMUPS: '10'
+      APEXIFY_BENCH_CHEAP_SAMPLES: '30'
+      APEXIFY_BENCH_EXPENSIVE_WARMUPS: '3'
+      APEXIFY_BENCH_EXPENSIVE_SAMPLES: '10'
+      APEXIFY_BENCH_MEMORY_SAMPLES: '3'
+    steps:
+      - name: Checkout Phase 14-P harness
+        uses: actions/checkout@v7
+        with:
+          path: phase14p
+
+      - name: Checkout immutable Phase 0 control
+        uses: actions/checkout@v7
+        with:
+          ref: 679da1ae0210b1ed9d52bdd89db41f73f5ec46bd
+          path: subjects/phase0
+
+      - name: Checkout immutable Phase 14 pre-recovery subject
+        uses: actions/checkout@v7
+        with:
+          ref: dbed9743353593eafae9a7b1c25312d7170a233b
+          path: subjects/current-pre
+
+      - name: Install normalized system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          fc-match 'DejaVu Sans'
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Set up common Node runtime
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20.20.2
+          package-manager-cache: false
+
+      - name: Pin common npm runtime
+        run: npm install --global npm@11.19.1
+
+      - name: Capture environment identity
+        run: |
+          mkdir -p phase14p/artifacts/phase14p
+          node --version
+          npm --version
+          uname -a
+          lscpu | sed -n '1,30p'
+          fc-match 'DejaVu Sans'
+          ffmpeg -version | head -n 1
+          {
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "kernel=$(uname -a)"
+            echo "font=$(fc-match 'DejaVu Sans' | head -n 1)"
+            echo "ffmpeg=$(ffmpeg -version | head -n 1)"
+          } > phase14p/artifacts/phase14p/environment.txt
+
+      - name: Install and build Phase 0 subject
+        working-directory: subjects/phase0
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          test -f dist/cjs/index.js
+
+      - name: Install and build Phase 14 pre-recovery subject
+        working-directory: subjects/current-pre
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          test -f dist/cjs/index.cjs
+
+      - name: Run normalized Phase 0 samples
+        run: |
+          node --expose-gc phase14p/benchmarks/phase14p/normalized-harness.cjs \
+            --subject subjects/phase0 \
+            --label phase0-5.4.5 \
+            --output phase14p/artifacts/phase14p/phase0-normalized.json
+
+      - name: Run normalized Phase 14 pre-recovery samples
+        run: |
+          node --expose-gc phase14p/benchmarks/phase14p/normalized-harness.cjs \
+            --subject subjects/current-pre \
+            --label phase14-pre-recovery-6.0.0 \
+            --output phase14p/artifacts/phase14p/current-pre-normalized.json
+
+      - name: Compare normalized subjects
+        run: |
+          node phase14p/benchmarks/phase14p/compare-results.cjs \
+            --phase0 phase14p/artifacts/phase14p/phase0-normalized.json \
+            --current phase14p/artifacts/phase14p/current-pre-normalized.json \
+            --output phase14p/artifacts/phase14p/pre-recovery-comparison.json \
+            --markdown phase14p/artifacts/phase14p/pre-recovery-comparison.md
+          cat phase14p/artifacts/phase14p/pre-recovery-comparison.md
+
+      - name: Upload normalized comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase14p-normalized-ab-node20
+          path: phase14p/artifacts/phase14p/
+          if-no-files-found: error
+
+  current-supported-runtime:
+    name: Current Phase 14 / Node 24 runtime effect control
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+      APEXIFY_BENCH_CHEAP_WARMUPS: '10'
+      APEXIFY_BENCH_CHEAP_SAMPLES: '30'
+      APEXIFY_BENCH_EXPENSIVE_WARMUPS: '3'
+      APEXIFY_BENCH_EXPENSIVE_SAMPLES: '10'
+      APEXIFY_BENCH_MEMORY_SAMPLES: '3'
+    steps:
+      - name: Checkout Phase 14-P harness
+        uses: actions/checkout@v7
+        with:
+          path: phase14p
+
+      - name: Checkout immutable Phase 14 pre-recovery subject
+        uses: actions/checkout@v7
+        with:
+          ref: dbed9743353593eafae9a7b1c25312d7170a233b
+          path: subjects/current-pre
+
+      - name: Install normalized system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Pin npm runtime
+        run: npm install --global npm@11.19.1
+
+      - name: Install and build current subject
+        working-directory: subjects/current-pre
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Run current supported-runtime control
+        run: |
+          mkdir -p phase14p/artifacts/phase14p-node24
+          node --expose-gc phase14p/benchmarks/phase14p/normalized-harness.cjs \
+            --subject subjects/current-pre \
+            --label phase14-pre-recovery-node24 \
+            --output phase14p/artifacts/phase14p-node24/current-pre-node24.json
+
+      - name: Upload runtime-effect evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase14p-current-node24-control
+          path: phase14p/artifacts/phase14p-node24/
+          if-no-files-found: error
