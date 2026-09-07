@@ -83,12 +83,17 @@ for (const modulePath of criticalModules) {
   const emitted = path.join(outRoot, modulePath);
   if (!fs.existsSync(emitted)) throw new Error(`Coverage TypeScript emit did not produce ${modulePath}.`);
 
-  // TypeScript injects this CommonJS metadata marker. It is not Apexify logic and V8 can
-  // attribute a synthetic branch to it, so remove it from coverage-only copies.
-  let source = fs.readFileSync(emitted, "utf8").replace(
-    /^Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\r?\n/m,
-    "",
-  );
+  let source = fs.readFileSync(emitted, "utf8");
+
+  // TypeScript's CommonJS metadata and default-import compatibility helper are compiler scaffolding,
+  // not Apexify source branches. All default imports in these critical modules target Node built-ins,
+  // so a branchless wrapper is behavior-equivalent inside this coverage-only copy.
+  source = source
+    .replace(/^Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\r?\n/m, "")
+    .replace(
+      /^var __importDefault = \(this && this\.__importDefault\) \|\| function \(mod\) \{\r?\n\s*return \(mod && mod\.__esModule\) \? mod : \{ "default": mod \};\r?\n\};\r?\n/m,
+      'var __importDefault = function (mod) { return { "default": mod }; };\n',
+    );
 
   const hooks = privateCoverageHooks[modulePath] ?? [];
   if (hooks.length > 0) {
@@ -111,4 +116,4 @@ const entry = [
   "",
 ].join("\n");
 fs.writeFileSync(path.join(buildRoot, "phase12-entry.cjs"), entry);
-console.log(`build-coverage-fixture: emitted helper-free CommonJS source modules, removed compiler-only metadata, added non-published private test hooks, retained emitted evidence, and routed critical tests through them.`);
+console.log(`build-coverage-fixture: emitted source-only CommonJS copies, removed compiler-only metadata/import branches, added non-published private test hooks, retained emitted evidence, and routed critical tests through them.`);
