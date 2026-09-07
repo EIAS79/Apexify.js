@@ -151,27 +151,23 @@ export async function loadImageCached(src: MediaSource): Promise<Image> {
 
 export function drawBoxBackground(
   ctx: SKRSContext2D,
-  bg: BoxBackground | undefined,
-  x: number,
-  y: number,
-  width: number,
-  height: number
+  rect: { x: number; y: number; w: number; h: number },
+  boxBg?: BoxBackground,
+  borderRadius?: number | "circular",
+  borderPosition?: string
 ) {
-  if (!bg) return;
+  if (!boxBg) return;
+  const { color, gradient } = boxBg;
   ctx.save();
-  buildPath(ctx, x, y, width, height, bg.borderRadius);
-  if (bg.color) {
-    ctx.fillStyle = bg.color;
-    ctx.fill();
-  }
-  if (bg.gradient) {
-    ctx.fillStyle = createGradientFill(ctx, bg.gradient, x, y, width, height);
-    ctx.fill();
-  }
-  if (bg.border) {
-    ctx.strokeStyle = bg.border.color;
-    ctx.lineWidth = bg.border.width ?? 1;
-    ctx.stroke();
+  buildPath(ctx, rect.x, rect.y, rect.w, rect.h, borderRadius ?? 0, borderPosition ?? "all");
+  ctx.clip();
+  if (gradient) {
+    const g = createGradientFill(ctx, gradient, rect);
+    ctx.fillStyle = g as CanvasGradient | CanvasPattern;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  } else if (color && color !== "transparent") {
+    ctx.fillStyle = color;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   }
   ctx.restore();
 }
