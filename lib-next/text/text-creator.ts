@@ -42,14 +42,16 @@ export class TextCreator {
     await this.renderValidatedTextsOntoContext(ctx, textList);
   }
 
-  /** Trusted internal path used after the public facade validated text and decoded the base once. */
+  /**
+   * Trusted internal path used after the public facade or createText() has validated
+   * text and checked the decoded base against the current canvas resource limits.
+   */
   async createTextFromDecodedBase(
     textArray: TextProperties | TextProperties[],
     canvasBuffer: CanvasResults | Buffer,
     existingImage: Image
   ): Promise<Buffer> {
     const textList = Array.isArray(textArray) ? textArray : [textArray];
-    assertCanvasResourceLimits(existingImage.width, existingImage.height);
     const canvas = createCanvas(existingImage.width, existingImage.height);
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(existingImage, 0, 0);
@@ -65,12 +67,12 @@ export class TextCreator {
   async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
     try {
       if (!canvasBuffer) throw new ApexifyInputError("createText: canvasBuffer is required.");
-      this.validateTextArray(textArray);
+      const textList = this.validateTextArray(textArray);
       const sourceBuffer = Buffer.isBuffer(canvasBuffer) ? canvasBuffer : canvasBuffer?.buffer;
       if (!sourceBuffer) throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
       const existingImage = await loadImageCached(sourceBuffer);
       assertCanvasResourceLimits(existingImage.width, existingImage.height);
-      return await this.createTextFromDecodedBase(textArray, canvasBuffer, existingImage);
+      return await this.createTextFromDecodedBase(textList, canvasBuffer, existingImage);
     } catch (error) {
       if (error instanceof ApexifyError) throw error;
       throw new ApexifyDecodeError("createText failed.", { cause: error });
