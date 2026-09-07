@@ -1,0 +1,48 @@
+name: Phase 14 Structured Error Migration
+
+on:
+  push:
+    branches:
+      - phase14/final-audit-release-candidate
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ !contains(github.event.head_commit.message, '[phase14-auto]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: phase14/final-audit-release-candidate
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Apply targeted structured-error migration
+        run: node scripts/phase14-structured-error-migrate.cjs
+
+      - name: Verify patch shape
+        run: |
+          git diff --check
+          if git grep -nE 'throw new Error[[:space:]]*\(' -- 'lib-next/**/*.ts'; then
+            echo 'Generic runtime throw remains after migration.' >&2
+            exit 1
+          fi
+
+      - name: Commit migrated runtime sources
+        run: |
+          if git diff --quiet; then
+            echo 'No migration changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib-next
+          git commit -m 'Phase 14: structure remaining runtime errors [phase14-auto]'
+          git push origin HEAD:phase14/final-audit-release-candidate
