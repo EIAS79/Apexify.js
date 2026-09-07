@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "regressionTolerance": 0.1,
   "calibration": {
-    "method": "conservative maximum median observed across green calibration matrices",
+    "method": "conservative maximum median observed across successful Linux full-gate benchmark jobs",
     "workflowRuns": [34073922518, 34074426539, 34074706070],
     "samplesPerRun": 5
   },
