@@ -1,0 +1,48 @@
+name: Phase 14-P Source Verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase14p-performance-recovery
+    paths:
+      - 'lib-next/**'
+      - 'tests/phase9-*.cjs'
+      - 'tests/phase14-regressions.cjs'
+      - 'scripts/build-phase9-fixture.mjs'
+      - 'scripts/build-test-fixture.mjs'
+      - '.github/workflows/phase14p-verify.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apexify-phase14p-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  targeted:
+    name: Build + audio/regression verification / Node 24
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.1
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Typecheck and build package
+        run: npm run build
+      - name: Phase 9 audio regression suite
+        run: npm run test:phase9
+      - name: Phase 14 regression suite
+        run: npm run test:phase14
+      - name: Public API compatibility
+        run: npm run test:compat
