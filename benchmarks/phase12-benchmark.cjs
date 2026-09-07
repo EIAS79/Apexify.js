@@ -6,7 +6,7 @@ const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const api = require('../node_modules/.cache/apexify-phase10/phase10-entry.cjs');
 
-const RUNS = 3;
+const RUNS = 5;
 const DEFAULT_REGRESSION_TOLERANCE = 0.10;
 
 function png(width, height, color) {
