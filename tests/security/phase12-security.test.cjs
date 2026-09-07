@@ -89,7 +89,11 @@ test('process runner covers cwd/env overrides and bounded stderr tail compaction
       env: { APEXIFY_PHASE12_ENV: 'present' },
       timeoutMs: 5000,
     });
-    assert.equal(configured.stdout, `${dir}|present`);
+    const separator = configured.stdout.lastIndexOf('|');
+    const reportedCwd = configured.stdout.slice(0, separator);
+    const reportedEnv = configured.stdout.slice(separator + 1);
+    assert.equal(await fsp.realpath(reportedCwd), await fsp.realpath(dir));
+    assert.equal(reportedEnv, 'present');
 
     const tailed = await runner.runExecutable(process.execPath, [
       '-e',
@@ -189,14 +193,14 @@ test('temp workspace policy precedence covers OS, environment, runtime and expli
     api.resetApexifyRuntimeConfig();
 
     const systemDefault = await api.createTempWorkspace();
-    assert.equal(path.dirname(systemDefault.directory), os.tmpdir());
+    assert.equal(await fsp.realpath(path.dirname(systemDefault.directory)), await fsp.realpath(os.tmpdir()));
     assert.equal(systemDefault.retain, false);
     assert.match(path.basename(systemDefault.directory), /^apexify-/);
     await systemDefault.cleanup();
 
     process.env.APEXIFY_TEMP_DIR = envRoot;
     const fromEnv = await api.createTempWorkspace({ prefix: 'bad prefix!*' });
-    assert.equal(path.dirname(fromEnv.directory), envRoot);
+    assert.equal(await fsp.realpath(path.dirname(fromEnv.directory)), await fsp.realpath(envRoot));
     assert.match(path.basename(fromEnv.directory), /^bad-prefix--/);
     await fromEnv.cleanup();
 
@@ -216,7 +220,7 @@ test('temp workspace policy precedence covers OS, environment, runtime and expli
     delete process.env.APEXIFY_RETAIN_TEMP_FILES;
     api.setDefaultApexifyRuntimeConfig({ temp: { rootDirectory: runtimeRoot, retainFiles: true } });
     const fromRuntime = await api.createTempWorkspace();
-    assert.equal(path.dirname(fromRuntime.directory), runtimeRoot);
+    assert.equal(await fsp.realpath(path.dirname(fromRuntime.directory)), await fsp.realpath(runtimeRoot));
     assert.equal(fromRuntime.retain, true);
     await fromRuntime.cleanup();
     assert.equal(fs.existsSync(fromRuntime.directory), true);
