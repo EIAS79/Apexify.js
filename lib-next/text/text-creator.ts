@@ -4,12 +4,11 @@ import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
 import { getCanvasContext } from "../core/errors";
-import { decodeCanvasImageBuffer } from "../image/image-source-validation";
+import { loadImageCached } from "../image/image-properties";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 
-/**
- * Extended class for text creation functionality
- */
+/** Extended class for text creation functionality. */
 export class TextCreator {
   private validateTextProperties(textProps: TextProperties): void {
     if (!textProps.text || textProps.x == null || textProps.y == null) {
@@ -19,9 +18,7 @@ export class TextCreator {
 
   private validateTextArray(textArray: TextProperties | TextProperties[]): TextProperties[] {
     const textList = Array.isArray(textArray) ? textArray : [textArray];
-    if (textList.length === 0) {
-      throw new ApexifyInputError("createText: At least one text object is required.");
-    }
+    if (textList.length === 0) throw new ApexifyInputError("createText: At least one text object is required.");
     for (const textProps of textList) this.validateTextProperties(textProps);
     return textList;
   }
@@ -52,6 +49,7 @@ export class TextCreator {
     existingImage: Image
   ): Promise<Buffer> {
     const textList = Array.isArray(textArray) ? textArray : [textArray];
+    assertCanvasResourceLimits(existingImage.width, existingImage.height);
     const canvas = createCanvas(existingImage.width, existingImage.height);
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(existingImage, 0, 0);
@@ -65,13 +63,9 @@ export class TextCreator {
       if (!canvasBuffer) throw new ApexifyInputError("createText: canvasBuffer is required.");
       this.validateTextArray(textArray);
       const sourceBuffer = Buffer.isBuffer(canvasBuffer) ? canvasBuffer : canvasBuffer?.buffer;
-      if (!sourceBuffer) {
-        throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
-      }
-      const existingImage: Image = await decodeCanvasImageBuffer(sourceBuffer, {
-        label: "createText canvasBuffer",
-        requireCanvasBudget: true,
-      });
+      if (!sourceBuffer) throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
+      const existingImage = await loadImageCached(sourceBuffer);
+      assertCanvasResourceLimits(existingImage.width, existingImage.height);
       return await this.createTextFromDecodedBase(textArray, canvasBuffer, existingImage);
     } catch (error) {
       if (error instanceof ApexifyError) throw error;
