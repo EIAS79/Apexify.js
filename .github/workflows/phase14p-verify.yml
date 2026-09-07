@@ -8,6 +8,7 @@ on:
     paths:
       - 'lib-next/**'
       - 'benchmarks/phase14p/**'
+      - 'benchmarks/baselines/**'
       - 'tests/phase9-*.cjs'
       - 'tests/phase14-regressions.cjs'
       - 'scripts/build-phase9-fixture.mjs'
@@ -54,6 +55,11 @@ jobs:
         env:
           APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
         run: node --expose-gc benchmarks/phase14p/stage-benchmarks.cjs --output artifacts/phase14p/stage-benchmarks.json
+      - name: Enforce permanent stage budgets
+        run: |
+          node benchmarks/phase14p/assert-stage-budgets.cjs \
+            --baseline benchmarks/baselines/phase14p-stage-linux-x64-node24-schema2.json \
+            --current artifacts/phase14p/stage-benchmarks.json
       - name: Upload stage benchmark evidence
         if: always()
         uses: actions/upload-artifact@v7
