@@ -4,8 +4,9 @@ import { build } from "esbuild";
 
 const root = process.cwd();
 const sourceRoot = path.join(root, "lib-next");
-const outRoot = path.join(root, "tests/.coverage/lib-next");
-const fixtureRoot = path.join(root, "tests/.coverage");
+const coverageRoot = path.join(root, "tests/.coverage");
+const outRoot = path.join(coverageRoot, "lib-next");
+const buildRoot = path.join(root, "tests/.build");
 
 function walkTs(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -15,11 +16,13 @@ function walkTs(directory) {
   });
 }
 
-fs.rmSync(fixtureRoot, { recursive: true, force: true });
+const sourceFiles = walkTs(sourceRoot);
+fs.rmSync(coverageRoot, { recursive: true, force: true });
 fs.mkdirSync(outRoot, { recursive: true });
+fs.mkdirSync(buildRoot, { recursive: true });
 
 await build({
-  entryPoints: walkTs(sourceRoot),
+  entryPoints: sourceFiles,
   outdir: outRoot,
   outbase: sourceRoot,
   bundle: false,
@@ -43,9 +46,9 @@ const criticalModules = [
 const entry = [
   "'use strict';",
   "const api = {};",
-  ...criticalModules.map((modulePath) => `Object.assign(api, require(${JSON.stringify(`./lib-next/${modulePath}`)}));`),
+  ...criticalModules.map((modulePath) => `Object.assign(api, require(${JSON.stringify(`../.coverage/lib-next/${modulePath}`)}));`),
   "module.exports = api;",
   "",
 ].join("\n");
-fs.writeFileSync(path.join(fixtureRoot, "phase12-entry.cjs"), entry);
-console.log(`build-coverage-fixture: transpiled ${walkTs(sourceRoot).length} source modules and generated isolated critical API.`);
+fs.writeFileSync(path.join(buildRoot, "phase12-entry.cjs"), entry);
+console.log(`build-coverage-fixture: transpiled ${sourceFiles.length} source modules and routed critical tests through source-level coverage modules.`);
