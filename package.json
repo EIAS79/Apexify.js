@@ -78,7 +78,7 @@
     "test:compat": "node tests/public-api-compat.cjs",
     "test": "npm run test:unit && npm run test:internals && npm run test:integration && npm run test:security && npm run test:golden && npm run test:fuzz && npm run test:regression && npm run test:phase14 && npm run test:compat",
     "coverage": "npm run test:build && node scripts/run-coverage.cjs",
-    "benchmark": "node scripts/build-phase10-fixture.mjs && node --expose-gc benchmarks/phase12-benchmark.cjs",
+    "benchmark": "node scripts/build-phase10-fixture.mjs && node --expose-gc benchmarks/phase12-benchmark.cjs && node --expose-gc benchmarks/phase14-phase0-comparison.cjs",
     "test:package": "node scripts/verify-prepack-rebuild.cjs && node scripts/verify-packed-package.cjs",
     "test:docs": "node scripts/verify-documentation-examples.cjs",
     "test:ci": "npm run build && npm run audit:tests && npm run audit:secrets && npm run audit:phase14 && npm run test && npm run coverage && npm run test:package && npm run test:docs && npm run benchmark && npm run audit:maintenance",
