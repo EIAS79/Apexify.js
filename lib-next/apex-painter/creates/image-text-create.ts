@@ -1,9 +1,10 @@
 import type { CreateImageOptions, ImageProperties, TextMetrics, TextProperties } from "../../types";
 import type { CanvasResults } from "../../types";
 import { ApexifyInputError } from "../../runtime/errors";
+import { assertCanvasResourceLimits } from "../../runtime/limits";
 import { ImageCreator } from "../../image/image-creator";
+import { loadImageCached } from "../../image/image-properties";
 import { validateImageInput } from "../../image/image-validation";
-import { decodeCanvasImageBuffer } from "../../image/image-source-validation";
 import { TextCreator } from "../../text/text-creator";
 import { TextMetricsCreator } from "../../text/text-metrics";
 import { validateTextInput, validateTextProperties } from "../../text/text-validation";
@@ -32,8 +33,6 @@ export class ImageTextCreate {
     options?: CreateImageOptions
   ): Promise<Buffer> {
     validateImageInput(images, options);
-    // ImageCreator owns the authoritative decoded-canvas allocation boundary. Do not
-    // metadata-preflight the same encoded base a second time in this facade.
     return this.imageCreator.createImage(images, canvasBuffer, options);
   }
 
@@ -43,10 +42,8 @@ export class ImageTextCreate {
   ): Promise<Buffer> {
     validateTextInput(textArray);
     const buffer = canvasBufferOf(canvasBuffer, "createText");
-    const decoded = await decodeCanvasImageBuffer(buffer, {
-      label: "createText canvasBuffer",
-      requireCanvasBudget: true,
-    });
+    const decoded = await loadImageCached(buffer);
+    assertCanvasResourceLimits(decoded.width, decoded.height);
     return this.textCreator.createTextFromDecodedBase(textArray, canvasBuffer, decoded);
   }
 
