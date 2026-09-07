@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - 'reengineering/**'
   pull_request:
     branches:
       - main
