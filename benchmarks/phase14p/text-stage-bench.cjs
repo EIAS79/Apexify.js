@@ -12,12 +12,14 @@ const { validateTextInput } = require(path.join(fixtureRoot, 'text', 'text-valid
 const { EnhancedTextRenderer } = require(path.join(fixtureRoot, 'text', 'enhanced-text-renderer.js'));
 const { loadImageCached, clearDecodedImageCache, getDecodedImageCacheStats } = require(path.join(fixtureRoot, 'image', 'image-properties.js'));
 const { assertCanvasResourceLimits } = require(path.join(fixtureRoot, 'runtime', 'limits.js'));
-const { ApexPainter } = require(path.join(root, 'dist', 'cjs', 'index.cjs'));
+const publicApi = require(path.join(root, 'dist', 'cjs', 'index.cjs'));
+const { ApexPainter, configureApexifyRuntime, resetApexifyRuntimeConfig } = publicApi;
 
 const fontFamily = process.env.APEXIFY_BENCH_FONT_FAMILY || 'DejaVu Sans';
 const samples = Number(process.env.APEXIFY_TEXT_STAGE_SAMPLES || 40);
 const warmups = Number(process.env.APEXIFY_TEXT_STAGE_WARMUPS || 10);
 const PNG_SIGNATURE_BYTES = 8;
+const fallbackDiagnostics = [];
 
 function solidPng(width, height, color) {
   const canvas = createCanvas(width, height);
@@ -144,24 +146,31 @@ async function collectStaged(mode) {
 }
 
 async function collectPublic() {
-  const painter = new ApexPainter('png');
-  for (let i = 0; i < warmups; i += 1) await painter.createText(textProps, base);
-  const wall = [];
-  let representative;
-  for (let i = 0; i < samples; i += 1) {
-    if (global.gc) global.gc();
-    const started = performance.now();
-    const output = await painter.createText(textProps, base);
-    wall.push(performance.now() - started);
-    representative ||= output;
+  configureApexifyRuntime({ diagnostics: { handler(event) {
+    if (event.code === 'TEXT_PNG_FAST_PATH_FALLBACK') fallbackDiagnostics.push(event);
+  } } });
+  try {
+    const painter = new ApexPainter('png');
+    for (let i = 0; i < warmups; i += 1) await painter.createText(textProps, base);
+    const wall = [];
+    let representative;
+    for (let i = 0; i < samples; i += 1) {
+      if (global.gc) global.gc();
+      const started = performance.now();
+      const output = await painter.createText(textProps, base);
+      wall.push(performance.now() - started);
+      representative ||= output;
+    }
+    return {
+      samples,
+      timing: stats(wall),
+      outputSignature: signature(representative),
+      pixelSignature: await pixelSignature(representative),
+      semanticChunks: semanticChunks(representative),
+    };
+  } finally {
+    resetApexifyRuntimeConfig();
   }
-  return {
-    samples,
-    timing: stats(wall),
-    outputSignature: signature(representative),
-    pixelSignature: await pixelSignature(representative),
-    semanticChunks: semanticChunks(representative),
-  };
 }
 
 (async () => {
@@ -191,6 +200,8 @@ async function collectPublic() {
   console.log(`public pixels          ${publicResult.pixelSignature}`);
   console.log(`reference semantics    ${asyncResult.semanticChunks.join(',')}`);
   console.log(`public semantics       ${publicResult.semanticChunks.join(',')}`);
+  console.log(`fast-path fallbacks    ${fallbackDiagnostics.length}`);
+  for (const event of fallbackDiagnostics.slice(0, 3)) console.log(`fallback reason        ${event.details?.reason ?? event.message}`);
 
   if (sync.outputSignature !== asyncResult.outputSignature) {
     throw new Error('sync and async Skia PNG encoding produced different text output.');
@@ -201,6 +212,9 @@ async function collectPublic() {
   const requiredSemantics = ['sBIT:08080808', 'sRGB:00'];
   if (JSON.stringify(publicResult.semanticChunks) !== JSON.stringify(requiredSemantics)) {
     throw new Error(`public createText PNG semantic chunks changed: ${publicResult.semanticChunks.join(',')}`);
+  }
+  if (fallbackDiagnostics.length !== 0) {
+    throw new Error(`normalized text fixture hit the PNG fallback path ${fallbackDiagnostics.length} times.`);
   }
 })().catch((error) => {
   console.error(error);
