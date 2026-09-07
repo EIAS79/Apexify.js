@@ -5,9 +5,20 @@ on:
   push:
     branches:
       - phase14p-performance-recovery
+    paths:
+      - '.github/workflows/phase14p-normalized.yml'
+      - 'benchmarks/phase14p/normalized-harness.cjs'
+      - 'benchmarks/phase14p/compare-results.cjs'
+      - 'benchmarks/phase14p/comparison-manifest.json'
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/workflows/phase14p-normalized.yml'
+      - 'benchmarks/phase14p/**'
+      - 'lib-next/**'
+      - 'package.json'
+      - 'package-lock.json'
 
 permissions:
   contents: read
@@ -18,7 +29,7 @@ concurrency:
 
 jobs:
   normalized-ab:
-    name: Normalized Phase 0 vs Phase 14 / Node 20.20.2
+    name: Normalized Phase 0 vs Phase 14 / Node 24.20.0
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -60,7 +71,7 @@ jobs:
       - name: Set up common Node runtime
         uses: actions/setup-node@v7
         with:
-          node-version: 20.20.2
+          node-version: 24.20.0
           package-manager-cache: false
 
       - name: Pin common npm runtime
@@ -88,9 +99,6 @@ jobs:
       - name: Install and build Phase 0 subject
         working-directory: subjects/phase0
         run: |
-          # Phase 0 did not commit package-lock.json. Its original benchmark workflow
-          # therefore used npm install. Preserve that historical constraint rather than
-          # synthesizing a lockfile and pretending npm ci is available for this subject.
           npm install --ignore-scripts --no-audit --no-fund
           npm run build
           test -f dist/cjs/index.js
@@ -129,12 +137,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: phase14p-normalized-ab-node20
+          name: phase14p-normalized-ab-node24
           path: phase14p/artifacts/phase14p/
           if-no-files-found: error
 
-  current-supported-runtime:
-    name: Current Phase 14 / Node 24 runtime effect control
+  current-node26-control:
+    name: Current Phase 14 / Node 26 runtime-effect control
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -166,7 +174,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           package-manager-cache: false
 
       - name: Pin npm runtime
@@ -178,18 +186,18 @@ jobs:
           npm ci --ignore-scripts
           npm run build
 
-      - name: Run current supported-runtime control
+      - name: Run Node 26 runtime-effect control
         run: |
-          mkdir -p phase14p/artifacts/phase14p-node24
+          mkdir -p phase14p/artifacts/phase14p-node26
           node --expose-gc phase14p/benchmarks/phase14p/normalized-harness.cjs \
             --subject subjects/current-pre \
-            --label phase14-pre-recovery-node24 \
-            --output phase14p/artifacts/phase14p-node24/current-pre-node24.json
+            --label phase14-pre-recovery-node26 \
+            --output phase14p/artifacts/phase14p-node26/current-pre-node26.json
 
       - name: Upload runtime-effect evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: phase14p-current-node24-control
-          path: phase14p/artifacts/phase14p-node24/
+          name: phase14p-current-node26-control
+          path: phase14p/artifacts/phase14p-node26/
           if-no-files-found: error
