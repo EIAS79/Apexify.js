@@ -26,7 +26,7 @@ test('private retry parsing and delay policy cover array, date, invalid, jitter 
   const futureMs = api.__phase12_parseRetryAfter(future);
   assert.ok(futureMs >= 0 && futureMs <= 60_000);
 
-  api.setDefaultApexifyRuntimeConfig({ network: { honorRetryAfter: true, retryMaxDelayMs: 25 } });
+  api.setDefaultApexifyRuntimeConfig({ network: { honorRetryAfter: true, retryBaseDelayMs: 10, retryMaxDelayMs: 25 } });
   assert.equal(api.__phase12_retryDelay(1, 100), 25);
 
   api.setDefaultApexifyRuntimeConfig({ network: { honorRetryAfter: false, retryBaseDelayMs: 10, retryMaxDelayMs: 100, retryJitterRatio: 0.5 } });
