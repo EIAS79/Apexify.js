@@ -111,7 +111,7 @@ export function fitInto(
     case "center": dx = cx; dy = cy; break;
     case "right": dx = boxX + boxW - dw; dy = cy; break;
     case "bottom-left": dx = boxX; dy = boxY + boxH - dh; break;
-    case "bottom": dx = cx; dy = boxY + boxH - dw; break;
+    case "bottom": dx = cx; dy = boxY + boxH - dh; break;
     case "bottom-right": dx = boxX + boxW - dw; dy = boxY + boxH - dh; break;
     default: dx = cx; dy = cy; break;
   }
