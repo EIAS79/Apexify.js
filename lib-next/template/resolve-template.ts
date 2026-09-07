@@ -12,6 +12,7 @@ import type {
 import { coerceVisibleString, lookupData, resolvePlaceholderValue, resolvePlaceholdersInString } from "./placeholders";
 import { resolveAssetRefsDeep } from "../assets/asset-strings";
 import { cloneCompositionValue, isPlainCompositionObject } from "../composition/clone";
+import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCollection, assertFiniteNumber } from "../runtime/validation";
 import { validateSceneRenderInput } from "../scene/scene-validation";
@@ -244,6 +245,24 @@ function finiteNonNegative(value: unknown, label: string): number {
   return number;
 }
 
+async function measureChildrenBounded(
+  children: readonly TemplateLayerInput[],
+  measureText: (props: TextProperties) => Promise<TextMetrics>
+): Promise<Array<{ width: number; height: number }>> {
+  if (children.length === 0) return [];
+  const concurrency = Math.max(1, Math.min(children.length, getDefaultApexifyRuntimeConfig().limits.maxBatchConcurrency));
+  const sizes = new Array<{ width: number; height: number }>(children.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= children.length) return;
+      sizes[index] = await measureChildSize(children[index]!, measureText);
+    }
+  }));
+  return sizes;
+}
+
 async function measureChildSize(
   child: TemplateLayerInput,
   measureText: (props: TextProperties) => Promise<TextMetrics>
@@ -327,8 +346,8 @@ export async function expandFlexLayoutNode(
   assertFiniteNumber(height, "template.flex.height", { min: 0, exclusiveMin: true });
   if (padding * 2 >= width || padding * 2 >= height) throw new TemplateResolveError("Template flex padding leaves no positive inner area.");
   const children = (node.children as TemplateLayerInput[] | undefined) ?? [];
-  assertCollection(children, "template.flex.children");
-  const sizes = await Promise.all(children.map((child) => measureChildSize(child, measureText)));
+  assertCollection(children, "template.flex.children", { limit: "maxCollectionItems" });
+  const sizes = await measureChildrenBounded(children, measureText);
   const innerW = width - 2 * padding, innerH = height - 2 * padding;
   const out: TemplateLayerInput[] = [];
 
@@ -384,9 +403,9 @@ export async function expandGridLayoutNode(
   assertFiniteNumber(height, "template.grid.height", { min: 0, exclusiveMin: true });
   if (padding * 2 >= width || padding * 2 >= height) throw new TemplateResolveError("Template grid padding leaves no positive inner area.");
   const children = (node.children as TemplateLayerInput[] | undefined) ?? [];
-  assertCollection(children, "template.grid.children");
+  assertCollection(children, "template.grid.children", { limit: "maxCollectionItems" });
   if (children.length === 0) return [];
-  const sizes = await Promise.all(children.map((child) => measureChildSize(child, measureText)));
+  const sizes = await measureChildrenBounded(children, measureText);
   const cellW = (width - 2 * padding - gap * (columns - 1)) / columns;
   if (!(cellW > 0)) throw new TemplateResolveError("Template grid columns/gap leave no positive cell width.");
   const rows = Math.ceil(children.length / columns);

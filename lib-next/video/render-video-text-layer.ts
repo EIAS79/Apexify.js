@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../runtime/errors";
 import { createCanvas } from "@napi-rs/canvas";
 import { getCanvasContext } from "../core/errors";
 import type { TextProperties } from "../types";
@@ -12,7 +13,7 @@ export async function renderVideoTextLayerPng(
   textProps: TextProperties
 ): Promise<Buffer> {
   if (!textProps.text || textProps.x == null || textProps.y == null) {
-    throw new Error("Video text overlay: text, x, and y are required (same as createText).");
+    throw new ApexifyInputError("Video text overlay: text, x, and y are required (same as createText).");
   }
   const canvas = createCanvas(width, height);
   const ctx = getCanvasContext(canvas);

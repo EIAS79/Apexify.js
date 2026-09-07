@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../runtime/errors";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { VideoTextOverlayClip, VideoTextOverlayOperation } from "../types";
@@ -10,14 +11,14 @@ function splitOverlayStyle(clip: VideoTextOverlayClip): { style: Omit<VideoTextO
 }
 
 function validateClip(clip: VideoTextOverlayClip, index: number): void {
-  if (!clip.text || clip.x == null || clip.y == null) throw new Error(`addTextOverlay: overlays[${index}] requires text, x, and y (same style contract as createText).`);
-  if (!Number.isFinite(clip.startTime) || !Number.isFinite(clip.endTime)) throw new Error(`addTextOverlay: overlays[${index}] requires finite startTime and endTime.`);
-  if (clip.startTime >= clip.endTime) throw new Error(`addTextOverlay: overlays[${index}] startTime must be less than endTime.`);
+  if (!clip.text || clip.x == null || clip.y == null) throw new ApexifyInputError(`addTextOverlay: overlays[${index}] requires text, x, and y (same style contract as createText).`);
+  if (!Number.isFinite(clip.startTime) || !Number.isFinite(clip.endTime)) throw new ApexifyInputError(`addTextOverlay: overlays[${index}] requires finite startTime and endTime.`);
+  if (clip.startTime >= clip.endTime) throw new ApexifyInputError(`addTextOverlay: overlays[${index}] startTime must be less than endTime.`);
 }
 
 /** Builds FFmpeg `-filter_complex` only from validated numeric motion expressions and generated input labels. */
 export function buildTextOverlayFilterComplex(overlayCount: number, clips: VideoTextOverlayClip[], videoWidth: number, videoHeight: number): { filterComplex: string; outputLabel: string } {
-  if (overlayCount !== clips.length) throw new Error("Overlay count mismatch");
+  if (overlayCount !== clips.length) throw new ApexifyInputError("Overlay count mismatch");
   const parts: string[] = [];
   let current = "[0:v]";
   for (let i = 0; i < clips.length; i += 1) {
@@ -59,7 +60,7 @@ export async function prepareTextOverlayPngs(frameDir: string, _timestamp: numbe
 }
 
 export function validateTextOverlayOperation(options: VideoTextOverlayOperation): void {
-  if (!options.overlays?.length) throw new Error("addTextOverlay: provide at least one overlay in overlays[].");
-  if (!options.outputPath) throw new Error("addTextOverlay: outputPath is required.");
+  if (!options.overlays?.length) throw new ApexifyInputError("addTextOverlay: provide at least one overlay in overlays[].");
+  if (!options.outputPath) throw new ApexifyInputError("addTextOverlay: outputPath is required.");
   options.overlays.forEach(validateClip);
 }

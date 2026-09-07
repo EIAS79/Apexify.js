@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { ApexifyInputError } from "../runtime/errors";
 
 export interface TempWorkspaceOptions {
   /** Parent directory. Defaults to central runtime policy, APEXIFY_TEMP_DIR, then OS temp. */
@@ -22,11 +23,11 @@ export class TempWorkspace {
 
   path(name: string): string {
     if (!name || name.includes("\0") || path.isAbsolute(name)) {
-      throw new Error("TempWorkspace path must be a non-empty relative path without NUL bytes.");
+      throw new ApexifyInputError("TempWorkspace path must be a non-empty relative path without NUL bytes.");
     }
     const normalized = path.normalize(name);
     if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) {
-      throw new Error("TempWorkspace path may not escape the workspace directory.");
+      throw new ApexifyInputError("TempWorkspace path may not escape the workspace directory.");
     }
     return path.join(this.directory, normalized);
   }

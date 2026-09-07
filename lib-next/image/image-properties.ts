@@ -9,6 +9,7 @@ import { createGradientFill } from "../render/gradient-fill";
 import type { MediaSource } from "../media/source";
 import { BoundedCache } from "../media/cache";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { assertWithinLimit } from "../runtime/limits";
 import { decodeImageSource } from "./image-source-validation";
 
 let imageCache: BoundedCache<string, Image> | undefined;
@@ -130,6 +131,7 @@ export async function loadImageCached(src: MediaSource): Promise<Image> {
   const existing = inFlightDecodes.get(key);
   if (existing) return existing;
 
+  assertWithinLimit("maxCollectionItems", inFlightDecodes.size + 1);
   const decode = decodeImageSource(src, { label: "image source" })
     .then((image) => {
       cache.set(key, image);

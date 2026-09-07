@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../runtime/errors";
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import { assertCanvasResourceLimits } from "../runtime/limits";
 
@@ -55,6 +56,6 @@ export function createRepeatingGradientPattern(
   }
 
   const pattern = ctx.createPattern(source, "repeat");
-  if (!pattern) throw new Error("Failed to create repeating gradient pattern");
+  if (!pattern) throw new ApexifyInputError("Failed to create repeating gradient pattern");
   return pattern;
 }

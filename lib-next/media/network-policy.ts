@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../runtime/errors";
 import dns from "node:dns/promises";
 import net from "node:net";
 import type { NetworkRuntimeConfig } from "../runtime/config";
@@ -59,16 +60,16 @@ function normalizeIpv6(ip: string): bigint {
   const right = rightRaw ? rightRaw.split(":").filter(Boolean) : [];
   // Public callers reach this parser only after net.isIP(...)=6; static policy constants are valid literals.
   /* node:coverage ignore next */
-  if (!address.includes("::") && left.length !== 8) throw new Error("Invalid IPv6 address");
+  if (!address.includes("::") && left.length !== 8) throw new ApexifyInputError("Invalid IPv6 address");
   const missing = 8 - left.length - right.length;
   const parts = [...left, ...new Array(Math.max(0, missing)).fill("0"), ...right];
   /* node:coverage ignore next */
-  if (parts.length !== 8) throw new Error("Invalid IPv6 address");
+  if (parts.length !== 8) throw new ApexifyInputError("Invalid IPv6 address");
   let out = 0n;
   for (const part of parts) {
     const value = Number.parseInt(part || "0", 16);
     /* node:coverage ignore next */
-    if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Error("Invalid IPv6 address");
+    if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new ApexifyInputError("Invalid IPv6 address");
     out = (out << 16n) | BigInt(value);
   }
   return out;

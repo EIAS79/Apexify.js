@@ -2,6 +2,7 @@ import { GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 import path from "node:path";
 import { access } from "node:fs/promises";
 import { ApexifyInputError } from "../runtime/errors";
+import { assertWithinLimit } from "../runtime/limits";
 import { resolveTextDecorations, resolveTextFill, resolveTextLayout, resolveTextPlacement, type TextProperties } from "../types";
 
 /** Vertical offset from `textBaseline: 'middle'` to alphabetic baseline (em-relative, Latin text). */
@@ -17,6 +18,11 @@ export async function registerTextFontFromPath(fontPath: string, fontName: strin
   if (registeredFonts.has(key)) return;
   const pending = pendingFonts.get(key);
   if (pending) return pending;
+
+  // The native font registry is process-wide and does not expose a reliable unregister operation.
+  // Bound unique registrations (including in-flight work) through the existing global collection budget
+  // so untrusted or highly dynamic text input cannot grow native font state indefinitely.
+  assertWithinLimit("maxCollectionItems", registeredFonts.size + pendingFonts.size + 1);
 
   const registration = (async () => {
     try {

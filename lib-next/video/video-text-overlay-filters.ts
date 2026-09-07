@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../runtime/errors";
 import type { VideoTextOverlayClip, VideoTextTransition, VideoTextTransitionPreset } from "../types";
 
 const DEFAULT_TRANSITION_SEC = 0.35;
@@ -15,14 +16,14 @@ const ALLOWED_EXPRESSION_IDENTIFIERS = new Set([
  */
 export function assertSafeFilterExpression(value: string, label = "custom filter expression"): string {
   if (!value || value.length > MAX_CUSTOM_EXPRESSION_LENGTH || /[\0\r\n;'"\\:\[\]]/.test(value)) {
-    throw new Error(`${label} contains unsafe FFmpeg filter syntax.`);
+    throw new ApexifyInputError(`${label} contains unsafe FFmpeg filter syntax.`);
   }
   if (!/^[A-Za-z0-9_+\-*/%().,!?<>=\s]+$/.test(value)) {
-    throw new Error(`${label} contains unsupported characters.`);
+    throw new ApexifyInputError(`${label} contains unsupported characters.`);
   }
   for (const match of value.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
     if (!ALLOWED_EXPRESSION_IDENTIFIERS.has(match[0])) {
-      throw new Error(`${label} contains unsupported identifier "${match[0]}".`);
+      throw new ApexifyInputError(`${label} contains unsupported identifier "${match[0]}".`);
     }
   }
   return value;
@@ -31,7 +32,7 @@ export function assertSafeFilterExpression(value: string, label = "custom filter
 function transitionDuration(t?: VideoTextTransition): number {
   const d = t?.duration;
   if (d == null) return DEFAULT_TRANSITION_SEC;
-  if (!Number.isFinite(d) || d < 0) throw new Error("Video text transition duration must be finite and non-negative.");
+  if (!Number.isFinite(d) || d < 0) throw new ApexifyInputError("Video text transition duration must be finite and non-negative.");
   return d;
 }
 
@@ -48,7 +49,7 @@ function customExpression(value: string | undefined, label: string): string | un
 
 function overlayOpacity(clip: Pick<VideoTextOverlayClip, "overlayOpacity">): number {
   const opacity = clip.overlayOpacity ?? 1;
-  if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) throw new Error("Video text overlayOpacity must be between 0 and 1.");
+  if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) throw new ApexifyInputError("Video text overlayOpacity must be between 0 and 1.");
   return opacity;
 }
 
@@ -82,7 +83,7 @@ export function buildOverlayAlphaFilters(
 ): string[] {
   const s = clip.startTime;
   const e = clip.endTime;
-  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new Error("Video text timing must be a finite increasing range.");
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new ApexifyInputError("Video text timing must be a finite increasing range.");
   const opacity = overlayOpacity(clip);
   const customIn = customExpression(clip.transitionIn?.custom?.alpha, "transitionIn.custom.alpha");
   const customOut = customExpression(clip.transitionOut?.custom?.alpha, "transitionOut.custom.alpha");
@@ -112,7 +113,7 @@ export function buildOverlayAlphaExpression(
 ): string {
   const s = clip.startTime;
   const e = clip.endTime;
-  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new Error("Video text timing must be a finite increasing range.");
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new ApexifyInputError("Video text timing must be a finite increasing range.");
   const op = overlayOpacity(clip);
   const di = clip.transitionIn ? transitionDuration(clip.transitionIn) : 0;
   const do_ = clip.transitionOut ? transitionDuration(clip.transitionOut) : 0;
@@ -137,9 +138,9 @@ export function buildOverlayMotionExpressions(
 ): OverlayMotionExprs {
   const s = clip.startTime;
   const e = clip.endTime;
-  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new Error("Video text timing must be a finite increasing range.");
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s >= e) throw new ApexifyInputError("Video text timing must be a finite increasing range.");
   if (!Number.isFinite(videoWidth) || !Number.isFinite(videoHeight) || videoWidth <= 0 || videoHeight <= 0) {
-    throw new Error("Video dimensions must be finite positive numbers.");
+    throw new ApexifyInputError("Video dimensions must be finite positive numbers.");
   }
 
   const di = clip.transitionIn ? transitionDuration(clip.transitionIn) : 0;
@@ -199,7 +200,7 @@ export function buildOverlayMotionExpressions(
 
 export function buildEnableBetween(start: number, end: number): string {
   if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
-    throw new Error("Video text enable range must be finite and increasing.");
+    throw new ApexifyInputError("Video text enable range must be finite and increasing.");
   }
   return `between(t\\,${start}\\,${end})`;
 }

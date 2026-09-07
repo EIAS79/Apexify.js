@@ -9,6 +9,7 @@ fs.mkdirSync(outDir, { recursive: true });
 for (const [entry, outfile] of [
   ["tests/phase12-entry.ts", "phase12-entry.cjs"],
   ["tests/phase12-properties-entry.ts", "phase12-properties-entry.cjs"],
+  ["tests/phase14-entry.ts", "phase14-entry.cjs"],
 ]) {
   await build({
     entryPoints: [entry],
@@ -24,4 +25,4 @@ for (const [entry, outfile] of [
   });
 }
 
-console.log("build-test-fixture: isolated critical-infrastructure and property bundles generated.");
+console.log("build-test-fixture: isolated critical-infrastructure, property, and Phase 14 regression bundles generated.");

@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../../runtime/errors";
 import { emitDiagnostic } from "../../runtime/diagnostics";
 import { createCanvas, SKRSContext2D, type Canvas } from "@napi-rs/canvas";
 import type { gradient } from "../../types";
@@ -1373,14 +1374,14 @@ const minLegendSpacing = 10;
 
     data.forEach((item, itemIndex) => {
       if (item.xStart < effectiveXMin || item.xStart > effectiveXMax) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Bar Chart Error: Data value out of X-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has xStart value ${item.xStart}, ` +
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
         );
       }
       if (item.xEnd < effectiveXMin || item.xEnd > effectiveXMax) {
-        throw new Error(
+        throw new ApexifyInputError(
           `Bar Chart Error: Data value out of X-axis bounds.\n` +
           `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has xEnd value ${item.xEnd}, ` +
           `which exceeds the X-axis range [${effectiveXMin}, ${effectiveXMax}].`
@@ -1398,7 +1399,7 @@ const minLegendSpacing = 10;
         if (item.values && item.values.length > 0) {
           item.values.forEach((seg, segIndex) => {
             if (seg.value < effectiveYMin || seg.value > effectiveYMax) {
-              throw new Error(
+              throw new ApexifyInputError(
                 `Bar Chart Error: Data value out of Y-axis bounds.\n` +
                 `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" segment ${segIndex} has value ${seg.value}, ` +
                 `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`
@@ -1407,7 +1408,7 @@ const minLegendSpacing = 10;
           });
         } else if (item.value !== undefined) {
           if (item.value < effectiveYMin || item.value > effectiveYMax) {
-            throw new Error(
+            throw new ApexifyInputError(
               `Bar Chart Error: Data value out of Y-axis bounds.\n` +
               `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has value ${item.value}, ` +
               `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`
@@ -1419,7 +1420,7 @@ const minLegendSpacing = 10;
         if (item.values && item.values.length > 0) {
           item.values.forEach((seg, segIndex) => {
             if (seg.value < effectiveYMin || seg.value > effectiveYMax) {
-              throw new Error(
+              throw new ApexifyInputError(
                 `Bar Chart Error: Data value out of Y-axis bounds.\n` +
                 `Waterfall bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" segment ${segIndex} has value ${seg.value}, ` +
                 `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`
@@ -1428,7 +1429,7 @@ const minLegendSpacing = 10;
           });
         } else if (item.value !== undefined) {
           if (item.value < effectiveYMin || item.value > effectiveYMax) {
-            throw new Error(
+            throw new ApexifyInputError(
               `Bar Chart Error: Data value out of Y-axis bounds.\n` +
               `Waterfall bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has value ${item.value}, ` +
               `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`
@@ -1438,7 +1439,7 @@ const minLegendSpacing = 10;
       } else {
 
         if (item.value !== undefined && (item.value < effectiveYMin || item.value > effectiveYMax)) {
-          throw new Error(
+          throw new ApexifyInputError(
             `Bar Chart Error: Data value out of Y-axis bounds.\n` +
             `Bar ${itemIndex} "${item.label || `at index ${itemIndex}`}" has value ${item.value}, ` +
             `which exceeds the Y-axis range [${effectiveYMin}, ${effectiveYMax}].`

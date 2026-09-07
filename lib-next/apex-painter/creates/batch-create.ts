@@ -1,6 +1,6 @@
 import type { BatchOperation, ChainOperation, BatchChainAssetOpts, BatchChainPainter } from "../../types";
 import { batchOperations, chainOperations } from "../../batch/batch-operations";
-import { getErrorMessage } from "../../core/errors";
+import { ApexifyError, ApexifyInputError } from "../../runtime/errors";
 
 export async function runBatch(
   painter: BatchChainPainter,
@@ -10,7 +10,8 @@ export async function runBatch(
   try {
     return await batchOperations(painter, operations, opts);
   } catch (error) {
-    throw new Error(`batch failed: ${getErrorMessage(error)}`);
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyInputError("batch failed.", { cause: error, details: { operation: "batch" } });
   }
 }
 
@@ -22,7 +23,8 @@ export async function runChain(
   try {
     return await chainOperations(painter, operations, opts);
   } catch (error) {
-    throw new Error(`chain failed: ${getErrorMessage(error)}`);
+    if (error instanceof ApexifyError) throw error;
+    throw new ApexifyInputError("chain failed.", { cause: error, details: { operation: "chain" } });
   }
 }
 

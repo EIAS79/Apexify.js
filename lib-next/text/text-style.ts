@@ -1,3 +1,4 @@
+import { ApexifyInputError } from "../runtime/errors";
 import type { SKRSContext2D } from "@napi-rs/canvas";
 import type {
   TextGlowStyle,
@@ -20,7 +21,7 @@ export function createTextGradient(
   endY: number
 ): CanvasGradient | CanvasPattern {
   if (!gradientOptions || !gradientOptions.type || !gradientOptions.colors) {
-    throw new Error("Invalid gradient options. Provide a valid object with type and colors properties.");
+    throw new ApexifyInputError("Invalid gradient options. Provide a valid object with type and colors properties.");
   }
 
   let grad: CanvasGradient;
@@ -74,7 +75,7 @@ export function createTextGradient(
     return grad;
   }
 
-  throw new Error('Unsupported gradient type. Use "linear", "radial", or "conic".');
+  throw new ApexifyInputError('Unsupported gradient type. Use "linear", "radial", or "conic".');
 }
 
 export function createTextRepeatingGradientPattern(

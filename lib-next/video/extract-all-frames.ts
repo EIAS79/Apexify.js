@@ -1,3 +1,4 @@
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError, ApexifyProcessError } from "../runtime/errors";
 import { promises as fs } from "fs";
 import path from "path";
 import type { FfmpegSession } from "./ffmpeg-session";
@@ -25,7 +26,7 @@ async function outputDirectory(requested?: string): Promise<string> {
 
 function safePrefix(prefix: string): string {
   if (!prefix || prefix.includes("\0") || /[\\/]/.test(prefix)) {
-    throw new Error("extractAllFrames: prefix must be a simple filename prefix.");
+    throw new ApexifyInputError("extractAllFrames: prefix must be a simple filename prefix.");
   }
   return prefix;
 }
@@ -38,7 +39,7 @@ export async function extractAllVideoFrames(
 ): Promise<Array<{ source: string; frameNumber: number; time: number }>> {
   try {
     if (!(await session.checkAvailable())) {
-      throw new Error(
+      throw new ApexifyProcessError(
         "FFMPEG NOT FOUND\nVideo processing features require FFmpeg/ffprobe to be installed.\n" +
           session.getInstallInstructions()
       );
@@ -46,11 +47,11 @@ export async function extractAllVideoFrames(
 
     const outputFormat = options?.outputFormat || "png";
     if (outputFormat !== "png" && outputFormat !== "jpg") {
-      throw new Error("extractAllFrames: outputFormat must be 'png' or 'jpg'.");
+      throw new ApexifyInputError("extractAllFrames: outputFormat must be 'png' or 'jpg'.");
     }
     const quality = options?.quality ?? 2;
     if (!Number.isFinite(quality) || quality < 1 || quality > 31) {
-      throw new Error("extractAllFrames: quality must be between 1 and 31.");
+      throw new ApexifyInputError("extractAllFrames: quality must be between 1 and 31.");
     }
     const prefix = safePrefix(options?.prefix || "frame");
     const outputDir = await outputDirectory(options?.outputDirectory);
@@ -61,13 +62,13 @@ export async function extractAllVideoFrames(
         const { videoPath } = await resolveVideoInputToPath(videoSource, workspace, "input");
         const videoInfo = await ffprobeVideoFile(videoPath, session, true);
         if (!videoInfo || videoInfo.duration <= 0 || videoInfo.fps <= 0) {
-          throw new Error("Could not get usable video information.");
+          throw new ApexifyDecodeError("Could not get usable video information.");
         }
 
         const startTime = options?.startTime ?? 0;
         const endTime = options?.endTime ?? videoInfo.duration;
         if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime < 0 || endTime <= startTime) {
-          throw new Error("extractAllFrames: startTime/endTime must define a finite positive range.");
+          throw new ApexifyInputError("extractAllFrames: startTime/endTime must define a finite positive range.");
         }
         const duration = endTime - startTime;
         const outputTemplate = path.join(outputDir, `${prefix}-%06d.${outputFormat}`);
@@ -104,8 +105,8 @@ export async function extractAllVideoFrames(
       }
     );
   } catch (error) {
+    if (error instanceof ApexifyError) throw error;
     const errorMessage = getErrorMessage(error);
-    if (errorMessage.includes("FFMPEG NOT FOUND") || errorMessage.includes("FFmpeg")) throw error;
-    throw new Error(`extractAllFrames failed: ${errorMessage}`, { cause: error });
+    throw new ApexifyProcessError(`extractAllFrames failed: ${errorMessage}`, { cause: error });
   }
 }

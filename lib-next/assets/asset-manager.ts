@@ -1,6 +1,7 @@
 import type { AssetKind, AssetRegistrationInfo, AssetValue } from "../types";
 import { cloneCompositionValue, isPlainCompositionObject } from "../composition/clone";
 import { ApexifyAssetError, ApexifyInputError } from "../runtime/errors";
+import { assertWithinLimit } from "../runtime/limits";
 
 interface AssetRegistration {
   kind: AssetKind;
@@ -26,6 +27,7 @@ function validatePalette(name: string, colors: Record<string, string>, method: s
   if (!isPlainCompositionObject(colors)) {
     throw new ApexifyInputError(`AssetManager.${method}: colors must be a plain object.`);
   }
+  assertWithinLimit("maxCollectionItems", Object.keys(colors).length);
   for (const [key, value] of Object.entries(colors)) {
     validatePathSegment(key, `${name}.${key}`);
     if (typeof value !== "string") {
@@ -36,8 +38,15 @@ function validatePalette(name: string, colors: Record<string, string>, method: s
 
 function validateAssetValue(value: unknown, label: string): asserts value is AssetValue {
   const active = new WeakSet<object>();
+  let visitedItems = 0;
+
+  const countItem = (): void => {
+    visitedItems += 1;
+    assertWithinLimit("maxCollectionItems", visitedItems);
+  };
 
   const visit = (current: unknown, path: string): void => {
+    countItem();
     if (current === null || typeof current === "string" || typeof current === "number" || typeof current === "boolean") return;
     if (Buffer.isBuffer(current)) return;
     if (typeof current !== "object") {
@@ -86,6 +95,7 @@ export class AssetManager {
     if (replace && !exists) {
       throw new ApexifyAssetError(`AssetManager: cannot replace unknown asset "${name}".`);
     }
+    if (!exists) assertWithinLimit("maxCollectionItems", this.registry.size + 1);
     this.registry.set(name, { kind, value: cloneCompositionValue(value, `asset.${name}`) });
     return this;
   }
@@ -94,6 +104,7 @@ export class AssetManager {
     if (typeof source !== "string" && !Buffer.isBuffer(source)) {
       throw new ApexifyInputError("AssetManager.loadImage: source must be a string or Buffer.");
     }
+    if (Buffer.isBuffer(source)) assertWithinLimit("maxImageSourceBytes", source.byteLength);
     return this.register(id, "image", source, false);
   }
 
@@ -101,6 +112,7 @@ export class AssetManager {
     if (typeof source !== "string" && !Buffer.isBuffer(source)) {
       throw new ApexifyInputError("AssetManager.replaceImage: source must be a string or Buffer.");
     }
+    if (Buffer.isBuffer(source)) assertWithinLimit("maxImageSourceBytes", source.byteLength);
     return this.register(id, "image", source, true);
   }
 

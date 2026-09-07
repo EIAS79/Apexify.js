@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import type { FfmpegSession } from "../ffmpeg-session";
 import { createFfmpegProgressParser, type FfmpegProgress } from "../process-runner";
 import { resolveVideoInputToPath } from "../video-input-resolve";
@@ -31,6 +31,27 @@ function validateControls(controls: VideoRunControls): void {
   }
 }
 
+async function assertNoOverwriteTarget(args: readonly string[]): Promise<void> {
+  const noOverwriteIndex = args.lastIndexOf("-n");
+  if (noOverwriteIndex < 0) return;
+  const outputPath = args[noOverwriteIndex + 1];
+  if (typeof outputPath !== "string" || outputPath.length === 0) return;
+
+  try {
+    await access(outputPath);
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException)?.code === "ENOENT") return;
+    throw new ApexifyInputError("video output path could not be checked before FFmpeg execution.", {
+      cause,
+      details: { path: outputPath },
+    });
+  }
+
+  throw new ApexifyInputError(`video output already exists and overwrite is false: ${outputPath}`, {
+    details: { path: outputPath },
+  });
+}
+
 /** Shared execution context used by cohesive video operation modules. */
 export class VideoOperationRuntime {
   constructor(readonly session: FfmpegSession) {}
@@ -53,17 +74,14 @@ export class VideoOperationRuntime {
     if (typeof outputPath !== "string" || outputPath.trim().length === 0 || outputPath.includes("\0")) {
       throw new ApexifyInputError("video outputPath must be a non-empty path without NUL bytes.");
     }
-    // FFmpeg versions are inconsistent about the process exit status for `-n` when
-    // the destination already exists (some print an error and still exit 0). Enforce
-    // the public overwrite contract here, then keep `-n` as a TOCTOU backstop.
-    if (!overwrite && existsSync(outputPath)) {
-      throw new ApexifyInputError(`video output already exists and overwrite is false: ${outputPath}`);
-    }
+    // Keep the FFmpeg `-n` flag as the TOCTOU backstop. The actual existence
+    // preflight is asynchronous in runFfmpeg so request paths never block on sync I/O.
     return [overwrite ? "-y" : "-n", outputPath];
   }
 
-  runFfmpeg(args: readonly string[], controls: VideoRunControls = {}, expectedDuration?: number, cwd?: string) {
+  async runFfmpeg(args: readonly string[], controls: VideoRunControls = {}, expectedDuration?: number, cwd?: string) {
     validateControls(controls);
+    await assertNoOverwriteTarget(args);
     const progress = controls.onProgress;
     const progressArgs = progress ? ["-progress", "pipe:2", "-nostats"] : [];
     return this.session.runFfmpeg(["-hide_banner", "-nostdin", ...progressArgs, ...args], {
