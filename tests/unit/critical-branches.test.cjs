@@ -124,3 +124,19 @@ test('URL redaction accepts URL instances and sanitizer leaves non-URLs untouche
   assert.equal(api.redactUrl(url), 'https://example.com/path');
   assert.equal(api.redactUrlsInText('plain diagnostic'), 'plain diagnostic');
 });
+
+test('network policy edge branches reject malformed, credentialed, local and blocked numeric targets', async () => {
+  const defaults = api.resolveApexifyRuntimeConfig().network;
+  assert.deepEqual(api.classifyIpAddress('not-an-ip'), { blocked: true, reason: 'invalid-address' });
+  assert.deepEqual(api.classifyIpAddress('8.8.4.4'), { blocked: false });
+  assert.deepEqual(api.classifyIpAddress('::ffff:127.0.0.1'), { blocked: true, reason: 'ipv4-mapped:loopback' });
+  assert.deepEqual(api.classifyIpAddress('2606:4700:4700::1111'), { blocked: false });
+  assert.equal(api.redactUrl('not a URL'), '[invalid-url]');
+  assert.equal(api.redactUrlsInText('bad https://[ and good https://user:pw@example.com/x?q=secret#f'), 'bad [invalid-url] and good https://example.com/x');
+
+  await assert.rejects(api.validateRemoteTarget('not a URL', defaults), /URL is invalid/i);
+  await assert.rejects(api.validateRemoteTarget('ftp://8.8.8.8/file', defaults), /protocol is not allowed/i);
+  await assert.rejects(api.validateRemoteTarget('https://user:password@8.8.8.8/file', defaults), /credentials embedded/i);
+  await assert.rejects(api.validateRemoteTarget('http://localhost/file', defaults), /local and blocked/i);
+  await assert.rejects(api.validateRemoteTarget('http://127.0.0.1/file', defaults), /blocked loopback/i);
+});
