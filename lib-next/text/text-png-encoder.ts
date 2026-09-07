@@ -2,6 +2,7 @@ import sharp from "sharp";
 import type { Canvas } from "@napi-rs/canvas";
 import { getCanvasContext } from "../core/errors";
 import { emitDiagnostic } from "../runtime/diagnostics";
+import { ApexifyDecodeError } from "../runtime/errors";
 
 /**
  * Upper bound for the extra unpremultiplied RGBA snapshot used by the text PNG fast path.
@@ -50,7 +51,7 @@ function makePngChunk(type: string, data: Buffer): Buffer {
 
 function parsePngChunks(png: Buffer): PngChunkView[] {
   if (png.length < PNG_SIGNATURE_BYTES || !png.subarray(0, PNG_SIGNATURE_BYTES).equals(PNG_SIGNATURE)) {
-    throw new Error("Fast text PNG encoder returned a non-PNG buffer.");
+    throw new ApexifyDecodeError("Fast text PNG encoder returned a non-PNG buffer.");
   }
 
   const chunks: PngChunkView[] = [];
@@ -62,7 +63,7 @@ function parsePngChunks(png: Buffer): PngChunkView[] {
     const type = png.toString("ascii", offset + 4, offset + 8);
     const dataStart = offset + 8;
     const end = dataStart + length + 4;
-    if (end > png.length) throw new Error(`Malformed PNG chunk ${type}.`);
+    if (end > png.length) throw new ApexifyDecodeError(`Malformed PNG chunk ${type}.`);
     chunks.push({ type, data: png.subarray(dataStart, dataStart + length), start, end });
     offset = end;
     if (type === "IEND") {
@@ -70,7 +71,7 @@ function parsePngChunks(png: Buffer): PngChunkView[] {
       break;
     }
   }
-  if (!foundIend) throw new Error("Fast text PNG output is missing IEND.");
+  if (!foundIend) throw new ApexifyDecodeError("Fast text PNG output is missing IEND.");
   return chunks;
 }
 
@@ -84,15 +85,21 @@ function parsePngChunks(png: Buffer): PngChunkView[] {
 function withSkiaPngSemantics(png: Buffer, width: number, height: number): Buffer {
   const chunks = parsePngChunks(png);
   const ihdr = chunks[0];
-  if (!ihdr || ihdr.type !== "IHDR" || ihdr.data.length !== 13) throw new Error("Fast text PNG output is missing a valid IHDR chunk.");
-  if (ihdr.data.readUInt32BE(0) !== width || ihdr.data.readUInt32BE(4) !== height) throw new Error("Fast text PNG dimensions changed during encoding.");
-  if (ihdr.data[8] !== 8 || ihdr.data[9] !== 6) throw new Error("Fast text PNG output is not 8-bit RGBA.");
+  if (!ihdr || ihdr.type !== "IHDR" || ihdr.data.length !== 13) {
+    throw new ApexifyDecodeError("Fast text PNG output is missing a valid IHDR chunk.");
+  }
+  if (ihdr.data.readUInt32BE(0) !== width || ihdr.data.readUInt32BE(4) !== height) {
+    throw new ApexifyDecodeError("Fast text PNG dimensions changed during encoding.");
+  }
+  if (ihdr.data[8] !== 8 || ihdr.data[9] !== 6) {
+    throw new ApexifyDecodeError("Fast text PNG output is not 8-bit RGBA.");
+  }
 
   const forbiddenColorMetadata = chunks.find((chunk) =>
     chunk.type === "iCCP" || chunk.type === "gAMA" || chunk.type === "cHRM"
   );
   if (forbiddenColorMetadata) {
-    throw new Error(`Fast text PNG encoder emitted unexpected ${forbiddenColorMetadata.type} color metadata.`);
+    throw new ApexifyDecodeError(`Fast text PNG encoder emitted unexpected ${forbiddenColorMetadata.type} color metadata.`);
   }
 
   const sbit = makePngChunk("sBIT", SKIA_SBIT);
