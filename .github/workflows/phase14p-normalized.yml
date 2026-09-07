@@ -158,6 +158,15 @@ jobs:
             --markdown phase14p/artifacts/phase14p/post-recovery-comparison.md
           cat phase14p/artifacts/phase14p/post-recovery-comparison.md
 
+      - name: Enforce normalized text recovery target
+        run: |
+          node phase14p/benchmarks/phase14p/assert-text-recovery.cjs \
+            --comparison phase14p/artifacts/phase14p/post-recovery-comparison.json \
+            --median-target -10 \
+            --p95-target -10 \
+            --max-cv 0.10 \
+            --max-rss-change 10
+
       - name: Compare pre-recovery to post-recovery
         run: |
           node phase14p/benchmarks/phase14p/compare-results.cjs \
