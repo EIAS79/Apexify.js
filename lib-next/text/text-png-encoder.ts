@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import type { Canvas } from "@napi-rs/canvas";
 import { getCanvasContext } from "../core/errors";
+import { emitDiagnostic } from "../runtime/diagnostics";
 
 /**
  * Upper bound for the extra unpremultiplied RGBA snapshot used by the text PNG fast path.
@@ -116,7 +117,13 @@ export async function encodeTextCanvasPng(canvas: Canvas): Promise<Buffer> {
       .png({ compressionLevel: 8, adaptiveFiltering: false, palette: false })
       .toBuffer();
     return withSkiaPngSemantics(encoded, canvas.width, canvas.height);
-  } catch {
+  } catch (error) {
+    emitDiagnostic({
+      level: "debug",
+      code: "TEXT_PNG_FAST_PATH_FALLBACK",
+      message: "Text PNG fast path fell back to the native Skia encoder.",
+      details: { reason: error instanceof Error ? error.message : String(error) },
+    });
     return canvas.encode("png");
   }
 }
