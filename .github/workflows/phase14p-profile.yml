@@ -8,6 +8,7 @@ on:
     paths:
       - 'benchmarks/phase14p/profile-workload.cjs'
       - 'benchmarks/phase14p/summarize-profiles.cjs'
+      - 'lib-next/**'
       - '.github/workflows/phase14p-profile.yml'
 
 permissions:
@@ -15,6 +16,7 @@ permissions:
 
 jobs:
   profile-pre-recovery:
+    name: Frozen Phase 14 pre-recovery profiles
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -84,4 +86,71 @@ jobs:
         with:
           name: phase14p-pre-recovery-profiles-node24
           path: phase14p/artifacts/phase14p-profiles/pre/
+          if-no-files-found: error
+
+  profile-post-recovery:
+    name: Current Phase 14-P post-recovery profiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+    steps:
+      - name: Checkout current Phase 14-P subject/tooling
+        uses: actions/checkout@v7
+        with:
+          path: phase14p
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+
+      - run: npm install --global npm@11.19.1
+
+      - name: Build current post-recovery subject
+        working-directory: phase14p
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Capture CPU and allocation profiles
+        run: |
+          mkdir -p phase14p/artifacts/phase14p-profiles/post
+          for workload in measureText text image chart scene canvas; do
+            mkdir -p "phase14p/artifacts/phase14p-profiles/post/$workload"
+            node --expose-gc \
+              --cpu-prof \
+              --cpu-prof-dir="phase14p/artifacts/phase14p-profiles/post/$workload" \
+              --cpu-prof-name="${workload}.cpuprofile" \
+              --heap-prof \
+              --heap-prof-dir="phase14p/artifacts/phase14p-profiles/post/$workload" \
+              --heap-prof-name="${workload}.heapprofile" \
+              phase14p/benchmarks/phase14p/profile-workload.cjs \
+              --subject phase14p \
+              --workload "$workload" \
+              --repeats 120 \
+              > "phase14p/artifacts/phase14p-profiles/post/$workload/workload-summary.json"
+          done
+
+      - name: Summarize profiler hotspots
+        run: |
+          node phase14p/benchmarks/phase14p/summarize-profiles.cjs \
+            phase14p/artifacts/phase14p-profiles/post \
+            phase14p/artifacts/phase14p-profiles/post/profile-summary.json \
+            | tee phase14p/artifacts/phase14p-profiles/post/profile-summary.txt
+
+      - name: Upload profiler evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase14p-post-recovery-profiles-node24-${{ github.sha }}
+          path: phase14p/artifacts/phase14p-profiles/post/
           if-no-files-found: error
