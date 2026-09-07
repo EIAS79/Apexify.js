@@ -18,6 +18,7 @@ const SKIA_SRGB = Buffer.from([0]);
 interface PngChunkView {
   type: string;
   data: Buffer;
+  start: number;
   end: number;
 }
 
@@ -54,24 +55,31 @@ function parsePngChunks(png: Buffer): PngChunkView[] {
 
   const chunks: PngChunkView[] = [];
   let offset = PNG_SIGNATURE_BYTES;
+  let foundIend = false;
   while (offset + 12 <= png.length) {
+    const start = offset;
     const length = png.readUInt32BE(offset);
     const type = png.toString("ascii", offset + 4, offset + 8);
     const dataStart = offset + 8;
     const end = dataStart + length + 4;
     if (end > png.length) throw new Error(`Malformed PNG chunk ${type}.`);
-    chunks.push({ type, data: png.subarray(dataStart, dataStart + length), end });
+    chunks.push({ type, data: png.subarray(dataStart, dataStart + length), start, end });
     offset = end;
-    if (type === "IEND") break;
+    if (type === "IEND") {
+      foundIend = true;
+      break;
+    }
   }
+  if (!foundIend) throw new Error("Fast text PNG output is missing IEND.");
   return chunks;
 }
 
 /**
- * Sharp/libvips and Skia encode the same RGBA pixels with different container defaults.
+ * Sharp/libvips and Skia encode the same RGBA pixels with different ancillary metadata.
  * Phase 14-P probes established that Apexify's existing Skia PNGs carry 8-bit sBIT and
- * perceptual sRGB chunks, with no pHYs/ICC/gAMA/cHRM metadata. Normalize the fast path
- * to that exact semantic contract while allowing the lossless DEFLATE stream to differ.
+ * perceptual sRGB chunks, with no pHYs/ICC/gAMA/cHRM metadata. Sharp may add pHYs for raw
+ * input; remove that physical-density hint, normalize sBIT/sRGB to the Skia contract, and
+ * otherwise preserve Sharp's encoded chunks byte-for-byte. IDAT payloads are never changed.
  */
 function withSkiaPngSemantics(png: Buffer, width: number, height: number): Buffer {
   const chunks = parsePngChunks(png);
@@ -80,16 +88,21 @@ function withSkiaPngSemantics(png: Buffer, width: number, height: number): Buffe
   if (ihdr.data.readUInt32BE(0) !== width || ihdr.data.readUInt32BE(4) !== height) throw new Error("Fast text PNG dimensions changed during encoding.");
   if (ihdr.data[8] !== 8 || ihdr.data[9] !== 6) throw new Error("Fast text PNG output is not 8-bit RGBA.");
 
-  const unexpectedSemanticChunk = chunks.find((chunk) =>
-    chunk.type === "sBIT" || chunk.type === "sRGB" || chunk.type === "pHYs" || chunk.type === "iCCP" || chunk.type === "gAMA" || chunk.type === "cHRM"
+  const forbiddenColorMetadata = chunks.find((chunk) =>
+    chunk.type === "iCCP" || chunk.type === "gAMA" || chunk.type === "cHRM"
   );
-  if (unexpectedSemanticChunk) {
-    throw new Error(`Fast text PNG encoder emitted unexpected ${unexpectedSemanticChunk.type} metadata.`);
+  if (forbiddenColorMetadata) {
+    throw new Error(`Fast text PNG encoder emitted unexpected ${forbiddenColorMetadata.type} color metadata.`);
   }
 
   const sbit = makePngChunk("sBIT", SKIA_SBIT);
   const srgb = makePngChunk("sRGB", SKIA_SRGB);
-  return Buffer.concat([png.subarray(0, ihdr.end), sbit, srgb, png.subarray(ihdr.end)]);
+  const remainder = chunks
+    .slice(1)
+    .filter((chunk) => chunk.type !== "pHYs" && chunk.type !== "sBIT" && chunk.type !== "sRGB")
+    .map((chunk) => png.subarray(chunk.start, chunk.end));
+
+  return Buffer.concat([png.subarray(0, ihdr.end), sbit, srgb, ...remainder]);
 }
 
 function rawView(typed: Uint8ClampedArray): Buffer {
