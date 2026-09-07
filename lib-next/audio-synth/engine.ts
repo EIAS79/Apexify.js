@@ -10,6 +10,9 @@ import { getPresetDefinition } from "./presets";
 const TAU = Math.PI * 2;
 const DEFAULT_ADSR: Required<AdsrEnvelope> = { attack: 0.002, decay: 0.05, sustain: 0.7, release: 0.08 };
 
+type ValidatedSoundOptions = ReturnType<typeof validateSynthSoundOptions>;
+type ValidatedSequenceOptions = ReturnType<typeof validateSynthSequenceOptions>;
+
 interface PinkNoiseState {
   b0: number;
   b1: number;
@@ -18,6 +21,12 @@ interface PinkNoiseState {
   b4: number;
   b5: number;
   b6: number;
+}
+
+interface ResolvedAdsr {
+  env: Required<AdsrEnvelope>;
+  sustainStart: number;
+  releaseStart: number;
 }
 
 function centsToRatio(cents: number): number {
@@ -30,12 +39,11 @@ function wrapPhase(phase: number): number {
 }
 
 function oscSample(wave: Waveform, phase: number, pink: PinkNoiseState, random: () => number): number {
-  const p = wrapPhase(phase) / TAU;
   switch (wave) {
     case "sine": return Math.sin(phase);
     case "square": return Math.sin(phase) >= 0 ? 1 : -1;
-    case "sawtooth": return 2 * p - 1;
-    case "triangle": return 1 - 4 * Math.abs(p - 0.5);
+    case "sawtooth": return 2 * (wrapPhase(phase) / TAU) - 1;
+    case "triangle": return 1 - 4 * Math.abs((wrapPhase(phase) / TAU) - 0.5);
     case "noise": return random() * 2 - 1;
     case "pink": {
       const white = random() * 2 - 1;
@@ -59,12 +67,19 @@ function fittedAdsr(duration: number, env: Required<AdsrEnvelope>): Required<Ads
   return { ...env, attack: env.attack * scale, decay: env.decay * scale, release: env.release * scale };
 }
 
-export function adsrGainAt(t: number, duration: number, envelope: AdsrEnvelope = {}): number {
+function resolveAdsr(duration: number, envelope: AdsrEnvelope | undefined): ResolvedAdsr {
   const env = fittedAdsr(duration, { ...DEFAULT_ADSR, ...envelope });
-  const clampedT = Math.max(0, Math.min(duration, t));
   const sustainStart = env.attack + env.decay;
-  const releaseStart = Math.max(sustainStart, duration - env.release);
+  return {
+    env,
+    sustainStart,
+    releaseStart: Math.max(sustainStart, duration - env.release),
+  };
+}
 
+function adsrGainResolved(t: number, duration: number, resolved: ResolvedAdsr): number {
+  const { env, sustainStart, releaseStart } = resolved;
+  const clampedT = t <= 0 ? 0 : t >= duration ? duration : t;
   if (env.attack > 0 && clampedT < env.attack) return clampedT / env.attack;
   if (clampedT < sustainStart) {
     if (env.decay === 0) return env.sustain;
@@ -76,6 +91,10 @@ export function adsrGainAt(t: number, duration: number, envelope: AdsrEnvelope =
   if (env.release === 0) return env.sustain;
   const progress = Math.max(0, Math.min(1, (clampedT - releaseStart) / env.release));
   return env.sustain * (1 - progress);
+}
+
+export function adsrGainAt(t: number, duration: number, envelope: AdsrEnvelope = {}): number {
+  return adsrGainResolved(t, duration, resolveAdsr(duration, envelope));
 }
 
 function renderLayer(
@@ -106,11 +125,13 @@ function renderLayer(
   const tremoloOmega = layer.tremolo ? TAU * layer.tremolo.rate : 0;
   const filter = layer.filter ? createBiquadProcessor(layer.filter, sampleRate) : undefined;
   const pink: PinkNoiseState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
+  const adsr = resolveAdsr(layer.duration, layer.adsr);
+  const envelopeStep = length > 1 ? layer.duration / (length - 1) : 0;
 
   let phase = 0;
+  let clockTime = 0;
+  let envelopeTime = length > 1 ? 0 : layer.duration;
   for (let i = 0; i < length; i += 1) {
-    const clockTime = i / sampleRate;
-    const envelopeTime = length > 1 ? (i / (length - 1)) * layer.duration : layer.duration;
     let sample: number;
 
     if (tonal) {
@@ -126,7 +147,7 @@ function renderLayer(
     }
 
     if (filter) sample = filter.process(sample);
-    let amp = gain * adsrGainAt(envelopeTime, layer.duration, layer.adsr);
+    let amp = gain * adsrGainResolved(envelopeTime, layer.duration, adsr);
     if (layer.tremolo) {
       const modulation = 0.5 + 0.5 * Math.sin(tremoloOmega * clockTime);
       amp *= 1 - layer.tremolo.depth * modulation;
@@ -134,12 +155,15 @@ function renderLayer(
     sample *= amp;
 
     const frame = startSample + i;
-    if (frame < 0 || frame >= out.length / channels) continue;
-    if (channels === 1) out[frame] += sample;
-    else {
-      out[frame * 2] += sample * leftGain;
-      out[frame * 2 + 1] += sample * rightGain;
+    if (frame >= 0 && frame < out.length / channels) {
+      if (channels === 1) out[frame] += sample;
+      else {
+        out[frame * 2] += sample * leftGain;
+        out[frame * 2 + 1] += sample * rightGain;
+      }
     }
+    clockTime += 1 / sampleRate;
+    envelopeTime += envelopeStep;
   }
 }
 
@@ -147,6 +171,22 @@ function ensureFinite(samples: Float32Array, operation: string): void {
   for (let i = 0; i < samples.length; i += 1) {
     if (!Number.isFinite(samples[i])) throw new ApexifyAudioError(`${operation} produced a non-finite sample.`, { details: { sampleIndex: i } });
   }
+}
+
+function finalizeSamples(samples: Float32Array, masterGain: number, limiter: boolean, operation: string): void {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    const value = masterGain === 1 ? samples[i]! : samples[i]! * masterGain;
+    if (!Number.isFinite(value)) throw new ApexifyAudioError(`${operation} produced a non-finite sample.`, { details: { sampleIndex: i } });
+    if (masterGain !== 1) samples[i] = value;
+    if (limiter) {
+      const magnitude = Math.abs(value);
+      if (magnitude > peak) peak = magnitude;
+    }
+  }
+  if (!limiter || peak <= 1) return;
+  const scale = PEAK_LIMIT / peak;
+  for (let i = 0; i < samples.length; i += 1) samples[i] *= scale;
 }
 
 export function applyLimiter(samples: Float32Array, enabled: boolean): void {
@@ -158,8 +198,8 @@ export function applyLimiter(samples: Float32Array, enabled: boolean): void {
   for (let i = 0; i < samples.length; i += 1) samples[i] *= scale;
 }
 
-export function renderSound(options: SynthSoundOptions): Float32Array {
-  const validated = validateSynthSoundOptions(options);
+/** Trusted internal path for a sound whose public/resource validation has already completed. */
+export function renderValidatedSound(options: SynthSoundOptions, validated: ValidatedSoundOptions): Float32Array {
   const { duration, sampleRate, channels } = validated;
   const frameCount = Math.ceil(duration * sampleRate);
   const samples = new Float32Array(frameCount * channels);
@@ -169,11 +209,12 @@ export function renderSound(options: SynthSoundOptions): Float32Array {
     renderLayer(layer, samples, channels, sampleRate, 0, createAudioRandom(deriveAudioSeed(options.seed, `layer:${index}`)));
   }
 
-  const master = options.masterGain ?? 1;
-  if (master !== 1) for (let i = 0; i < samples.length; i += 1) samples[i] *= master;
-  ensureFinite(samples, "audio synthesis");
-  applyLimiter(samples, options.limiter !== false);
+  finalizeSamples(samples, options.masterGain ?? 1, options.limiter !== false, "audio synthesis");
   return samples;
+}
+
+export function renderSound(options: SynthSoundOptions): Float32Array {
+  return renderValidatedSound(options, validateSynthSoundOptions(options));
 }
 
 export function mixFloatBuffers(buffers: Float32Array[], channels: 1 | 2, masterGain = 1): Float32Array {
@@ -186,9 +227,7 @@ export function mixFloatBuffers(buffers: Float32Array[], channels: 1 | 2, master
   assertWithinLimit("maxAudioBytes", maxLength * Float32Array.BYTES_PER_ELEMENT);
   const out = new Float32Array(maxLength);
   for (const buffer of buffers) for (let i = 0; i < buffer.length; i += 1) out[i] += buffer[i]!;
-  if (masterGain !== 1) for (let i = 0; i < out.length; i += 1) out[i] *= masterGain;
-  ensureFinite(out, "audio mix");
-  applyLimiter(out, true);
+  finalizeSamples(out, masterGain, true, "audio mix");
   return out;
 }
 
@@ -234,8 +273,8 @@ export function resampleToMatch(
   return out;
 }
 
-export function renderSequence(options: SynthSequenceOptions): Float32Array {
-  const validated = validateSynthSequenceOptions(options);
+/** Trusted internal path for a sequence whose full validation has already completed. */
+export function renderValidatedSequence(options: SynthSequenceOptions, validated: ValidatedSequenceOptions): Float32Array {
   const { duration, sampleRate, channels } = validated;
   const frameCount = Math.ceil(duration * sampleRate);
   const out = new Float32Array(frameCount * channels);
@@ -244,7 +283,8 @@ export function renderSequence(options: SynthSequenceOptions): Float32Array {
     const event = options.events[index]!;
     const base = event.options ?? getPresetDefinition(event.preset!);
     const seed = event.options?.seed ?? deriveAudioSeed(options.seed, `event:${index}`);
-    const samples = renderSound({ ...base, sampleRate, channels, seed });
+    const eventOptions = { ...base, sampleRate, channels, seed };
+    const samples = renderSound(eventOptions);
     const start = Math.floor(event.at * sampleRate);
     const gain = event.gain ?? 1;
     const frames = samples.length / channels;
@@ -253,11 +293,12 @@ export function renderSequence(options: SynthSequenceOptions): Float32Array {
     }
   }
 
-  const master = options.masterGain ?? 1;
-  if (master !== 1) for (let i = 0; i < out.length; i += 1) out[i] *= master;
-  ensureFinite(out, "audio sequence");
-  applyLimiter(out, true);
+  finalizeSamples(out, options.masterGain ?? 1, true, "audio sequence");
   return out;
+}
+
+export function renderSequence(options: SynthSequenceOptions): Float32Array {
+  return renderValidatedSequence(options, validateSynthSequenceOptions(options));
 }
 
 export interface ComposeTimelineOptions {
@@ -296,10 +337,7 @@ export function composeTimeline(
       for (let channel = 0; channel < channels; channel += 1) out[(start + frame) * channels + channel] += placement.samples[frame * channels + channel]!;
     }
   }
-  const master = options.masterGain ?? 1;
-  if (master !== 1) for (let i = 0; i < out.length; i += 1) out[i] *= master;
-  ensureFinite(out, "audio timeline");
-  applyLimiter(out, options.limiter !== false);
+  finalizeSamples(out, options.masterGain ?? 1, options.limiter !== false, "audio timeline");
   return out;
 }
 
