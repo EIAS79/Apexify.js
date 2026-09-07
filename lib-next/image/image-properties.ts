@@ -14,10 +14,14 @@ import { decodeImageSource } from "./image-source-validation";
 
 let imageCache: BoundedCache<string, Image> | undefined;
 let imageCacheSignature = "";
+let imageCacheRuntime: ReturnType<typeof getDefaultApexifyRuntimeConfig> | undefined;
 const inFlightDecodes = new Map<string, Promise<Image>>();
+const bufferCacheKeys = new WeakMap<Buffer, string>();
 
 function getImageCache(): BoundedCache<string, Image> {
   const runtime = getDefaultApexifyRuntimeConfig();
+  if (imageCache && runtime === imageCacheRuntime) return imageCache;
+
   const config = runtime.cache;
   const signature = JSON.stringify({
     cache: [config.enabled, config.ttlMs, config.maxEntries, config.maxBytes],
@@ -40,6 +44,7 @@ function getImageCache(): BoundedCache<string, Image> {
     });
     imageCacheSignature = signature;
   }
+  imageCacheRuntime = runtime;
   return imageCache;
 }
 
@@ -51,7 +56,13 @@ async function sourceCacheKey(src: MediaSource): Promise<string | undefined> {
   const raw = src instanceof URL
     ? (src.protocol === "file:" ? fileURLToPath(src) : src.toString())
     : src;
-  if (Buffer.isBuffer(raw)) return `buffer:${raw.length}:${digestCacheKey(raw)}`;
+  if (Buffer.isBuffer(raw)) {
+    const existing = bufferCacheKeys.get(raw);
+    if (existing) return existing;
+    const key = `buffer:${raw.length}:${digestCacheKey(raw)}`;
+    bufferCacheKeys.set(raw, key);
+    return key;
+  }
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
   if (/^https?:\/\//i.test(trimmed)) return `remote:${digestCacheKey(trimmed)}`;
