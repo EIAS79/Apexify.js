@@ -1,6 +1,6 @@
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
-import { assertFiniteNumber, assertFiniteNumericLeaves, assertRecord } from "../runtime/validation";
+import { assertFiniteNumber, assertRecord } from "../runtime/validation";
 
 const DEFAULT_CHART_WIDTH = 800;
 const DEFAULT_CHART_HEIGHT = 600;
@@ -9,16 +9,48 @@ type SupportedChartType = (typeof TYPES)[number];
 
 interface TraversalCounters { items: number; text: number; }
 
-function inspectBoundedValue(value: unknown, name: string, counters: TraversalCounters, depth = 0): void {
-  if (depth > 16 || value == null || Buffer.isBuffer(value) || value instanceof Uint8Array || value instanceof URL || typeof value === "function") return;
-  if (typeof value === "string") { counters.text += value.length; assertWithinLimit("maxTextLength", counters.text); return; }
+/**
+ * One bounded traversal replaces the historical three independent walks for finite-number
+ * validation, collection/text budgets, and semantic option ranges. Numeric-leaf checks retain
+ * their original depth-12 scope; budget/range inspection retains the depth-16 scope.
+ */
+function validateBoundedChartTree(value: unknown, name: string, counters: TraversalCounters, depth = 0): void {
+  if (value == null || Buffer.isBuffer(value) || value instanceof Uint8Array || value instanceof URL || typeof value === "function") return;
+
+  if (typeof value === "number") {
+    if (depth <= 12) assertFiniteNumber(value, name);
+    return;
+  }
+  if (typeof value === "string") {
+    counters.text += value.length;
+    assertWithinLimit("maxTextLength", counters.text);
+    return;
+  }
+  if (depth > 16) return;
+
   if (Array.isArray(value)) {
     counters.items += value.length;
     assertWithinLimit("maxCollectionItems", counters.items);
-    for (let i = 0; i < value.length; i++) inspectBoundedValue(value[i], `${name}[${i}]`, counters, depth + 1);
+    for (let i = 0; i < value.length; i++) validateBoundedChartTree(value[i], `${name}[${i}]`, counters, depth + 1);
     return;
   }
-  if (typeof value === "object") for (const [key, child] of Object.entries(value as Record<string, unknown>)) inspectBoundedValue(child, `${name}.${key}`, counters, depth + 1);
+
+  if (typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  for (const key of ["opacity", "fillOpacity", "innerRadiusRatio", "donutInnerRadius"] as const) {
+    if (record[key] !== undefined) assertFiniteNumber(record[key], `${name}.${key}`, { min: 0, max: 1 });
+  }
+  if (record.range !== undefined) {
+    assertRecord(record.range, `${name}.range`);
+    const range = record.range;
+    if (range.min !== undefined) assertFiniteNumber(range.min, `${name}.range.min`);
+    if (range.max !== undefined) assertFiniteNumber(range.max, `${name}.range.max`);
+    if (range.step !== undefined) assertFiniteNumber(range.step, `${name}.range.step`, { min: 0, exclusiveMin: true });
+    if (typeof range.min === "number" && typeof range.max === "number" && range.min >= range.max) {
+      throw new ApexifyInputError(`${name}.range.min must be less than range.max.`);
+    }
+  }
+  for (const [key, child] of Object.entries(record)) validateBoundedChartTree(child, `${name}.${key}`, counters, depth + 1);
 }
 
 function validateChartDimensions(options: unknown, name: string): void {
@@ -35,29 +67,7 @@ function validateChartDimensions(options: unknown, name: string): void {
 }
 
 function validateChartValueTree(value: unknown, name: string): void {
-  assertFiniteNumericLeaves(value, name);
-  inspectBoundedValue(value, name, { items: 0, text: 0 });
-  inspectSemanticOptionRanges(value, name);
-}
-
-function inspectSemanticOptionRanges(value: unknown, name: string, depth = 0): void {
-  if (depth > 16 || value == null || typeof value !== "object" || Buffer.isBuffer(value) || value instanceof Uint8Array) return;
-  if (Array.isArray(value)) { value.forEach((item, index) => inspectSemanticOptionRanges(item, `${name}[${index}]`, depth + 1)); return; }
-  const record = value as Record<string, unknown>;
-  for (const key of ["opacity", "fillOpacity", "innerRadiusRatio", "donutInnerRadius"] as const) {
-    if (record[key] !== undefined) assertFiniteNumber(record[key], `${name}.${key}`, { min: 0, max: 1 });
-  }
-  if (record.range !== undefined) {
-    assertRecord(record.range, `${name}.range`);
-    const range = record.range;
-    if (range.min !== undefined) assertFiniteNumber(range.min, `${name}.range.min`);
-    if (range.max !== undefined) assertFiniteNumber(range.max, `${name}.range.max`);
-    if (range.step !== undefined) assertFiniteNumber(range.step, `${name}.range.step`, { min: 0, exclusiveMin: true });
-    if (typeof range.min === "number" && typeof range.max === "number" && range.min >= range.max) {
-      throw new ApexifyInputError(`${name}.range.min must be less than range.max.`);
-    }
-  }
-  for (const [key, child] of Object.entries(record)) inspectSemanticOptionRanges(child, `${name}.${key}`, depth + 1);
+  validateBoundedChartTree(value, name, { items: 0, text: 0 });
 }
 
 function nonEmptyLabel(record: Record<string, unknown>, name: string): void {
