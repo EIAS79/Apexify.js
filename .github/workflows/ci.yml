@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: apexify-ci-${{ github.workflow }}-${{ github.ref }}
+  group: apexify-ci-v2-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -115,7 +115,7 @@ jobs:
         run: npm run test:integration
 
       - name: Process and temp-workspace security
-        run: npm run test:build && npm run test:security:core:run
+        run: npm run test:security:core:run
 
       - name: Golden raster tests
         run: npm run test:golden
