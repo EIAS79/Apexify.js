@@ -52,7 +52,7 @@
     "audit:maintenance": "node scripts/maintenance-audit.cjs --strict",
     "audit:tests": "node scripts/test-system-audit.cjs",
     "test:build": "node scripts/build-test-fixture.mjs",
-    "test:unit:run": "node --test tests/unit/critical-infrastructure.test.cjs",
+    "test:unit:run": "node --test tests/unit/critical-infrastructure.test.cjs tests/unit/critical-branches.test.cjs",
     "test:unit": "npm run test:build && npm run test:unit:run",
     "test:integration:run": "node --test tests/integration/remote-fetch.test.cjs",
     "test:integration": "npm run test:build && npm run test:integration:run",
