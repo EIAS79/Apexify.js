@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { build } from "esbuild";
+import ts from "typescript";
 
 const root = process.cwd();
 const sourceRoot = path.join(root, "lib-next");
@@ -22,17 +22,34 @@ fs.mkdirSync(outRoot, { recursive: true });
 fs.mkdirSync(buildRoot, { recursive: true });
 fs.writeFileSync(path.join(coverageRoot, "package.json"), '{"type":"commonjs"}\n');
 
-await build({
-  entryPoints: sourceFiles,
-  outdir: outRoot,
-  outbase: sourceRoot,
-  bundle: false,
-  platform: "node",
-  format: "cjs",
-  target: "node22",
-  sourcemap: false,
-  logLevel: "warning",
-});
+for (const sourceFile of sourceFiles) {
+  const relative = path.relative(sourceRoot, sourceFile);
+  const outputPath = path.join(outRoot, relative.replace(/\.ts$/i, ".js"));
+  const result = ts.transpileModule(fs.readFileSync(sourceFile, "utf8"), {
+    fileName: sourceFile,
+    reportDiagnostics: true,
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+      sourceMap: false,
+      inlineSourceMap: false,
+      declaration: false,
+      removeComments: false,
+    },
+  });
+  const errors = (result.diagnostics ?? []).filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+  if (errors.length > 0) {
+    const formatted = ts.formatDiagnosticsWithColorAndContext(errors, {
+      getCanonicalFileName: (name) => name,
+      getCurrentDirectory: () => root,
+      getNewLine: () => "\n",
+    });
+    throw new Error(`Coverage transpilation failed for ${relative}:\n${formatted}`);
+  }
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, result.outputText);
+}
 
 const criticalModules = [
   "runtime/config.js",
@@ -52,4 +69,4 @@ const entry = [
   "",
 ].join("\n");
 fs.writeFileSync(path.join(buildRoot, "phase12-entry.cjs"), entry);
-console.log(`build-coverage-fixture: transpiled ${sourceFiles.length} source modules and routed critical tests through source-level coverage modules.`);
+console.log(`build-coverage-fixture: transpiled ${sourceFiles.length} source modules with TypeScript CommonJS emit and routed critical tests through helper-free source-level coverage modules.`);
