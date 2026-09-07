@@ -17,7 +17,7 @@ function walk(dir) {
 function classify(file) {
   if (/benchmarks\//.test(file) || /benchmark/i.test(path.basename(file))) return 'BENCHMARK';
   if (/tests\/golden\//.test(file) || /golden/i.test(path.basename(file))) return 'GOLDEN TEST';
-  if (/tests\/security\//.test(file) || /security/i.test(path.basename(file))) return 'SECURITY TEST';
+  if (/tests\/security\//.test(file) || /security/i.test(path.basename(file)) || /scripts\/secret-scan/.test(file)) return 'SECURITY TEST';
   if (/tests\/integration\//.test(file) || /tests\/audio-synth\//.test(file) || /video-integration|space-shooter|smoke/i.test(file)) return 'INTEGRATION TEST';
   if (/tests\/unit\//.test(file) || /tests\/helpers\//.test(file)) return 'PERMANENT TEST';
   if (/tests\/property\//.test(file) || /fuzz/i.test(path.basename(file))) return 'REGRESSION TEST';
@@ -29,14 +29,14 @@ function classify(file) {
   if (/^tests\//.test(file)) return 'REGRESSION TEST';
   if (/scripts\/phase\d+.*scan/.test(file) || /maintenance-audit/.test(file)) return 'REGRESSION TEST';
   if (/scripts\/build-phase\d+-fixture|scripts\/build-security-fixture/.test(file)) return 'TEMPORARY PHASE TEST';
-  if (/scripts\/build-(?:test|coverage)-fixture|scripts\/verify-packed-package|scripts\/test-system-audit/.test(file)) return 'PERMANENT TEST';
+  if (/scripts\/build-(?:test|coverage)-fixture|scripts\/verify-(?:packed-package|prepack-rebuild)|scripts\/test-system-audit/.test(file)) return 'PERMANENT TEST';
   return null;
 }
 
 const candidates = [
   ...walk('tests'),
   ...walk('benchmarks'),
-  ...walk('scripts').filter((file) => /phase\d+|security|test|benchmark|fixture|scan|verify-packed|maintenance-audit/.test(file)),
+  ...walk('scripts').filter((file) => /phase\d+|security|secret|test|benchmark|fixture|scan|verify-(?:packed|prepack)|maintenance-audit/.test(file)),
 ];
 
 for (const file of [...new Set(candidates)].sort()) {
