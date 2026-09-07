@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import * as ts from "typescript";
+import { createRequire } from "node:module";
 
+const require = createRequire(import.meta.url);
+const ts = require("typescript");
 const root = process.cwd();
 const sourceRoot = path.join(root, "lib-next");
 const coverageRoot = path.join(root, "tests/.coverage");
