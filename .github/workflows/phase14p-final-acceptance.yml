@@ -64,15 +64,25 @@ jobs:
       - name: Build Phase 14-P internal benchmark fixture
         run: node scripts/build-phase14p-benchmark-fixture.mjs
 
-      - name: Run permanent stage benchmark smoke after full gate
+      - name: Run validation, config, security and memory audit
         run: |
           mkdir -p artifacts/phase14p-final
+          node benchmarks/phase14p/validation-config-audit.cjs \
+            --output artifacts/phase14p-final/validation-config-audit.json
+
+      - name: Run permanent stage benchmark after full gate
+        run: |
           node --expose-gc benchmarks/phase14p/stage-benchmarks.cjs \
             --output artifacts/phase14p-final/stage-benchmarks.json
 
+      - name: Enforce permanent stage budgets after full gate
+        run: |
+          node benchmarks/phase14p/assert-stage-budgets.cjs \
+            --baseline benchmarks/baselines/phase14p-stage-linux-x64-node24-schema2.json \
+            --current artifacts/phase14p-final/stage-benchmarks.json
+
       - name: Record package, export map, runtime and commit identity
         run: |
-          mkdir -p artifacts/phase14p-final
           git rev-parse HEAD > artifacts/phase14p-final/baseline-sha.txt
           node --version > artifacts/phase14p-final/node-version.txt
           npm --version > artifacts/phase14p-final/npm-version.txt
