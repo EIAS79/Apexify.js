@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "phase": "14-P",
+  "baselineKind": "stage-budgets",
+  "sourceMeasurementSha": "e5c065d33a89a55450cdcf5a3b7826f080988ba2",
+  "environment": {
+    "os": "ubuntu-24.04",
+    "platform": "linux-x64",
+    "nodeMajor": 24,
+    "nodeExact": "v24.20.0",
+    "fontFamily": "DejaVu Sans",
+    "runnerImage": "ubuntu-24.04/20260831.293.1"
+  },
+  "policy": {
+    "medianRegressionPercentFail": 10,
+    "p95RegressionPercentReview": 10,
+    "p95RegressionPercentFail": 25,
+    "microMedianAbsoluteSlackMsUnder1": 0.15,
+    "smallMedianAbsoluteSlackMsUnder5": 0.30,
+    "microP95AbsoluteSlackMsUnder2": 0.50,
+    "notes": [
+      "Sub-millisecond hosted-runner stages use an absolute noise floor; end-to-end normalized gates remain percentage-strict.",
+      "A >10% median movement on stable millisecond-scale stages fails immediately; 5-10% remains review territory under the Phase 14-P policy.",
+      "P95 is retained and gated with a wider confirmation ceiling because native scheduling noise is more pronounced at micro-stage scale."
+    ]
+  },
+  "budgets": {
+    "bench:canvas:create": { "medianMs": 28.8750, "p95Ms": 31.2824 },
+    "bench:text:measure": { "medianMs": 2.8279, "p95Ms": 3.1880 },
+    "bench:text:render": { "medianMs": 18.0708, "p95Ms": 20.6016 },
+    "bench:image:decode": { "medianMs": 0.5033, "p95Ms": 1.4657 },
+    "bench:image:compose": { "medianMs": 31.5107, "p95Ms": 36.4915 },
+    "bench:chart:layout": { "medianMs": 0.3309, "p95Ms": 0.7956 },
+    "bench:chart:render": { "medianMs": 15.8693, "p95Ms": 16.4221 },
+    "bench:scene:render": { "medianMs": 29.9326, "p95Ms": 31.7264 },
+    "bench:validation": { "medianMs": 0.2299, "p95Ms": 0.2923 },
+    "bench:runtime-config": { "medianMs": 0.0567, "p95Ms": 0.0729 },
+    "bench:encode-png": { "medianMs": 27.5867, "p95Ms": 28.5510 }
+  }
+}
