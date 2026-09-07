@@ -70,26 +70,48 @@ test('bounded cache covers default sizing, replacement, byte eviction, prune and
   assert.equal(disabled.stats().entries, 0);
 });
 
-test('network classification and allowlist cover mapped-public, special IPv6 and exact hosts', () => {
-  for (const ip of ['64:ff9b::1', '64:ff9b:1::1', '100::1', '2001::1', '2002::1', '3fff::1', '5f00::1']) {
+test('bounded cache constructor covers non-finite and non-positive bound rejection', () => {
+  const invalid = [
+    { ttlMs: NaN, maxEntries: 1, maxBytes: 1 },
+    { ttlMs: Infinity, maxEntries: 1, maxBytes: 1 },
+    { ttlMs: -1, maxEntries: 1, maxBytes: 1 },
+    { ttlMs: 1, maxEntries: NaN, maxBytes: 1 },
+    { ttlMs: 1, maxEntries: Infinity, maxBytes: 1 },
+    { ttlMs: 1, maxEntries: -1, maxBytes: 1 },
+    { ttlMs: 1, maxEntries: 1, maxBytes: NaN },
+    { ttlMs: 1, maxEntries: 1, maxBytes: Infinity },
+    { ttlMs: 1, maxEntries: 1, maxBytes: -1 },
+  ];
+  for (const options of invalid) assert.throws(() => new api.BoundedCache(options), TypeError);
+});
+
+test('network classification and allowlist cover mapped-public, reserved ranges, special IPv6 and exact hosts', () => {
+  for (const ip of ['192.0.0.1', '192.88.99.1', '64:ff9b::1', '64:ff9b:1::1', '100::1', '2001::1', '2002::1', '3fff::1', '5f00::1']) {
     assert.equal(api.classifyIpAddress(ip).blocked, true, ip);
   }
   assert.deepEqual(api.classifyIpAddress('::ffff:8.8.8.8'), { blocked: false });
+  assert.equal(api.classifyIpAddress('fe80::1%eth0').blocked, true);
   assert.equal(api.hostMatchesAllowlist('Example.COM.', ['example.com']), true);
+  assert.equal(api.hostMatchesAllowlist('example.com', ['example.com.']), true);
   assert.equal(api.hostMatchesAllowlist('sub.example.com', ['example.com']), false);
   assert.equal(api.hostMatchesAllowlist('sub.example.com', ['*.example.com']), true);
   assert.equal(api.hostMatchesAllowlist('example.com', ['*.example.com']), false);
+  assert.equal(api.hostMatchesAllowlist('deep.sub.example.com.', ['*.example.com.']), true);
 });
 
-test('remote target validation covers numeric public/trusted paths and deterministic DNS failure', async () => {
+test('remote target validation covers numeric public/trusted paths, trusted localhost and deterministic DNS failure', async () => {
   const defaults = api.resolveApexifyRuntimeConfig().network;
   const publicTarget = await api.validateRemoteTarget('https://8.8.8.8/resource', defaults);
   assert.equal(publicTarget.trusted, false);
   assert.deepEqual(publicTarget.addresses, ['8.8.8.8']);
 
-  const trusted = api.resolveApexifyRuntimeConfig({ network: { trustedNetworkAccess: true, allowedHosts: ['127.0.0.1'] } }).network;
+  const trusted = api.resolveApexifyRuntimeConfig({ network: { trustedNetworkAccess: true, allowedHosts: ['127.0.0.1', 'localhost'] } }).network;
   const local = await api.validateRemoteTarget(new URL('http://127.0.0.1/x'), trusted);
   assert.equal(local.trusted, true);
+
+  const localhost = await api.validateRemoteTarget('http://localhost/x', trusted);
+  assert.equal(localhost.trusted, true);
+  assert.ok(localhost.addresses.length >= 1);
 
   await assert.rejects(
     api.validateRemoteTarget('https://definitely-does-not-exist.invalid/a', defaults),
