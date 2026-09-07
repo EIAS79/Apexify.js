@@ -1,0 +1,92 @@
+name: Phase 14-P Final Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase14p-performance-recovery
+    paths:
+      - '.github/workflows/phase14p-final-acceptance.yml'
+      - 'lib-next/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'benchmarks/**'
+      - 'docs/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apexify-phase14p-final-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-release-gate:
+    name: Full Phase 0-14 safety, correctness, package and docs gate / Node 24
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+
+      - name: Pin npm runtime
+        run: npm install --global npm@11.19.1
+
+      - name: Install deterministic system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+          fc-match 'DejaVu Sans'
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run full repository CI/release verification
+        run: npm run test:ci
+
+      - name: Build Phase 14-P internal benchmark fixture
+        run: node scripts/build-phase14p-benchmark-fixture.mjs
+
+      - name: Run permanent stage benchmark smoke after full gate
+        run: |
+          mkdir -p artifacts/phase14p-final
+          node --expose-gc benchmarks/phase14p/stage-benchmarks.cjs \
+            --output artifacts/phase14p-final/stage-benchmarks.json
+
+      - name: Record package, export map, runtime and commit identity
+        run: |
+          mkdir -p artifacts/phase14p-final
+          git rev-parse HEAD > artifacts/phase14p-final/baseline-sha.txt
+          node --version > artifacts/phase14p-final/node-version.txt
+          npm --version > artifacts/phase14p-final/npm-version.txt
+          ffmpeg -version | head -n 1 > artifacts/phase14p-final/ffmpeg-version.txt
+          fc-match 'DejaVu Sans' > artifacts/phase14p-final/font.txt
+          node -e "const p=require('./package.json'); require('fs').writeFileSync('artifacts/phase14p-final/export-map.json', JSON.stringify({name:p.name,version:p.version,engines:p.engines,exports:p.exports,files:p.files},null,2)+'\n')"
+          npm pack --json > artifacts/phase14p-final/npm-pack.json
+          mv ./*.tgz artifacts/phase14p-final/
+          sha256sum artifacts/phase14p-final/*.tgz > artifacts/phase14p-final/package-sha256.txt
+
+      - name: Upload final Phase 14-P release evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase14p-final-acceptance-${{ github.sha }}
+          path: artifacts/phase14p-final/
+          if-no-files-found: error
