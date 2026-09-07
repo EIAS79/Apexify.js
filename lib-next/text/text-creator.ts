@@ -7,6 +7,7 @@ import { getCanvasContext } from "../core/errors";
 import { loadImageCached } from "../image/image-properties";
 import { assertCanvasResourceLimits } from "../runtime/limits";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { encodeTextCanvasPng } from "./text-png-encoder";
 
 /** Extended class for text creation functionality. */
 export class TextCreator {
@@ -56,10 +57,7 @@ export class TextCreator {
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(existingImage, 0, 0);
     await this.renderValidatedTextsOntoContext(ctx, textList);
-    // @napi-rs/canvas performs async PNG encoding through its native/libuv path.
-    // The Phase 14-P stage benchmark locks byte-identical output against toBuffer()
-    // and shows materially lower wall time for the normalized text workload.
-    const encoded = await canvas.encode("png");
+    const encoded = await encodeTextCanvasPng(canvas);
     return assignCanvasResultsBuffer(canvasBuffer, encoded);
   }
 
