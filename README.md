@@ -14,20 +14,26 @@ Apexify.js 6 is a TypeScript-first, server-side Node.js library for canvas/image
 
 It is a **Node/server package**. Browser-native, React, Next.js, Render-IR, AI-assistant, and distributed-renderer APIs are not part of the current 6.0.0 package surface.
 
+> **Release status:** this README documents the staged **6.0.0 source/package artifact on `main`**. The npm `latest` release is still **5.4.5**, so `npm install apexify.js` currently installs 5.4.5 rather than the 6.0.0 API documented below. Do not deploy these 6.0 instructions against the npm `latest` package until 6.0.0 is explicitly published.
+
 ## Install
+
+Current published npm stable:
 
 ```bash
 npm install apexify.js
 ```
 
-### Runtime requirements
+That command currently installs 5.4.5. For development or verification of the staged 6.0.0 release, use this repository at an exact commit and run the repository/package verification gates rather than assuming npm already contains 6.0.0.
+
+### Runtime requirements for staged 6.0.0
 
 - **Node.js:** 22.x, 24.x, or 26.x
 - **npm:** 10 or newer; the repository/release toolchain is pinned to npm 11.19.1
 - **FFmpeg + ffprobe:** required only for video/FFmpeg operations
-- **TypeScript:** optional; declarations ship with the package
+- **TypeScript:** optional; declarations ship with the package artifact
 
-Apexify.js is a dual ESM/CommonJS package:
+Apexify.js 6 is a dual ESM/CommonJS package:
 
 ```js
 // ESM
