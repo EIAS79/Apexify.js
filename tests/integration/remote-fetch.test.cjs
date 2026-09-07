@@ -127,10 +127,14 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  const drainDeadline = Date.now() + 500;
+  while (activeSlow > 0 && Date.now() < drainDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(activeSlow, 0, 'slow HTTP fixture did not drain before test teardown');
   api.resetApexifyRuntimeConfig();
   retryHits = 0;
-  activeSlow = 0;
   maxActiveSlow = 0;
 });
 
