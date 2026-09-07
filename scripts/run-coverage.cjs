@@ -35,6 +35,7 @@ const args = [
   'tests/unit/critical-infrastructure.test.cjs',
   'tests/unit/critical-branches.test.cjs',
   'tests/security/phase12-security.test.cjs',
+  'tests/security/phase12-process-branches.test.cjs',
   'tests/integration/remote-fetch.test.cjs',
 ];
 
