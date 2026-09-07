@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { test, afterEach } = require('node:test');
-const api = require('../.build/phase14-entry.cjs');
+const api = require('./.build/phase14-entry.cjs');
 
 afterEach(() => {
   api.resetApexifyRuntimeConfig();
