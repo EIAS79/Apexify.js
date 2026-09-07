@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ApexifyPlugin } from "../types";
 import { ApexifyInputError, ApexifyPluginError } from "../runtime/errors";
+import { assertWithinLimit } from "../runtime/limits";
 
 function validatePluginName(name: unknown, label = "plugin name"): asserts name is string {
   if (typeof name !== "string" || !/^[A-Za-z_][\w.-]*$/.test(name)) {
@@ -52,6 +53,7 @@ export class PluginHost {
     validatePluginName(name, "PluginHost API name");
     if (api === null || typeof api !== "object") throw new ApexifyInputError("PluginHost.use: api must be an object.");
     if (this.registry.has(name)) throw new ApexifyPluginError(`PluginHost: API "${name}" is already registered.`);
+    assertWithinLimit("maxCollectionItems", this.registry.size + 1);
     this.recordMutation(name);
     this.registry.set(name, api);
     return api;
@@ -88,6 +90,11 @@ export class PluginHost {
     if (typeof plugin.install !== "function") return Promise.reject(new ApexifyInputError(`Plugin "${plugin.name}" must define install(host).`));
     if (this.installedNames.has(plugin.name) || this.pendingNames.has(plugin.name)) {
       return Promise.reject(new ApexifyPluginError(`Plugin "${plugin.name}" is already installed or installing.`));
+    }
+    try {
+      assertWithinLimit("maxCollectionItems", this.installedNames.size + this.pendingNames.size + 1);
+    } catch (error) {
+      return Promise.reject(error);
     }
 
     this.pendingNames.add(plugin.name);
