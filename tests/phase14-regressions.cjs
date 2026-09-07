@@ -60,6 +60,23 @@ test('PluginHost bounds API and installed-plugin registries', async () => {
   );
 });
 
+test('PluginHost bounds transactional rollback journal across add/remove churn', async () => {
+  api.setDefaultApexifyRuntimeConfig({ limits: { maxCollectionItems: 1 } });
+  const plugins = new api.PluginHost();
+  await assert.rejects(
+    plugins.install({
+      name: 'churn',
+      install(host) {
+        host.use('first', {});
+        host.remove('first');
+        host.use('second', {});
+      },
+    }, plugins),
+    (error) => error?.cause instanceof api.ApexifyResourceLimitError && error.cause.limit === 'maxCollectionItems'
+  );
+  assert.deepEqual(plugins.list(), []);
+});
+
 test('native font registration admission is bounded even while registrations are in flight', async () => {
   api.setDefaultApexifyRuntimeConfig({ limits: { maxCollectionItems: 1 } });
   const firstPath = path.join(process.cwd(), 'definitely-missing-phase14-font-a.ttf');
