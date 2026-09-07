@@ -17,9 +17,10 @@ fs.writeFileSync(coverageTsconfig, `${JSON.stringify({
   extends: "../../tsconfig.json",
   compilerOptions: {
     module: "CommonJS",
-    moduleResolution: "Node",
+    moduleResolution: "Bundler",
     target: "ES2022",
     noEmit: false,
+    noCheck: true,
     outDir: "./lib-next",
     rootDir: "../../lib-next",
     declaration: false,
