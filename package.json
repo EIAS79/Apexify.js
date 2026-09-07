@@ -56,7 +56,7 @@
     "test:unit": "npm run test:build && npm run test:unit:run",
     "test:integration:run": "node --test tests/integration/remote-fetch.test.cjs",
     "test:integration": "npm run test:build && npm run test:integration:run",
-    "test:security:core:run": "node --test tests/security/phase12-security.test.cjs",
+    "test:security:core:run": "node --test tests/security/phase12-security.test.cjs tests/security/phase12-process-branches.test.cjs",
     "test:security:legacy": "node scripts/phase1-security-scan.cjs && node scripts/build-security-fixture.mjs && node tests/security-phase1.cjs",
     "test:security": "npm run test:build && npm run test:security:core:run && npm run test:security:legacy",
     "test:golden": "node scripts/build-phase5-fixture.mjs && node scripts/build-phase6-fixture.mjs && node scripts/build-phase10-fixture.mjs && node --test tests/golden/golden-images.test.cjs",
