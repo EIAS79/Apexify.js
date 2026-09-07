@@ -27,7 +27,7 @@ function classify(file) {
   // category above applies. This deliberately classifies every test asset instead of
   // deleting useful pre-Phase-12 coverage because of its old filename/layout.
   if (/^tests\//.test(file)) return 'REGRESSION TEST';
-  if (/scripts\/phase\d+.*scan/.test(file) || /maintenance-audit/.test(file)) return 'REGRESSION TEST';
+  if (/scripts\/phase\d+.*(?:scan|audit)/.test(file) || /maintenance-audit/.test(file)) return 'REGRESSION TEST';
   if (/scripts\/build-phase\d+-fixture|scripts\/build-security-fixture/.test(file)) return 'TEMPORARY PHASE TEST';
   if (/scripts\/build-(?:test|coverage)-fixture|scripts\/verify-(?:packed-package|prepack-rebuild)|scripts\/test-system-audit/.test(file)) return 'PERMANENT TEST';
   return null;
