@@ -13,8 +13,9 @@ try {
   fs.rmSync(dist, { recursive: true, force: true });
   if (fs.existsSync(dist)) throw new Error('Clean prepack probe could not remove dist/.');
 
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const packed = spawnSync(npmCommand, ['pack', '--json', '--pack-destination', packDir], {
+  const npmCli = process.env.npm_execpath;
+  if (!npmCli) throw new Error('npm_execpath is unavailable; run this verification through npm scripts.');
+  const packed = spawnSync(process.execPath, [npmCli, 'pack', '--json', '--pack-destination', packDir], {
     cwd: root,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
