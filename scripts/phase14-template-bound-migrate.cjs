@@ -54,11 +54,16 @@ async function measureChildrenBounded(
 
 for (const scope of ['flex', 'grid']) {
   replaceOnce(
-    `  assertCollection(children, "template.${scope}.children");\n  const sizes = await Promise.all(children.map((child) => measureChildSize(child, measureText)));`,
-    `  assertCollection(children, "template.${scope}.children", { limit: "maxCollectionItems" });\n  const sizes = await measureChildrenBounded(children, measureText);`,
-    `${scope} child measurement`
+    `  assertCollection(children, "template.${scope}.children");`,
+    `  assertCollection(children, "template.${scope}.children", { limit: "maxCollectionItems" });`,
+    `${scope} child collection bound`
   );
 }
+
+const oldMeasurement = '  const sizes = await Promise.all(children.map((child) => measureChildSize(child, measureText)));';
+const occurrences = text.split(oldMeasurement).length - 1;
+if (occurrences !== 2) throw new Error(`Expected exactly 2 template measurement fan-out sites, found ${occurrences}.`);
+text = text.split(oldMeasurement).join('  const sizes = await measureChildrenBounded(children, measureText);');
 
 fs.writeFileSync(file, text);
 console.log('phase14-template-bound-migrate: bounded flex/grid child collections and measurement concurrency.');
