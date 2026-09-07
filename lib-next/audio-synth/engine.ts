@@ -79,7 +79,7 @@ function resolveAdsr(duration: number, envelope: AdsrEnvelope | undefined): Reso
 
 function adsrGainResolved(t: number, duration: number, resolved: ResolvedAdsr): number {
   const { env, sustainStart, releaseStart } = resolved;
-  const clampedT = t <= 0 ? 0 : t >= duration ? duration : t;
+  const clampedT = Math.max(0, Math.min(duration, t));
   if (env.attack > 0 && clampedT < env.attack) return clampedT / env.attack;
   if (clampedT < sustainStart) {
     if (env.decay === 0) return env.sustain;
@@ -126,12 +126,12 @@ function renderLayer(
   const filter = layer.filter ? createBiquadProcessor(layer.filter, sampleRate) : undefined;
   const pink: PinkNoiseState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
   const adsr = resolveAdsr(layer.duration, layer.adsr);
-  const envelopeStep = length > 1 ? layer.duration / (length - 1) : 0;
+  const outputFrames = out.length / channels;
 
   let phase = 0;
-  let clockTime = 0;
-  let envelopeTime = length > 1 ? 0 : layer.duration;
   for (let i = 0; i < length; i += 1) {
+    const clockTime = i / sampleRate;
+    const envelopeTime = length > 1 ? (i / (length - 1)) * layer.duration : layer.duration;
     let sample: number;
 
     if (tonal) {
@@ -155,15 +155,12 @@ function renderLayer(
     sample *= amp;
 
     const frame = startSample + i;
-    if (frame >= 0 && frame < out.length / channels) {
-      if (channels === 1) out[frame] += sample;
-      else {
-        out[frame * 2] += sample * leftGain;
-        out[frame * 2 + 1] += sample * rightGain;
-      }
+    if (frame < 0 || frame >= outputFrames) continue;
+    if (channels === 1) out[frame] += sample;
+    else {
+      out[frame * 2] += sample * leftGain;
+      out[frame * 2 + 1] += sample * rightGain;
     }
-    clockTime += 1 / sampleRate;
-    envelopeTime += envelopeStep;
   }
 }
 
@@ -176,9 +173,9 @@ function ensureFinite(samples: Float32Array, operation: string): void {
 function finalizeSamples(samples: Float32Array, masterGain: number, limiter: boolean, operation: string): void {
   let peak = 0;
   for (let i = 0; i < samples.length; i += 1) {
-    const value = masterGain === 1 ? samples[i]! : samples[i]! * masterGain;
+    if (masterGain !== 1) samples[i] *= masterGain;
+    const value = samples[i]!;
     if (!Number.isFinite(value)) throw new ApexifyAudioError(`${operation} produced a non-finite sample.`, { details: { sampleIndex: i } });
-    if (masterGain !== 1) samples[i] = value;
     if (limiter) {
       const magnitude = Math.abs(value);
       if (magnitude > peak) peak = magnitude;
@@ -283,8 +280,7 @@ export function renderValidatedSequence(options: SynthSequenceOptions, validated
     const event = options.events[index]!;
     const base = event.options ?? getPresetDefinition(event.preset!);
     const seed = event.options?.seed ?? deriveAudioSeed(options.seed, `event:${index}`);
-    const eventOptions = { ...base, sampleRate, channels, seed };
-    const samples = renderSound(eventOptions);
+    const samples = renderSound({ ...base, sampleRate, channels, seed });
     const start = Math.floor(event.at * sampleRate);
     const gain = event.gain ?? 1;
     const frames = samples.length / channels;
