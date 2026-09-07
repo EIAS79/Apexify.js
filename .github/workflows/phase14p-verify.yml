@@ -44,6 +44,8 @@ jobs:
         run: npm run build
       - name: Build Phase 14-P internal benchmark fixture
         run: node scripts/build-phase14p-benchmark-fixture.mjs
+      - name: Text PNG semantic and bounded-fallback regression
+        run: node benchmarks/phase14p/text-png-regression.cjs
       - name: Text stage benchmark
         env:
           APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
