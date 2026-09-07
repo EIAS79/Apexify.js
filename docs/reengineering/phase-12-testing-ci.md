@@ -20,13 +20,13 @@ Phase 11 was verified complete on merged `main` before this branch was created.
 
 Apexify uses Node's built-in `node:test` runner for the permanent Phase 12 suites. This is intentional:
 
-- it is stable in every supported Node line;
-- it provides process isolation, subtests, mocking, filtering and standard reporters;
-- it provides native V8 coverage collection and thresholds;
+- it is available in every supported Node line;
+- it provides process isolation, subtests and standard reporters;
+- it provides native V8 coverage collection and threshold enforcement;
 - it requires no new runtime or development dependency;
 - it avoids replacing working historical regression scripts merely for framework churn.
 
-Historical Phase 1–10 suites are **retained** and promoted behind permanent top-level gates. New critical tests use `node:test` directly. The old scripts remain regression evidence, not the primary test-system interface.
+Historical Phase 1–10 suites are retained behind permanent top-level gates. New critical tests use `node:test` directly.
 
 ## Permanent command architecture
 
@@ -34,179 +34,204 @@ Historical Phase 1–10 suites are **retained** and promoted behind permanent to
 |---|---|
 | `npm test` | Complete permanent verification gate |
 | `npm run test:unit` | Critical runtime/config/network/cache unit behavior |
+| `npm run test:internals` | Non-published critical policy branch probes against coverage-only source copies |
 | `npm run test:integration` | Deterministic local HTTP/network integration |
 | `npm run test:security` | Permanent process/temp/network security plus historical Phase 1 security |
 | `npm run test:golden` | Tolerant pixel-diff infrastructure plus retained raster/composition/chart goldens |
 | `npm run test:fuzz` | Deterministic property tests plus retained audio/secondary-domain fuzz suites |
 | `npm run test:regression` | Historical Phase 3–10 regressions |
 | `npm run coverage` | Native V8 coverage gate over critical infrastructure |
-| `npm run test:package` | Packed-package ESM/CJS/types/export installation verification |
+| `npm run test:package` | Clean-prepack rebuild plus packed ESM/CJS/types/export installation verification |
 | `npm run benchmark` | Versioned Phase 12 performance regression harness |
-| `npm run test:ci` | Build + complete tests + coverage + package + benchmark + maintenance audit |
+| `npm run audit:secrets` | High-confidence repository secret scan |
 | `npm run audit:tests` | Inventory/classification audit for test assets |
+| `npm run test:ci` | Build + audits + complete tests + coverage + package + benchmark + maintenance |
 
 ## Test-system inventory and classification
 
 `scripts/test-system-audit.cjs` walks every test file, relevant fixture/scanner script, and benchmark and writes `artifacts/test-system-audit.json`. It fails if a candidate asset is unclassified.
 
-Primary classifications are:
+The Phase 12 inventory contains **101 classified assets**:
 
-- `PERMANENT TEST` — permanent runner suites, shared helpers, fixture entrypoints and packed-package verifier;
-- `REGRESSION TEST` — historical defect reproductions, fuzz regressions, compatibility scans;
-- `INTEGRATION TEST` — remote/media/video/end-to-end fixtures;
-- `SECURITY TEST` — security policy/process/temp/secret suites;
-- `GOLDEN TEST` — raster visual reference suites;
-- `BENCHMARK` — repeatable performance evidence;
-- `TEMPORARY PHASE TEST` — historical fixture-build glue still required to execute retained regression coverage.
+- `BENCHMARK`: 10;
+- `GOLDEN TEST`: 6;
+- `INTEGRATION TEST`: 9;
+- `PERMANENT TEST`: 19;
+- `REGRESSION TEST`: 42;
+- `SECURITY TEST`: 7;
+- `TEMPORARY PHASE TEST`: 8.
 
-Phase 11 already removed dead/redundant source and test paths. Phase 12 does not delete useful regression history simply because its filename contains an old phase number.
+Historical fixture-build glue remains only where it is still required to execute retained regression evidence.
 
 ## Coverage model
 
-Coverage is not treated as a line-count game. The highest threshold applies to infrastructure that controls security, validation, process execution, networking and resource governance.
+Coverage is not treated as a line-count game. The highest requirements apply to infrastructure controlling security, validation, process execution, networking, cache/resource governance and temp lifecycle.
 
-The native coverage gate directly executes the bundled critical-infrastructure entry with unit/security/network/property suites. The committed coverage command has explicit line/function/branch thresholds; CI captures the report as evidence. Thresholds may only move downward with a documented justification.
+The coverage harness compiles the authoritative TypeScript sources into **coverage-only CommonJS copies** under `tests/.coverage/`. Those copies are never published and never enter `dist/`. Compiler-only CommonJS metadata/default-import compatibility scaffolding is removed from measured copies so TypeScript-generated branches do not count as Apexify branch debt. Selected private policy helpers are exposed only on these coverage copies so reachable internal branches can be tested without expanding the package API.
+
+The final mandatory thresholds are:
+
+- **lines: 99%**;
+- **functions: 96%**;
+- **branches: 95%**.
+
+Calibration on Linux Node 22, 24 and 26 produced the same critical-source result:
+
+- **99.25% lines** (`1323 / 1333`);
+- **96.21% functions** (`127 / 132`);
+- **95.27% branches** (`524 / 550`).
+
+Representative per-domain branch coverage at calibration:
+
+- runtime config: **100%**;
+- bounded cache: **100%**;
+- temp workspace: **100%**;
+- network policy: **96.39%**;
+- process runner: **93.33%**;
+- remote fetch transport: **92.92%**;
+- combined critical infrastructure: **95.27%**.
+
+The combined hard gate therefore satisfies the Phase 12 requirement that critical infrastructure generally exceed 95% branch coverage where practical while preserving explicit defensive branches whose states are not naturally reachable through supported Node/runtime invariants.
 
 ### Domain coverage map
 
 | Domain | Primary permanent evidence |
 |---|---|
-| runtime/config | `tests/unit/critical-infrastructure.test.cjs`, Phase 3/4 regressions |
-| runtime/limits/validation/errors | Phase 4 runtime/public-surface/postmerge suites, unit config table |
-| diagnostics | Phase 3/4 regressions and domain failure tests |
-| media/network | `tests/integration/remote-fetch.test.cjs`, unit SSRF matrix, Phase 3 runtime |
-| media/source | Phase 3/5/7/8 source-path regressions |
-| cache | unit bounded-cache test, Phase 3 decoded-cache suite |
-| canvas/image | Phase 5 runtime/completion/review/golden suites |
-| text | Phase 5/10 runtime and golden suites |
-| scene/templates/components/plugins | Phase 6 scenes/assets/templates/components/plugins/regressions/golden |
-| GIF | Phase 7 GIF/streaming/animation/golden |
-| video/FFmpeg/ffprobe | Phase 1 process security, Phase 8 video/edges/pipeline, Phase 9 video integration |
-| audio | Phase 9 DSP/WAV/resource/presets/fuzz/golden/concurrency |
+| runtime/config | critical unit suites + historical Phase 3/4 regressions |
+| runtime/limits/validation/errors | Phase 4 suites + table-driven unit validation |
+| media/network | deterministic `remote-fetch` integration + SSRF unit matrix + private policy branches |
+| cache | bounded-cache unit and internal invariant tests + Phase 3 decoded-cache regression |
+| canvas/image/text | Phase 5 runtime/review/completion/goldens + Phase 10 text/image regressions |
+| scene/templates/components/plugins | Phase 6 scene/asset/template/component/plugin regressions and goldens |
+| GIF | Phase 7 GIF/streaming/animation/golden suites |
+| video/FFmpeg/ffprobe | permanent process security + Phase 8 + Phase 9 video integration |
+| audio/WAV | Phase 9 DSP/WAV/resource/presets/fuzz/golden/concurrency |
 | chart/path/pixels | Phase 10 runtime/fuzz/golden |
-| batch/chain | Phase 10 runtime/completeness regressions |
-| output/compression/collage/stitch | Phase 10 runtime/collage/golden/compatibility |
-| package/exports/types | packed-package verifier + public API compatibility |
+| package/exports/types | clean-prepack verifier + packed-package fixtures + public API compatibility |
 
 ## Historical defect → regression traceability
 
-Every major finding from the original audit has a permanent test or scanner path:
+Every major original-audit invariant has retained permanent evidence, including:
 
-| Historical defect/invariant | Regression evidence |
-|---|---|
-| embedded credential fallback | `scripts/phase1-security-scan.cjs`, `tests/security-phase1.cjs` |
-| shell-command FFmpeg execution | `tests/security-phase1.cjs`, `tests/security/phase12-security.test.cjs` |
-| SSRF/private addresses | Phase 3 runtime + `tests/unit/critical-infrastructure.test.cjs` |
-| redirect target revalidation | `tests/integration/remote-fetch.test.cjs` |
-| remote Content-Length/stream byte limits | `tests/integration/remote-fetch.test.cjs`, Phase 3 runtime |
-| duplicate remote-media bypass | Phase 3 bypass scan and Phase 7/8 source scanners |
-| failed image-cache promise poisoning | `tests/phase3-decoded-cache.cjs` |
-| unbounded decoded cache | `tests/phase3-decoded-cache.cjs`, bounded-cache unit test |
-| resource limits | Phase 4 suites + config table-driven unit tests |
-| zero/default `||` behavior | Phase 5 review/golden regressions |
-| reflected gradient collapsing to repeat | `tests/phase5-golden.cjs` |
-| custom background render/filter defect | `tests/phase5-golden.cjs` |
-| GIF validation bypass | Phase 7 GIF suite/scanner |
-| GIF frame accumulation/unbounded concurrency | `tests/phase7-streaming.cjs` |
-| GIF attachment filename | Phase 7 GIF suite |
-| remote video whole-buffer path | Phase 8 scanner/video suite |
-| fake grid merge | Phase 8 video/edges suite |
-| remote watermark handling | Phase 8 video/edges suite |
-| temp workspace cleanup | Phase 1 security, Phase 8 tests, permanent Phase 12 security suite |
-| missing root exports | `tests/public-api-compat.cjs`, packed-package verifier |
-| ESM/CJS/type packaging regressions | `scripts/verify-packed-package.cjs` |
-| Node engine mismatch | package metadata + CI Node 22/24/26 matrix |
-| unsafe audio allocation | `tests/phase9-resource.cjs` |
-| malformed WAV parsing | `tests/phase9-wav.cjs`, `tests/phase9-fuzz.cjs` |
-| batch unbounded concurrency | Phase 10 runtime/completeness suite |
-| output ArrayBuffer slicing | Phase 10 runtime regressions |
-| x=0/y=0 image placement and opacity=0 | `tests/phase5-golden.cjs` |
-| collage/stitch semantic regressions | `tests/phase10-collage-semantics.cjs`, Phase 10 golden |
+- embedded credential fallback → Phase 1 security scanner/tests + repository secret scan;
+- shell-command FFmpeg execution → Phase 1 and Phase 12 hostile-argv process tests;
+- SSRF/private addresses → Phase 3 regressions + Phase 12 SSRF matrix;
+- redirect target revalidation → deterministic remote-fetch integration;
+- remote byte limits → Content-Length and streamed-limit integration tests;
+- duplicate remote-media bypass → historical source/bypass scanners;
+- failed cache promise poisoning and unbounded decoded cache → Phase 3 cache regressions + bounded-cache tests;
+- resource-limit validation → Phase 4 + runtime config unit table;
+- zero/default `||` behavior and visual regressions → Phase 5/10 goldens;
+- GIF validation/concurrency/attachment regressions → Phase 7 suites;
+- remote video buffering/grid/watermark regressions → Phase 8 suites;
+- temp cleanup → Phase 1/8 + permanent Phase 12 temp-workspace tests;
+- missing root exports and ESM/CJS/types regressions → public API + packed-package verification;
+- malformed WAV and unsafe audio allocation → Phase 9 tests/fuzzing;
+- batch concurrency, output slicing, collage/stitch semantics → Phase 10 regressions.
 
-If a defect is removed by deleting the obsolete path, the associated static scanner or package-surface test prevents that path from silently returning.
+A deleted obsolete path does not delete its regression contract: retained scanners and package-surface tests prevent equivalent bypasses from silently returning.
 
 ## Golden-image policy
 
-Goldens must compare decoded pixels, not only output length or “non-empty buffer”. `tests/helpers/image-diff.cjs` reports:
+Goldens compare decoded pixels, not output length or merely non-empty buffers. `tests/helpers/image-diff.cjs` reports differing pixel count/percentage, maximum channel delta and configured tolerance, and can emit a PNG diff image on mismatch.
 
-- differing pixel count;
-- differing pixel percentage;
-- maximum channel delta;
-- configured channel tolerance;
-- configured differing-pixel tolerance;
-- a generated PNG diff image when requested.
-
-The retained raster goldens cover canvas backgrounds, text composition, shapes/paths, image fit, gradients (including reflect), masks, scenes and charts, plus important historical crop/resize/x=0/y=0/opacity/collage/stitch regressions.
-
-Golden updates are explicit review work. There is intentionally no CI behavior that silently regenerates references on failure.
+Retained goldens cover canvas backgrounds, text composition, shapes/paths, image fit, gradients including reflect behavior, masks, scenes, charts, crop/resize, x=0/y=0 placement, opacity=0, collage and stitch semantics. CI never silently regenerates golden references.
 
 ## Security matrix
 
 Permanent Phase 12 coverage includes:
 
 - IPv4 loopback/private/link-local/reserved/documentation/multicast ranges;
-- IPv6 loopback/ULA/link-local/multicast/documentation and IPv4-mapped IPv6;
-- protocol and URL credential rejection;
+- IPv6 loopback/ULA/link-local/multicast/documentation, translation ranges and IPv4-mapped IPv6;
+- protocol and URL-credential rejection;
 - explicit trusted-host allowlisting;
-- redirects into a blocked target;
-- redirect count and POST→GET 303 semantics;
-- retryable/non-retryable HTTP status;
-- `Retry-After` path;
+- redirect-to-blocked-target revalidation;
+- redirect count and POST→GET semantics;
+- retryable/non-retryable status and `Retry-After` policy;
 - Content-Length and streaming byte caps;
-- empty response;
-- timeout and `AbortSignal`;
-- queued-request abort and network concurrency bound;
-- argv hostile characters (`$()`, backticks, semicolon, ampersand, quotes, spaces, Unicode, brackets);
-- bounded process stdout/stderr, timeout and abort;
-- temp workspace uniqueness and cleanup after success/throw;
+- empty response, timeout and abort handling;
+- queued-request abort and global network-concurrency bounds;
+- hostile process argv (`$()`, backticks, semicolon, ampersand, quotes, spaces, Unicode, brackets);
+- bounded stdout/stderr, timeout, abort, exit-code and forced-kill behavior;
+- temp-workspace uniqueness, confinement, cleanup and explicit debug retention;
 - signed URL redaction;
-- absence of secret fallbacks and source-level process/network bypasses.
+- absence of hard-coded secret fallbacks and process/network bypasses.
 
-The network integration suite binds only to loopback and explicitly enables the trusted-host policy for `127.0.0.1`. It never depends on a public host.
+The deterministic network integration suite binds only to loopback and explicitly permits `127.0.0.1`; it never requires a public host.
+
+`scripts/secret-scan.cjs` scans repository text using seven high-confidence detector families. The calibration scan covered **316 text files** and reported **zero findings**.
 
 ## Fuzz/property policy
 
-Property tests use deterministic seeded PRNGs so failures reproduce exactly in CI. Phase 12 targets asset-reference recursion/escaping, scene numeric bounds and address-classification invariants directly. Existing bounded fuzz suites remain active for procedural audio/WAV and Phase 10 option/path/chart/pixel domains.
+Property tests use deterministic seeded PRNGs so failures reproduce exactly. Phase 12 directly covers asset-reference recursion/escaping/prototype safety, scene numeric bounds, gradients, FFmpeg filter expressions, video option normalization and malformed address classifications. Retained Phase 9/10 fuzz suites continue to cover audio/WAV and path/chart/pixel domains.
 
-A fuzz-discovered crash is a bug to fix and preserve as a named regression; it is not accepted as an expected flaky failure.
+A fuzz-discovered crash becomes a named permanent regression; it is never accepted as expected flakiness.
 
 ## Package verification
 
-`scripts/verify-packed-package.cjs` remains the authoritative package-artifact test. It packs the actual package and installs it into clean temporary consumers that verify:
+Phase 12 verifies the artifact rather than inferring package correctness from source.
+
+`scripts/verify-prepack-rebuild.cjs` removes `dist/`, invokes the actual npm `prepack` lifecycle and requires the ESM, CJS, ESM declarations and CJS declarations to be rebuilt before accepting the tarball.
+
+`scripts/verify-packed-package.cjs` then packs the actual package and installs it into clean temporary consumers that verify:
 
 - ESM import;
 - CommonJS require;
-- TypeScript declarations;
+- TypeScript declarations in both modes;
 - root exports/helpers;
-- declared subpaths;
-- package content boundaries.
-
-Tests do not infer package correctness from the source tree.
+- declared subpaths, including the types-only subpath behavior;
+- package-content boundaries;
+- cold-import viability.
 
 ## Benchmark policy
 
-`benchmarks/phase12-benchmark.cjs` executes a representative path/pixel/chart/stitch workload three times and compares the median with `benchmarks/baselines/phase12.json`.
+`benchmarks/phase12-benchmark.cjs` executes a representative path/pixel/chart/stitch workload **five times** and compares the median with the committed, versioned `benchmarks/baselines/phase12.json` registry.
 
 - wall time and RSS delta are recorded;
-- committed baselines are keyed by OS/architecture/Node major;
-- normal regression tolerance is 10%;
-- RSS gets a small absolute noise allowance to avoid false failures from allocator variance;
-- a missing baseline emits candidate evidence but is not considered the final Phase 12 state — supported CI benchmark environments must receive a committed baseline before completion.
+- baselines are keyed by OS/architecture/Node major;
+- elapsed-time regression tolerance is **10%**;
+- RSS uses the same relative tolerance plus a small absolute allocator-noise allowance;
+- missing baselines are allowed only while generating calibration evidence and are not an acceptable completed Phase 12 state.
+
+The committed Linux x64 baseline registry is calibrated from the conservative maximum median observed across successful Linux full-gate benchmark jobs in workflow runs `34073922518`, `34074426539`, and `34074706070`:
+
+| Runtime | Baseline median | Baseline RSS delta |
+|---|---:|---:|
+| Node 22 | 36.19 ms | 2.38 MiB |
+| Node 24 | 34.42 ms | 3.75 MiB |
+| Node 26 | 44.30 ms | 3.88 MiB |
+
+This uses actual retained CI evidence and deliberately avoids calibrating to an unusually fast hosted-runner sample.
 
 ## CI policy
 
-The permanent GitHub Actions workflow must prove:
+`.github/workflows/ci.yml` is the permanent workflow. It proves:
 
-1. locked install;
+1. locked dependency installation;
 2. build/typecheck/module-format verification;
-3. test-system inventory audit;
-4. unit/integration/security/golden/fuzz/regression suites;
-5. critical coverage gate;
-6. packed-package install fixtures;
-7. secret/security scanners;
-8. dependency and maintenance audits;
-9. controlled FFmpeg integration;
-10. versioned benchmark gate;
-11. Linux coverage across Node 22/24/26 plus Windows/macOS package/runtime smoke coverage.
+3. test-system inventory classification;
+4. high-confidence secret scan;
+5. unit/internal/integration/security/golden/fuzz/regression suites;
+6. source-only critical coverage gate;
+7. clean-prepack lifecycle rebuild;
+8. packed-package ESM/CJS/types fixtures;
+9. all-dependency and production-dependency security audits;
+10. controlled FFmpeg installation/integration;
+11. versioned benchmark regression gate;
+12. maintenance audit;
+13. Linux Node 22/24/26 full gates plus Windows/macOS Node 24 runtime/package smoke.
 
-CI artifacts retain coverage, benchmark, package and audit evidence for diagnosis.
+Coverage, benchmark, package, secret-scan and dependency-audit evidence is retained as GitHub Actions artifacts.
+
+## Completion contract
+
+Phase 12 is not complete merely because its branch tests pass. Completion requires all of the following:
+
+- the final PR head passes the permanent CI matrix with the **99/96/95** coverage thresholds enforced;
+- the committed Node 22/24/26 benchmark baselines are actually consumed and pass the 10% regression gate;
+- packed-package and clean-prepack verification pass;
+- secret/dependency/security/regression/golden/fuzz gates pass;
+- PR #18 is merged into `main`;
+- the exact resulting merged `main` SHA passes the automatic post-merge CI matrix.
+
+Only that post-merge evidence closes Phase 12.
