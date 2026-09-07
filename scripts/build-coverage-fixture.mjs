@@ -20,6 +20,7 @@ const sourceFiles = walkTs(sourceRoot);
 fs.rmSync(coverageRoot, { recursive: true, force: true });
 fs.mkdirSync(outRoot, { recursive: true });
 fs.mkdirSync(buildRoot, { recursive: true });
+fs.writeFileSync(path.join(coverageRoot, "package.json"), '{"type":"commonjs"}\n');
 
 await build({
   entryPoints: sourceFiles,
