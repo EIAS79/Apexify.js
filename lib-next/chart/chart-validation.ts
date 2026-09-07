@@ -9,14 +9,10 @@ type SupportedChartType = (typeof TYPES)[number];
 
 interface TraversalCounters { items: number; text: number; }
 
-/**
- * One bounded traversal replaces the historical three independent walks for finite-number
- * validation, collection/text budgets, and semantic option ranges. Numeric-leaf checks retain
- * their original depth-12 scope; budget/range inspection retains the depth-16 scope.
- */
+/** One bounded traversal replaces three independent chart-tree walks. */
 function validateBoundedChartTree(value: unknown, name: string, counters: TraversalCounters, depth = 0): void {
   if (value == null || Buffer.isBuffer(value) || value instanceof Uint8Array || value instanceof URL || typeof value === "function") return;
-
+  if (depth > 16) return;
   if (typeof value === "number") {
     if (depth <= 12) assertFiniteNumber(value, name);
     return;
@@ -26,16 +22,14 @@ function validateBoundedChartTree(value: unknown, name: string, counters: Traver
     assertWithinLimit("maxTextLength", counters.text);
     return;
   }
-  if (depth > 16) return;
-
   if (Array.isArray(value)) {
     counters.items += value.length;
     assertWithinLimit("maxCollectionItems", counters.items);
     for (let i = 0; i < value.length; i++) validateBoundedChartTree(value[i], `${name}[${i}]`, counters, depth + 1);
     return;
   }
-
   if (typeof value !== "object") return;
+
   const record = value as Record<string, unknown>;
   for (const key of ["opacity", "fillOpacity", "innerRadiusRatio", "donutInnerRadius"] as const) {
     if (record[key] !== undefined) assertFiniteNumber(record[key], `${name}.${key}`, { min: 0, max: 1 });
@@ -156,9 +150,7 @@ function validateCombo(options: Record<string, unknown>): void {
   if (options.bars.length === 0 && options.lines.length === 0) throw new ApexifyInputError("comboChart requires at least one bar or line series.");
   if (options.bars.length > 0) validateBars(options.bars, "comboChart.bars", false);
   if (options.lines.length > 0) validateCartesianSeries(options.lines, "comboChart.lines");
-  if (options.barsType !== undefined && !["standard", "grouped", "stacked"].includes(String(options.barsType))) {
-    throw new ApexifyInputError("comboChart.barsType must be standard, grouped, or stacked.");
-  }
+  if (options.barsType !== undefined && !["standard", "grouped", "stacked"].includes(String(options.barsType))) throw new ApexifyInputError("comboChart.barsType must be standard, grouped, or stacked.");
 }
 
 function validateComparisonChartConfig(value: unknown, name: string): void {
@@ -177,9 +169,7 @@ function validateComparisonChartConfig(value: unknown, name: string): void {
 function validateComparison(options: Record<string, unknown>): void {
   validateComparisonChartConfig(options.chart1, "comparisonChart.chart1");
   validateComparisonChartConfig(options.chart2, "comparisonChart.chart2");
-  if (options.layout !== undefined && options.layout !== "sideBySide" && options.layout !== "topBottom") {
-    throw new ApexifyInputError("comparisonChart.layout must be sideBySide or topBottom.");
-  }
+  if (options.layout !== undefined && options.layout !== "sideBySide" && options.layout !== "topBottom") throw new ApexifyInputError("comparisonChart.layout must be sideBySide or topBottom.");
   if (options.spacing !== undefined) assertFiniteNumber(options.spacing, "comparisonChart.spacing", { min: 0 });
 }
 
