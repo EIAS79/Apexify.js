@@ -1,0 +1,79 @@
+name: Phase 14-P Profiler Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase14p-performance-recovery
+    paths:
+      - 'benchmarks/phase14p/profile-workload.cjs'
+      - '.github/workflows/phase14p-profile.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  profile-pre-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+    steps:
+      - name: Checkout Phase 14-P tooling
+        uses: actions/checkout@v7
+        with:
+          path: phase14p
+
+      - name: Checkout immutable Phase 14 pre-recovery subject
+        uses: actions/checkout@v7
+        with:
+          ref: dbed9743353593eafae9a7b1c25312d7170a233b
+          path: subject
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20.20.2
+          package-manager-cache: false
+
+      - run: npm install --global npm@11.19.1
+
+      - name: Build frozen current subject
+        working-directory: subject
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Capture CPU and allocation profiles
+        run: |
+          mkdir -p phase14p/artifacts/phase14p-profiles/pre
+          for workload in measureText text image chart scene canvas; do
+            mkdir -p "phase14p/artifacts/phase14p-profiles/pre/$workload"
+            node --expose-gc \
+              --cpu-prof \
+              --cpu-prof-dir="phase14p/artifacts/phase14p-profiles/pre/$workload" \
+              --cpu-prof-name="${workload}.cpuprofile" \
+              --heap-prof \
+              --heap-prof-dir="phase14p/artifacts/phase14p-profiles/pre/$workload" \
+              --heap-prof-name="${workload}.heapprofile" \
+              phase14p/benchmarks/phase14p/profile-workload.cjs \
+              --subject subject \
+              --workload "$workload" \
+              --repeats 120 \
+              > "phase14p/artifacts/phase14p-profiles/pre/$workload/summary.json"
+          done
+
+      - name: Upload profiler evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase14p-pre-recovery-profiles-node20
+          path: phase14p/artifacts/phase14p-profiles/pre/
+          if-no-files-found: error
