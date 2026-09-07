@@ -97,6 +97,11 @@ function assertFastRasterLimits(meta: FastPngMetadata, sourceBytes: number, requ
   if (requireCanvasBudget) assertCanvasResourceLimits(meta.width, meta.height);
 }
 
+/** Native canvas decode boundary for buffers that have already passed Apexify resource checks. */
+async function loadValidatedCanvasBuffer(buffer: Buffer): Promise<Image> {
+  return loadImage(buffer);
+}
+
 function assertSvgPolicy(text: string, label: string): void {
   const limits = getDefaultApexifyRuntimeConfig().limits;
   const elementCount = (text.match(/<(?![!?/])(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*\b/g) ?? []).length;
@@ -253,7 +258,7 @@ export async function decodeCanvasImageBuffer(
     const meta = fastPngMetadata(source);
     if (meta && meta.pages === 1) {
       assertFastRasterLimits(meta, source.byteLength, options.requireCanvasBudget === true);
-      return await loadImage(source);
+      return await loadValidatedCanvasBuffer(source);
     }
     return await decodeImageSource(source, options);
   } catch (error) {
@@ -277,7 +282,7 @@ export async function decodeImageSource(
     if (meta && meta.pages === 1) {
       try {
         assertFastRasterLimits(meta, source.byteLength, options.requireCanvasBudget === true);
-        return await loadImage(source);
+        return await loadValidatedCanvasBuffer(source);
       } catch (error) {
         if (error instanceof ApexifyError) throw error;
         throw new ApexifyDecodeError(`${label} could not be decoded.`, { cause: error });
