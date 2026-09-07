@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { TempWorkspace } from "./temp-workspace";
+import { ApexifyInputError } from "../runtime/errors";
 
 /**
  * Build an FFmpeg concat-demuxer list containing only Apexify-generated filenames.
@@ -12,7 +13,7 @@ export async function writeSafeConcatList(
   sources: readonly string[],
   name = "concat.txt"
 ): Promise<string> {
-  if (sources.length === 0) throw new Error("concat: at least one source is required.");
+  if (sources.length === 0) throw new ApexifyInputError("concat: at least one source is required.");
 
   const lines: string[] = [];
   for (let i = 0; i < sources.length; i++) {
