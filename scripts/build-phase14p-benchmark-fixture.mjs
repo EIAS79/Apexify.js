@@ -47,6 +47,7 @@ const required = [
   "text/text-validation.js",
   "text/text-metrics.js",
   "text/text-layout.js",
+  "text/text-png-encoder.js",
   "image/image-source-validation.js",
   "image/image-creator.js",
   "chart/chart-validation.js",
