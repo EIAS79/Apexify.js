@@ -1,56 +1,45 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
-const require = createRequire(import.meta.url);
-const ts = require("typescript");
 const root = process.cwd();
-const sourceRoot = path.join(root, "lib-next");
 const coverageRoot = path.join(root, "tests/.coverage");
 const outRoot = path.join(coverageRoot, "lib-next");
 const buildRoot = path.join(root, "tests/.build");
+const coverageTsconfig = path.join(coverageRoot, "tsconfig.json");
+const tscCli = path.join(root, "node_modules", "typescript", "bin", "tsc");
 
-function walkTs(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(directory, entry.name);
-    if (entry.isDirectory()) return walkTs(full);
-    return entry.isFile() && entry.name.endsWith(".ts") ? [full] : [];
-  });
-}
-
-const sourceFiles = walkTs(sourceRoot);
 fs.rmSync(coverageRoot, { recursive: true, force: true });
 fs.mkdirSync(outRoot, { recursive: true });
 fs.mkdirSync(buildRoot, { recursive: true });
 fs.writeFileSync(path.join(coverageRoot, "package.json"), '{"type":"commonjs"}\n');
+fs.writeFileSync(coverageTsconfig, `${JSON.stringify({
+  extends: "../../tsconfig.json",
+  compilerOptions: {
+    module: "CommonJS",
+    moduleResolution: "Node",
+    target: "ES2022",
+    noEmit: false,
+    outDir: "./lib-next",
+    rootDir: "../../lib-next",
+    declaration: false,
+    declarationMap: false,
+    sourceMap: false,
+    inlineSourceMap: false,
+    noUnusedLocals: false,
+    noUnusedParameters: false,
+  },
+  include: ["../../lib-next/**/*.ts"],
+  exclude: ["../../node_modules", "../../dist"],
+}, null, 2)}\n`);
 
-for (const sourceFile of sourceFiles) {
-  const relative = path.relative(sourceRoot, sourceFile);
-  const outputPath = path.join(outRoot, relative.replace(/\.ts$/i, ".js"));
-  const result = ts.transpileModule(fs.readFileSync(sourceFile, "utf8"), {
-    fileName: sourceFile,
-    reportDiagnostics: true,
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-      esModuleInterop: true,
-      sourceMap: false,
-      inlineSourceMap: false,
-      declaration: false,
-      removeComments: false,
-    },
-  });
-  const errors = (result.diagnostics ?? []).filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
-  if (errors.length > 0) {
-    const formatted = ts.formatDiagnosticsWithColorAndContext(errors, {
-      getCanonicalFileName: (name) => name,
-      getCurrentDirectory: () => root,
-      getNewLine: () => "\n",
-    });
-    throw new Error(`Coverage transpilation failed for ${relative}:\n${formatted}`);
-  }
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, result.outputText);
+const compile = spawnSync(process.execPath, [tscCli, "-p", coverageTsconfig], {
+  cwd: root,
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "pipe"],
+});
+if (compile.status !== 0) {
+  throw new Error(`Coverage TypeScript emit failed with status ${compile.status}.\n${compile.stdout ?? ""}${compile.stderr ?? ""}`);
 }
 
 const criticalModules = [
@@ -62,6 +51,10 @@ const criticalModules = [
   "video/process-runner.js",
   "video/temp-workspace.js",
 ];
+for (const modulePath of criticalModules) {
+  const emitted = path.join(outRoot, modulePath);
+  if (!fs.existsSync(emitted)) throw new Error(`Coverage TypeScript emit did not produce ${modulePath}.`);
+}
 
 const entry = [
   "'use strict';",
@@ -71,4 +64,4 @@ const entry = [
   "",
 ].join("\n");
 fs.writeFileSync(path.join(buildRoot, "phase12-entry.cjs"), entry);
-console.log(`build-coverage-fixture: transpiled ${sourceFiles.length} source modules with TypeScript CommonJS emit and routed critical tests through helper-free source-level coverage modules.`);
+console.log(`build-coverage-fixture: emitted helper-free CommonJS source modules through the supported TypeScript CLI and routed critical tests through them.`);
