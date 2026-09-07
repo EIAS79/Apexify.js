@@ -7,9 +7,10 @@ on:
       - phase14p-performance-recovery
     paths:
       - '.github/workflows/phase14p-normalized.yml'
-      - 'benchmarks/phase14p/normalized-harness.cjs'
-      - 'benchmarks/phase14p/compare-results.cjs'
-      - 'benchmarks/phase14p/comparison-manifest.json'
+      - 'benchmarks/phase14p/**'
+      - 'lib-next/**'
+      - 'package.json'
+      - 'package-lock.json'
   pull_request:
     branches:
       - main
@@ -29,9 +30,9 @@ concurrency:
 
 jobs:
   normalized-ab:
-    name: Normalized Phase 0 vs Phase 14 / Node 24.20.0
+    name: Normalized Phase 0 vs pre/post recovery / Node 24.20.0
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       TZ: UTC
       LC_ALL: C.UTF-8
@@ -43,7 +44,7 @@ jobs:
       APEXIFY_BENCH_EXPENSIVE_SAMPLES: '10'
       APEXIFY_BENCH_MEMORY_SAMPLES: '3'
     steps:
-      - name: Checkout Phase 14-P harness
+      - name: Checkout Phase 14-P harness/post-recovery subject
         uses: actions/checkout@v7
         with:
           path: phase14p
@@ -93,7 +94,8 @@ jobs:
             echo "font=$(fc-match 'DejaVu Sans' | head -n 1)"
             echo "ffmpeg=$(ffmpeg -version | head -n 1)"
             echo "phase0_install=npm install --ignore-scripts --no-audit --no-fund (historical subject has no lockfile)"
-            echo "current_install=npm ci --ignore-scripts (frozen current lockfile)"
+            echo "current_install=npm ci --ignore-scripts (frozen/current lockfile)"
+            echo "post_recovery_sha=${GITHUB_SHA}"
           } > phase14p/artifacts/phase14p/environment.txt
 
       - name: Install and build Phase 0 subject
@@ -105,6 +107,13 @@ jobs:
 
       - name: Install and build Phase 14 pre-recovery subject
         working-directory: subjects/current-pre
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          test -f dist/cjs/index.cjs
+
+      - name: Install and build current post-recovery subject
+        working-directory: phase14p
         run: |
           npm ci --ignore-scripts
           npm run build
@@ -124,7 +133,14 @@ jobs:
             --label phase14-pre-recovery-6.0.0 \
             --output phase14p/artifacts/phase14p/current-pre-normalized.json
 
-      - name: Compare normalized subjects
+      - name: Run normalized current post-recovery samples
+        run: |
+          node --expose-gc phase14p/benchmarks/phase14p/normalized-harness.cjs \
+            --subject phase14p \
+            --label phase14p-post-recovery-${GITHUB_SHA} \
+            --output phase14p/artifacts/phase14p/current-post-normalized.json
+
+      - name: Compare Phase 0 to pre-recovery
         run: |
           node phase14p/benchmarks/phase14p/compare-results.cjs \
             --phase0 phase14p/artifacts/phase14p/phase0-normalized.json \
@@ -133,16 +149,34 @@ jobs:
             --markdown phase14p/artifacts/phase14p/pre-recovery-comparison.md
           cat phase14p/artifacts/phase14p/pre-recovery-comparison.md
 
+      - name: Compare Phase 0 to post-recovery
+        run: |
+          node phase14p/benchmarks/phase14p/compare-results.cjs \
+            --phase0 phase14p/artifacts/phase14p/phase0-normalized.json \
+            --current phase14p/artifacts/phase14p/current-post-normalized.json \
+            --output phase14p/artifacts/phase14p/post-recovery-comparison.json \
+            --markdown phase14p/artifacts/phase14p/post-recovery-comparison.md
+          cat phase14p/artifacts/phase14p/post-recovery-comparison.md
+
+      - name: Compare pre-recovery to post-recovery
+        run: |
+          node phase14p/benchmarks/phase14p/compare-results.cjs \
+            --phase0 phase14p/artifacts/phase14p/current-pre-normalized.json \
+            --current phase14p/artifacts/phase14p/current-post-normalized.json \
+            --output phase14p/artifacts/phase14p/pre-to-post-comparison.json \
+            --markdown phase14p/artifacts/phase14p/pre-to-post-comparison.md
+          cat phase14p/artifacts/phase14p/pre-to-post-comparison.md
+
       - name: Upload normalized comparison evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: phase14p-normalized-ab-node24
+          name: phase14p-normalized-pre-post-node24
           path: phase14p/artifacts/phase14p/
           if-no-files-found: error
 
   current-node26-control:
-    name: Current Phase 14 / Node 26 runtime-effect control
+    name: Current post-recovery / Node 26 runtime-effect control
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -156,16 +190,10 @@ jobs:
       APEXIFY_BENCH_EXPENSIVE_SAMPLES: '10'
       APEXIFY_BENCH_MEMORY_SAMPLES: '3'
     steps:
-      - name: Checkout Phase 14-P harness
+      - name: Checkout current Phase 14-P subject
         uses: actions/checkout@v7
         with:
           path: phase14p
-
-      - name: Checkout immutable Phase 14 pre-recovery subject
-        uses: actions/checkout@v7
-        with:
-          ref: dbed9743353593eafae9a7b1c25312d7170a233b
-          path: subjects/current-pre
 
       - name: Install normalized system dependencies
         run: |
@@ -181,7 +209,7 @@ jobs:
         run: npm install --global npm@11.19.1
 
       - name: Install and build current subject
-        working-directory: subjects/current-pre
+        working-directory: phase14p
         run: |
           npm ci --ignore-scripts
           npm run build
@@ -190,9 +218,9 @@ jobs:
         run: |
           mkdir -p phase14p/artifacts/phase14p-node26
           node --expose-gc phase14p/benchmarks/phase14p/normalized-harness.cjs \
-            --subject subjects/current-pre \
-            --label phase14-pre-recovery-node26 \
-            --output phase14p/artifacts/phase14p-node26/current-pre-node26.json
+            --subject phase14p \
+            --label phase14p-post-recovery-node26-${GITHUB_SHA} \
+            --output phase14p/artifacts/phase14p-node26/current-post-node26.json
 
       - name: Upload runtime-effect evidence
         if: always()
