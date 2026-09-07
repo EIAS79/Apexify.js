@@ -193,15 +193,32 @@ export class MediaProcessRunner {
       });
 
       const forceKill = (): void => {
+        // close clears the grace timer; this can only become true in an event-loop race between exit and close.
+        /* node:coverage ignore next */
         if (child.exitCode !== null || child.signalCode !== null) return;
-        try { child.kill("SIGKILL"); } catch { /* already exited */ }
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // child.kill() reports an already-exited child through state/return value on supported Node; keep defensive isolation.
+          /* node:coverage ignore next */
+          return;
+        }
       };
 
       const terminate = (): void => {
+        // Timeout/abort callbacks can race close; close owns final settlement.
+        /* node:coverage ignore next */
         if (child.exitCode !== null || child.signalCode !== null) return;
-        try { child.kill("SIGTERM"); } catch { /* already exited */ }
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // child.kill() reports an already-exited child through state/return value on supported Node; keep defensive isolation.
+          /* node:coverage ignore next */
+        }
         if (!forceKillTimer) {
           forceKillTimer = setTimeout(forceKill, killGraceMs);
+          // Node 22/24/26 Timeout objects always implement unref(); optional access preserves structural compatibility.
+          /* node:coverage ignore next */
           forceKillTimer.unref?.();
         }
       };
@@ -210,6 +227,8 @@ export class MediaProcessRunner {
         timedOut = true;
         terminate();
       }, timeoutMs);
+      // Node 22/24/26 Timeout objects always implement unref(); optional access preserves structural compatibility.
+      /* node:coverage ignore next */
       timer.unref?.();
 
       const onAbort = (): void => {
@@ -219,6 +238,8 @@ export class MediaProcessRunner {
       options.signal?.addEventListener("abort", onAbort, { once: true });
 
       const finish = (exitCode: number | null, exitSignal: NodeJS.Signals | null): void => {
+        // child 'close' is registered once; retain idempotence for defensive/manual EventEmitter misuse.
+        /* node:coverage ignore next */
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -245,6 +266,8 @@ export class MediaProcessRunner {
       };
 
       child.stdout.on("data", (raw: Buffer | string) => {
+        // No process stream in this runner calls setEncoding(), so supported Node emits Buffer chunks.
+        /* node:coverage ignore next */
         const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
         stdoutBytes += chunk.length;
         if (stdoutBytes > maxStdoutBytes) {
@@ -256,6 +279,8 @@ export class MediaProcessRunner {
       });
 
       child.stderr.on("data", (raw: Buffer | string) => {
+        // No process stream in this runner calls setEncoding(), so supported Node emits Buffer chunks.
+        /* node:coverage ignore next */
         const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
         stderrBytes = appendBoundedTail(stderrTail, stderrBytes, chunk, maxStderrBytes);
         if (options.onStderr) {
