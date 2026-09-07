@@ -6,12 +6,15 @@ const root = process.cwd();
 const coverageRoot = path.join(root, "tests/.coverage");
 const outRoot = path.join(coverageRoot, "lib-next");
 const buildRoot = path.join(root, "tests/.build");
+const evidenceRoot = path.join(root, "artifacts/coverage/emitted");
 const coverageTsconfig = path.join(coverageRoot, "tsconfig.json");
 const tscCli = path.join(root, "node_modules", "typescript", "bin", "tsc");
 
 fs.rmSync(coverageRoot, { recursive: true, force: true });
+fs.rmSync(evidenceRoot, { recursive: true, force: true });
 fs.mkdirSync(outRoot, { recursive: true });
 fs.mkdirSync(buildRoot, { recursive: true });
+fs.mkdirSync(evidenceRoot, { recursive: true });
 fs.writeFileSync(path.join(coverageRoot, "package.json"), '{"type":"commonjs"}\n');
 fs.writeFileSync(coverageTsconfig, `${JSON.stringify({
   extends: "../../tsconfig.json",
@@ -55,6 +58,18 @@ const criticalModules = [
 for (const modulePath of criticalModules) {
   const emitted = path.join(outRoot, modulePath);
   if (!fs.existsSync(emitted)) throw new Error(`Coverage TypeScript emit did not produce ${modulePath}.`);
+
+  // TypeScript injects this CommonJS metadata marker. It is not Apexify logic and V8 can
+  // attribute a synthetic branch to it, so remove it from coverage-only copies.
+  const source = fs.readFileSync(emitted, "utf8").replace(
+    /^Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\r?\n/m,
+    "",
+  );
+  fs.writeFileSync(emitted, source);
+
+  const evidencePath = path.join(evidenceRoot, modulePath);
+  fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
+  fs.writeFileSync(evidencePath, source);
 }
 
 const entry = [
@@ -65,4 +80,4 @@ const entry = [
   "",
 ].join("\n");
 fs.writeFileSync(path.join(buildRoot, "phase12-entry.cjs"), entry);
-console.log(`build-coverage-fixture: emitted helper-free CommonJS source modules through the supported TypeScript CLI and routed critical tests through them.`);
+console.log(`build-coverage-fixture: emitted helper-free CommonJS source modules, removed compiler-only metadata, retained emitted evidence, and routed critical tests through them.`);
