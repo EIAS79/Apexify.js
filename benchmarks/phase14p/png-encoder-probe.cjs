@@ -11,7 +11,7 @@ const fontFamily = process.env.APEXIFY_BENCH_FONT_FAMILY || 'DejaVu Sans';
 const warmups = Number(process.env.APEXIFY_PNG_PROBE_WARMUPS || 5);
 const samples = Number(process.env.APEXIFY_PNG_PROBE_SAMPLES || 20);
 
-function makeCanvas() {
+function textCanvas() {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#101820';
@@ -19,6 +19,63 @@ function makeCanvas() {
   ctx.font = `56px ${fontFamily}`;
   ctx.fillStyle = '#ffffff';
   ctx.fillText('Apexify.js normalized Phase 14-P baseline', 72, 160);
+  return canvas;
+}
+
+function transparentCanvas() {
+  const canvas = createCanvas(640, 360);
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 640, 360);
+  ctx.fillStyle = 'rgba(255, 40, 80, 0.37)';
+  ctx.fillRect(24, 30, 280, 210);
+  ctx.fillStyle = 'rgba(20, 180, 255, 0.61)';
+  ctx.beginPath();
+  ctx.arc(360, 170, 120, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = `42px ${fontFamily}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.73)';
+  ctx.fillText('alpha edges', 70, 310);
+  return canvas;
+}
+
+function gradientCanvas() {
+  const canvas = createCanvas(800, 500);
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 800, 500);
+  gradient.addColorStop(0, '#ff006e');
+  gradient.addColorStop(0.37, '#8338ec');
+  gradient.addColorStop(0.72, '#3a86ff');
+  gradient.addColorStop(1, '#06d6a0');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 800, 500);
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetX = 6;
+  ctx.shadowOffsetY = 8;
+  ctx.font = `64px ${fontFamily}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('gradient + shadow', 70, 270);
+  return canvas;
+}
+
+function compositingCanvas() {
+  const canvas = createCanvas(720, 480);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0b132b';
+  ctx.fillRect(0, 0, 720, 480);
+  ctx.globalAlpha = 0.82;
+  ctx.fillStyle = '#5bc0be';
+  ctx.fillRect(80, 70, 430, 280);
+  ctx.globalCompositeOperation = 'screen';
+  ctx.fillStyle = '#ff9f1c';
+  ctx.beginPath();
+  ctx.arc(430, 250, 155, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.font = `38px ${fontFamily}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('composite', 245, 430);
   return canvas;
 }
 
@@ -45,9 +102,31 @@ function hash(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
-async function pixelHash(png) {
+async function decoded(png) {
+  const image = sharp(png);
+  const metadata = await image.metadata();
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  return { hash: hash(data), width: info.width, height: info.height, channels: info.channels };
+  return {
+    hash: hash(data),
+    info,
+    metadata: {
+      width: metadata.width,
+      height: metadata.height,
+      space: metadata.space,
+      channels: metadata.channels,
+      depth: metadata.depth,
+      density: metadata.density ?? null,
+      hasAlpha: metadata.hasAlpha,
+      isProgressive: metadata.isProgressive,
+    },
+  };
+}
+
+async function sharpC6(canvas) {
+  const pixels = canvas.data();
+  return sharp(pixels, { raw: { width: canvas.width, height: canvas.height, channels: 4 } })
+    .png({ compressionLevel: 6, adaptiveFiltering: false, palette: false })
+    .toBuffer();
 }
 
 async function run(name, encode) {
@@ -66,42 +145,47 @@ async function run(name, encode) {
     timing: stats(timings),
     bytes: representative.length,
     encodedHash: hash(representative),
-    pixels: await pixelHash(representative),
+    decoded: await decoded(representative),
   };
 }
 
+async function verifyFixture(label, canvas, benchmark = false) {
+  const rawHash = hash(canvas.data());
+  const skia = benchmark
+    ? await run(`${label}-skia`, () => canvas.encode('png'))
+    : { name: `${label}-skia`, bytes: 0, timing: null, encodedHash: null, decoded: await decoded(await canvas.encode('png')) };
+  const sharpResult = benchmark
+    ? await run(`${label}-sharp-c6`, () => sharpC6(canvas))
+    : (() => sharpC6(canvas).then(async (png) => ({ name: `${label}-sharp-c6`, bytes: png.length, timing: null, encodedHash: hash(png), decoded: await decoded(png) })))();
+  const sharpResolved = await sharpResult;
+
+  const skiaPixelsMatchRaw = skia.decoded.hash === rawHash;
+  const sharpPixelsMatchRaw = sharpResolved.decoded.hash === rawHash;
+  const samePixels = skia.decoded.hash === sharpResolved.decoded.hash;
+  if (!skiaPixelsMatchRaw || !sharpPixelsMatchRaw || !samePixels) {
+    throw new Error(`${label}: lossless pixel invariant failed (raw/skia/sharp mismatch).`);
+  }
+
+  console.log(`\n[${label}] ${canvas.width}x${canvas.height}`);
+  console.log(`pixels=${rawHash} exact=true`);
+  console.log(`skia metadata=${JSON.stringify(skia.decoded.metadata)}`);
+  console.log(`sharp metadata=${JSON.stringify(sharpResolved.decoded.metadata)}`);
+  if (benchmark) {
+    const sizeChange = ((sharpResolved.bytes / skia.bytes) - 1) * 100;
+    console.log(`skia       median=${skia.timing.median.toFixed(3)} ms p95=${skia.timing.p95.toFixed(3)} ms bytes=${skia.bytes}`);
+    console.log(`sharp-c6   median=${sharpResolved.timing.median.toFixed(3)} ms p95=${sharpResolved.timing.p95.toFixed(3)} ms bytes=${sharpResolved.bytes} size=${sizeChange >= 0 ? '+' : ''}${sizeChange.toFixed(1)}%`);
+  } else {
+    console.log(`sharp-c6 bytes=${sharpResolved.bytes}`);
+  }
+}
+
 (async () => {
-  sharp.cache(false);
-  sharp.concurrency(1);
-  const canvas = makeCanvas();
-
-  const reference = await run('skia-async', () => canvas.encode('png'));
-  const raw = canvas.data();
-  console.log(`canvas.data bytes=${raw.length} expected=${width * height * 4} first=${[...raw.subarray(0, 4)].join(',')}`);
-
-  const candidates = [];
-  for (const compressionLevel of [0, 1, 3, 6]) {
-    candidates.push(await run(`sharp-c${compressionLevel}`, async () => {
-      const pixels = canvas.data();
-      return sharp(pixels, { raw: { width, height, channels: 4 } })
-        .png({ compressionLevel, adaptiveFiltering: false, palette: false })
-        .toBuffer();
-    }));
-  }
-
-  const all = [reference, ...candidates];
-  console.log('Phase 14-P PNG encoder probe');
-  console.log(`reference pixels=${reference.pixels.hash}`);
-  for (const result of all) {
-    const samePixels = result.pixels.hash === reference.pixels.hash;
-    const sizeChange = ((result.bytes / reference.bytes) - 1) * 100;
-    console.log(`${result.name.padEnd(12)} median=${result.timing.median.toFixed(3)} ms p95=${result.timing.p95.toFixed(3)} ms bytes=${result.bytes} size=${sizeChange >= 0 ? '+' : ''}${sizeChange.toFixed(1)}% samePixels=${samePixels} encoded=${result.encodedHash}`);
-  }
-
-  const valid = candidates.filter((result) => result.pixels.hash === reference.pixels.hash);
-  if (valid.length === 0) {
-    throw new Error('No Sharp raw PNG candidate preserved the exact decoded RGBA pixels; reject this backend route.');
-  }
+  console.log(`sharp concurrency=${sharp.concurrency()}`);
+  console.log('Phase 14-P lossless PNG semantic/performance probe');
+  await verifyFixture('opaque-text', textCanvas(), true);
+  await verifyFixture('transparent-alpha', transparentCanvas());
+  await verifyFixture('gradient-shadow', gradientCanvas());
+  await verifyFixture('compositing', compositingCanvas());
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
