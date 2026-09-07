@@ -44,6 +44,21 @@ test('private retry parsing and delay policy cover array, date, invalid, jitter 
   const pre = new AbortController();
   pre.abort(new Error('pre-aborted-sleep'));
   await assert.rejects(api.__phase12_sleep(10, pre.signal), /pre-aborted-sleep/);
+
+  // Custom structural signals exercise the nullish-reason fallbacks that native AbortController
+  // normally hides by supplying a DOMException reason automatically.
+  await assert.rejects(api.__phase12_sleep(10, { aborted: true, reason: undefined }), /Aborted/);
+  let abortHandler;
+  const structuralSignal = {
+    aborted: false,
+    reason: undefined,
+    addEventListener(_type, handler) { abortHandler = handler; },
+    removeEventListener() {},
+  };
+  const pending = api.__phase12_sleep(1000, structuralSignal);
+  structuralSignal.aborted = true;
+  abortHandler();
+  await assert.rejects(pending, /Aborted/);
 });
 
 test('private pinned lookup covers all/single results, cursor rotation and IPv4/IPv6 family detection', async () => {
@@ -125,6 +140,15 @@ test('private retryability helpers cover all error classes/status branches and p
   assert.equal(normalized.maxRedirects, 0);
   assert.equal(normalized.timeoutMs, 7);
   assert.equal(normalized.maxBytes, 8);
+});
+
+test('private cache invariants cover empty-bound eviction and idempotent internal deletion', () => {
+  const cache = new api.BoundedCache({ ttlMs: 10, maxEntries: 1, maxBytes: 1 });
+  cache.bytes = 2;
+  cache.evictToBounds();
+  assert.equal(cache.stats().entries, 0);
+  cache.deleteEntry('missing', { value: 'x', size: 0, expiresAt: Date.now() + 1000 }, false);
+  assert.equal(cache.stats().entries, 0);
 });
 
 test('private process helpers cover token validation and bounded-tail replacement/trimming branches', () => {
