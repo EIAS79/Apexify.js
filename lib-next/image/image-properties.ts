@@ -9,6 +9,7 @@ import { createGradientFill } from "../render/gradient-fill";
 import type { MediaSource } from "../media/source";
 import { BoundedCache } from "../media/cache";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
+import { assertWithinLimit } from "../runtime/limits";
 import { decodeImageSource } from "./image-source-validation";
 
 let imageCache: BoundedCache<string, Image> | undefined;
@@ -110,7 +111,7 @@ export function fitInto(
     case "center": dx = cx; dy = cy; break;
     case "right": dx = boxX + boxW - dw; dy = cy; break;
     case "bottom-left": dx = boxX; dy = boxY + boxH - dh; break;
-    case "bottom": dx = cx; dy = boxY + boxH - dh; break;
+    case "bottom": dx = cx; dy = boxY + boxH - dw; break;
     case "bottom-right": dx = boxX + boxW - dw; dy = boxY + boxH - dh; break;
     default: dx = cx; dy = cy; break;
   }
@@ -130,6 +131,7 @@ export async function loadImageCached(src: MediaSource): Promise<Image> {
   const existing = inFlightDecodes.get(key);
   if (existing) return existing;
 
+  assertWithinLimit("maxCollectionItems", inFlightDecodes.size + 1);
   const decode = decodeImageSource(src, { label: "image source" })
     .then((image) => {
       cache.set(key, image);
@@ -149,23 +151,27 @@ export async function loadImageCached(src: MediaSource): Promise<Image> {
 
 export function drawBoxBackground(
   ctx: SKRSContext2D,
-  rect: { x: number; y: number; w: number; h: number },
-  boxBg?: BoxBackground,
-  borderRadius?: number | "circular",
-  borderPosition?: string
+  bg: BoxBackground | undefined,
+  x: number,
+  y: number,
+  width: number,
+  height: number
 ) {
-  if (!boxBg) return;
-  const { color, gradient } = boxBg;
+  if (!bg) return;
   ctx.save();
-  buildPath(ctx, rect.x, rect.y, rect.w, rect.h, borderRadius ?? 0, borderPosition ?? "all");
-  ctx.clip();
-  if (gradient) {
-    const g = createGradientFill(ctx, gradient, rect);
-    ctx.fillStyle = g as CanvasGradient | CanvasPattern;
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-  } else if (color && color !== "transparent") {
-    ctx.fillStyle = color;
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  buildPath(ctx, x, y, width, height, bg.borderRadius);
+  if (bg.color) {
+    ctx.fillStyle = bg.color;
+    ctx.fill();
+  }
+  if (bg.gradient) {
+    ctx.fillStyle = createGradientFill(ctx, bg.gradient, x, y, width, height);
+    ctx.fill();
+  }
+  if (bg.border) {
+    ctx.strokeStyle = bg.border.color;
+    ctx.lineWidth = bg.border.width ?? 1;
+    ctx.stroke();
   }
   ctx.restore();
 }
