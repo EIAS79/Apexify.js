@@ -218,6 +218,21 @@ test('retry parsing covers seconds, HTTP-date, invalid Retry-After and aborted b
   await assert.rejects(pending, /stop-backoff|aborted/i);
 });
 
+test('retry policy covers successful delayed backoff and POST single-attempt default', async () => {
+  trustLocal({ network: { retryAttempts: 2, retryBaseDelayMs: 5, retryMaxDelayMs: 5, retryJitterRatio: 0, honorRetryAfter: false } });
+  retryHits = 0;
+  const retried = await api.fetchRemoteMedia(`${baseUrl}/retry`, { maxBytes: 1024 });
+  assert.equal(retried.buffer.toString(), 'retried-ok');
+  assert.equal(retryHits, 2);
+
+  retryHits = 0;
+  await assert.rejects(
+    api.fetchRemoteMedia(`${baseUrl}/retry`, { method: 'POST', body: 'x', maxBytes: 1024 }),
+    (error) => error instanceof api.ApexifyRemoteFetchError && error.status === 503
+  );
+  assert.equal(retryHits, 1);
+});
+
 test('content-length, streaming-byte, defaults by kind and empty-response limits reject safely', async () => {
   trustLocal({ limits: { maxRemoteImageBytes: 16, maxRemoteVideoBytes: 48 } });
   await assert.rejects(api.fetchRemoteMedia(`${baseUrl}/too-large-length`, { maxBytes: 16 }), api.ApexifyResourceLimitError);
@@ -319,9 +334,10 @@ test('global concurrency bound queues requests and aborted waiters release clean
   await first;
   assert.deepEqual(api.getRemoteConcurrencyStats(), { active: 0, queued: 0 });
 
+  const handoff = new AbortController();
   await Promise.all([
     api.fetchRemoteMedia(`${baseUrl}/slow`, { maxBytes: 1024, attempts: 1 }),
-    api.fetchRemoteMedia(`${baseUrl}/slow`, { maxBytes: 1024, attempts: 1 }),
+    api.fetchRemoteMedia(`${baseUrl}/slow`, { maxBytes: 1024, attempts: 1, signal: handoff.signal }),
   ]);
   assert.equal(maxActiveSlow, 1);
   assert.deepEqual(api.getRemoteConcurrencyStats(), { active: 0, queued: 0 });
