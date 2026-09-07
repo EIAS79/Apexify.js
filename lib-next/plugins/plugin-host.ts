@@ -34,6 +34,7 @@ export class PluginHost {
   private recordMutation(name: string): void {
     const transaction = this.installContext.getStore();
     if (!transaction?.active || transaction.undo.has(name)) return;
+    assertWithinLimit("maxCollectionItems", transaction.undo.size + 1);
     if (this.registry.has(name)) {
       transaction.undo.set(name, { existed: true, value: this.registry.get(name) });
     } else {
