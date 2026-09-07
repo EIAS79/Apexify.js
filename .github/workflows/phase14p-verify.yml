@@ -24,9 +24,9 @@ concurrency:
 
 jobs:
   targeted:
-    name: Build + audio/regression verification / Node 24
+    name: Build + targeted recovery verification / Node 24
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -34,7 +34,7 @@ jobs:
           node-version: 24.20.0
           package-manager-cache: false
       - run: npm install --global npm@11.19.1
-      - name: Install FFmpeg
+      - name: Install FFmpeg and deterministic fonts
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core
@@ -50,6 +50,17 @@ jobs:
         env:
           APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
         run: node --expose-gc benchmarks/phase14p/text-stage-bench.cjs
+      - name: Permanent Phase 14-P multi-domain stage benchmarks
+        env:
+          APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+        run: node --expose-gc benchmarks/phase14p/stage-benchmarks.cjs --output artifacts/phase14p/stage-benchmarks.json
+      - name: Upload stage benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phase14p-stage-benchmarks-node24-${{ github.sha }}
+          path: artifacts/phase14p/stage-benchmarks.json
+          if-no-files-found: error
       - name: Phase 9 audio regression suite
         run: npm run test:phase9
       - name: Phase 14 regression suite
