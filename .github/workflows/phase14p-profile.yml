@@ -7,6 +7,7 @@ on:
       - phase14p-performance-recovery
     paths:
       - 'benchmarks/phase14p/profile-workload.cjs'
+      - 'benchmarks/phase14p/summarize-profiles.cjs'
       - '.github/workflows/phase14p-profile.yml'
 
 permissions:
@@ -67,8 +68,15 @@ jobs:
               --subject subject \
               --workload "$workload" \
               --repeats 120 \
-              > "phase14p/artifacts/phase14p-profiles/pre/$workload/summary.json"
+              > "phase14p/artifacts/phase14p-profiles/pre/$workload/workload-summary.json"
           done
+
+      - name: Summarize profiler hotspots
+        run: |
+          node phase14p/benchmarks/phase14p/summarize-profiles.cjs \
+            phase14p/artifacts/phase14p-profiles/pre \
+            phase14p/artifacts/phase14p-profiles/pre/profile-summary.json \
+            | tee phase14p/artifacts/phase14p-profiles/pre/profile-summary.txt
 
       - name: Upload profiler evidence
         if: always()
