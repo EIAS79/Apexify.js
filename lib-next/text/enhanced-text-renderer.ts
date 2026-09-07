@@ -33,7 +33,7 @@ export class EnhancedTextRenderer {
       setupTextAlignment(ctx, textProps);
 
       if (textProps.textOnCurve) await EnhancedTextRenderer.renderCurvedLines(ctx, textProps);
-      else if (resolveTextLayout(textProps).maxWidth !== undefined) await EnhancedTextRenderer.renderWrappedText(ctx, textProps);
+      else if ((textProps.layout?.maxWidth ?? textProps.maxWidth) !== undefined) await EnhancedTextRenderer.renderWrappedText(ctx, textProps);
       else await EnhancedTextRenderer.renderSingleLine(ctx, textProps);
     } finally {
       ctx.restore();
@@ -98,6 +98,10 @@ export class EnhancedTextRenderer {
   }
 
   private static async renderSingleLine(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
+    if (!textProps.text.includes("\n")) {
+      renderEnhancedTextLine(ctx, textProps.text, textProps.x, textProps.y, textProps);
+      return;
+    }
     const lineHeight = resolveTextLineHeight(textProps);
     const lines = textProps.text.split("\n");
     for (let i = 0; i < lines.length; i++) renderEnhancedTextLine(ctx, lines[i]!, textProps.x, textProps.y + i * lineHeight, textProps);
