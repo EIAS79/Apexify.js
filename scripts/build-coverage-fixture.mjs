@@ -55,16 +55,47 @@ const criticalModules = [
   "video/process-runner.js",
   "video/temp-workspace.js",
 ];
+
+// These hooks exist only in tests/.coverage copies. They never touch dist/ or package exports.
+// Directly testing private policy primitives closes source-branch gaps without expanding Apexify's API.
+const privateCoverageHooks = {
+  "media/network-policy.js": ["ipv4ToInt", "ipv4Range", "normalizeIpv6", "ipv6InCidr"],
+  "media/remote-fetch.js": [
+    "defaultMaxBytes",
+    "remoteLimitName",
+    "parseRetryAfter",
+    "retryDelay",
+    "sleep",
+    "createPinnedLookup",
+    "hasHeader",
+    "withoutBodyHeaders",
+    "redirectRequestOptions",
+    "requestHeaders",
+    "contentLengthGuard",
+    "retryAfterFromError",
+    "retryable",
+    "resolvedFetchPolicy",
+  ],
+  "video/process-runner.js": ["validateProcessToken", "appendBoundedTail"],
+};
+
 for (const modulePath of criticalModules) {
   const emitted = path.join(outRoot, modulePath);
   if (!fs.existsSync(emitted)) throw new Error(`Coverage TypeScript emit did not produce ${modulePath}.`);
 
   // TypeScript injects this CommonJS metadata marker. It is not Apexify logic and V8 can
   // attribute a synthetic branch to it, so remove it from coverage-only copies.
-  const source = fs.readFileSync(emitted, "utf8").replace(
+  let source = fs.readFileSync(emitted, "utf8").replace(
     /^Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\r?\n/m,
     "",
   );
+
+  const hooks = privateCoverageHooks[modulePath] ?? [];
+  if (hooks.length > 0) {
+    source += `\n// Phase 12 test-only private coverage hooks; this file is never published.\n${hooks
+      .map((name) => `exports.__phase12_${name} = ${name};`)
+      .join("\n")}\n`;
+  }
   fs.writeFileSync(emitted, source);
 
   const evidencePath = path.join(evidenceRoot, modulePath);
@@ -80,4 +111,4 @@ const entry = [
   "",
 ].join("\n");
 fs.writeFileSync(path.join(buildRoot, "phase12-entry.cjs"), entry);
-console.log(`build-coverage-fixture: emitted helper-free CommonJS source modules, removed compiler-only metadata, retained emitted evidence, and routed critical tests through them.`);
+console.log(`build-coverage-fixture: emitted helper-free CommonJS source modules, removed compiler-only metadata, added non-published private test hooks, retained emitted evidence, and routed critical tests through them.`);
