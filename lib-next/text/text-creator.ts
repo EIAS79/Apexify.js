@@ -3,8 +3,9 @@ import type { TextProperties } from "../types";
 import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
-import { getErrorMessage, getCanvasContext } from "../core/errors";
+import { getCanvasContext } from "../core/errors";
 import { decodeImageSource } from "../image/image-source-validation";
+import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 
 /**
  * Extended class for text creation functionality
@@ -17,7 +18,7 @@ export class TextCreator {
    */
   private validateTextProperties(textProps: TextProperties): void {
     if (!textProps.text || textProps.x == null || textProps.y == null) {
-      throw new Error("createText: text, x, and y are required.");
+      throw new ApexifyInputError("createText: text, x, and y are required.");
     }
   }
 
@@ -29,7 +30,7 @@ export class TextCreator {
   private validateTextArray(textArray: TextProperties | TextProperties[]): void {
     const textList = Array.isArray(textArray) ? textArray : [textArray];
     if (textList.length === 0) {
-      throw new Error("createText: At least one text object is required.");
+      throw new ApexifyInputError("createText: At least one text object is required.");
     }
     for (const textProps of textList) {
       this.validateTextProperties(textProps);
@@ -46,7 +47,8 @@ export class TextCreator {
     try {
       await EnhancedTextRenderer.renderText(ctx, textProps);
     } catch (error) {
-      throw new Error(`renderEnhancedText failed: ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError("renderEnhancedText failed.", { cause: error });
     }
   }
 
@@ -72,14 +74,14 @@ export class TextCreator {
   async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
     try {
       if (!canvasBuffer) {
-        throw new Error("createText: canvasBuffer is required.");
+        throw new ApexifyInputError("createText: canvasBuffer is required.");
       }
       this.validateTextArray(textArray);
 
       const textList = Array.isArray(textArray) ? textArray : [textArray];
       const sourceBuffer = Buffer.isBuffer(canvasBuffer) ? canvasBuffer : canvasBuffer?.buffer;
       if (!sourceBuffer) {
-        throw new Error("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer");
+        throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
       }
 
       const existingImage: Image = await decodeImageSource(sourceBuffer, {
@@ -94,7 +96,8 @@ export class TextCreator {
 
       return assignCanvasResultsBuffer(canvasBuffer, canvas.toBuffer("image/png"));
     } catch (error) {
-      throw new Error(`createText failed: ${getErrorMessage(error)}`);
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError("createText failed.", { cause: error });
     }
   }
 }
