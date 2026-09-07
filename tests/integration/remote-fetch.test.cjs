@@ -25,7 +25,7 @@ before(async () => {
       res.writeHead(303, { location: '/echo-method' });
       return res.end();
     }
-    if (/^\/post-(301|302|307|308)$/.test(url.pathname)) {
+    if (/^\/post-(301|302|303|307|308)$/.test(url.pathname)) {
       const status = Number(url.pathname.slice(-3));
       res.writeHead(status, { location: '/echo-request' });
       return res.end();
@@ -170,7 +170,7 @@ test('redirect method semantics cover 301/302/303 downgrade and 307/308 preserva
 
   for (const status of [301, 302]) {
     const response = await api.fetchRemoteMedia(`${baseUrl}/post-${status}`, {
-      method: 'POST', body: 'payload', headers: { 'Content-Length': '7', 'Transfer-Encoding': 'identity', 'X-Custom': 'yes' }, maxBytes: 2048,
+      method: 'POST', body: 'payload', headers: { 'Content-Length': '7', 'X-Custom': 'yes' }, maxBytes: 2048,
     });
     const echoed = JSON.parse(response.buffer.toString());
     assert.equal(echoed.method, 'GET');
@@ -179,6 +179,16 @@ test('redirect method semantics cover 301/302/303 downgrade and 307/308 preserva
     assert.equal(echoed.transferEncoding, null);
     assert.equal(echoed.custom, 'yes');
   }
+
+  const chunked = await api.fetchRemoteMedia(`${baseUrl}/post-303`, {
+    method: 'POST', body: 'payload', headers: { 'Transfer-Encoding': 'chunked', 'X-Custom': 'yes' }, maxBytes: 2048,
+  });
+  const chunkedEcho = JSON.parse(chunked.buffer.toString());
+  assert.equal(chunkedEcho.method, 'GET');
+  assert.equal(chunkedEcho.body, '');
+  assert.equal(chunkedEcho.contentLength, null);
+  assert.equal(chunkedEcho.transferEncoding, null);
+  assert.equal(chunkedEcho.custom, 'yes');
 
   for (const status of [307, 308]) {
     const response = await api.fetchRemoteMedia(`${baseUrl}/post-${status}`, { method: 'POST', body: 'payload', headers: { 'X-Custom': 'yes' }, maxBytes: 2048 });
