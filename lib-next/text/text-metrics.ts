@@ -58,6 +58,11 @@ function graphemes(value: string): string[] {
 export class TextMetricsCreator {
   async measureText(textProps: TextProperties): Promise<TextMetrics> {
     validateTextProperties(textProps);
+    return this.measureValidatedText(textProps);
+  }
+
+  /** Trusted internal path after the public text boundary has validated the same object. */
+  async measureValidatedText(textProps: TextProperties): Promise<TextMetrics> {
     try {
       const lay = resolveTextLayout(textProps);
       const fontSize = resolveTextFontSize(textProps);
@@ -66,11 +71,12 @@ export class TextMetricsCreator {
       const fontName = textProps.font?.name ?? textProps.fontName;
       if (fontPath) await registerTextFontFromPath(fontPath, fontName ?? "customFont");
 
-      const estimatedWidth = Math.max(1, textProps.text.length * fontSize * 0.7 + Math.max(0, textProps.text.length - 1) * (lay.letterSpacing ?? 0));
-      const requestedWidth = textProps.measurementCanvas?.width ?? lay.maxWidth ?? Math.min(10000, Math.max(1000, estimatedWidth * 2));
-      const estimatedLineCount = lay.maxWidth === undefined ? textProps.text.split("\n").length : Math.max(1, Math.ceil(estimatedWidth / lay.maxWidth));
-      const requestedHeight = textProps.measurementCanvas?.height ?? Math.min(5000, Math.max(500, estimatedLineCount * lineHeight * 2));
-      const canvas = createCanvas(Math.ceil(requestedWidth), Math.ceil(requestedHeight));
+      // Native text metrics are independent of surface dimensions. A 1000x500+ temporary
+      // canvas was previously allocated for ordinary measurements even though no pixels are
+      // drawn. Honor explicit measurementCanvas dimensions, otherwise use the smallest surface.
+      const requestedWidth = textProps.measurementCanvas?.width ?? 1;
+      const requestedHeight = textProps.measurementCanvas?.height ?? 1;
+      const canvas = createCanvas(Math.max(1, Math.ceil(requestedWidth)), Math.max(1, Math.ceil(requestedHeight)));
       const ctx = getCanvasContext(canvas);
       setupTextFont(ctx, textProps);
       setupTextAlignment(ctx, textProps);
@@ -78,9 +84,9 @@ export class TextMetricsCreator {
       const wrapped = lay.maxWidth !== undefined ? computeWrappedTextLines(ctx, textProps) : textProps.text.split("\n");
       const lines = wrapped.length > 0 ? wrapped : [""];
       const lineNative = lines.map((line) => ctx.measureText(line));
+      const lineFields = lineNative.map((metric) => metricFields(metric, fontSize, lineHeight));
       const widest = lineNative.reduce((max, metric) => Math.max(max, metric.width), 0);
-      const first = lineNative[0]!;
-      const firstFields = metricFields(first, fontSize, lineHeight);
+      const firstFields = lineFields[0]!;
       const metrics: TextMetrics = {
         ...firstFields,
         width: widest,
@@ -90,8 +96,8 @@ export class TextMetricsCreator {
         lines: lines.map((line, index) => ({
           text: line,
           width: lineNative[index]!.width,
-          height: metricFields(lineNative[index]!, fontSize, lineHeight).height,
-          metrics: metricFields(lineNative[index]!, fontSize, lineHeight),
+          height: lineFields[index]!.height,
+          metrics: lineFields[index]!,
         })),
         centerX: widest / 2,
         centerY: (lines.length * lineHeight) / 2,

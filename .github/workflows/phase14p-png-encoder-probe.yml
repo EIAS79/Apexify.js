@@ -1,0 +1,38 @@
+name: Phase 14-P PNG Encoder Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase14p-performance-recovery
+    paths:
+      - 'benchmarks/phase14p/png-encoder-probe.cjs'
+      - '.github/workflows/phase14p-png-encoder-probe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apexify-phase14p-png-encoder-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Skia async vs Sharp lossless PNG / Node 24
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+      APEXIFY_PNG_PROBE_WARMUPS: 5
+      APEXIFY_PNG_PROBE_SAMPLES: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.1
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Run lossless PNG encoder probe
+        run: node --expose-gc benchmarks/phase14p/png-encoder-probe.cjs

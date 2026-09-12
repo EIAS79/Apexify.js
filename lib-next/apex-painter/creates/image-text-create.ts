@@ -1,23 +1,22 @@
 import type { CreateImageOptions, ImageProperties, TextMetrics, TextProperties } from "../../types";
 import type { CanvasResults } from "../../types";
 import { ApexifyInputError } from "../../runtime/errors";
+import { assertCanvasResourceLimits } from "../../runtime/limits";
 import { ImageCreator } from "../../image/image-creator";
+import { loadImageCached } from "../../image/image-properties";
 import { validateImageInput } from "../../image/image-validation";
-import { inspectDecodedImageSource } from "../../image/image-source-validation";
 import { TextCreator } from "../../text/text-creator";
 import { TextMetricsCreator } from "../../text/text-metrics";
 import { validateTextInput, validateTextProperties } from "../../text/text-validation";
 
-async function preflightCanvasBuffer(canvasBuffer: CanvasResults | Buffer, label: string): Promise<void> {
+function canvasBufferOf(canvasBuffer: CanvasResults | Buffer, label: string): Buffer {
   const buffer = Buffer.isBuffer(canvasBuffer)
     ? canvasBuffer
     : canvasBuffer && Buffer.isBuffer(canvasBuffer.buffer)
       ? canvasBuffer.buffer
       : undefined;
-  if (!buffer) {
-    throw new ApexifyInputError(`${label} canvasBuffer must be a Buffer or CanvasResults containing a Buffer.`);
-  }
-  await inspectDecodedImageSource(buffer, { label: `${label} canvasBuffer`, requireCanvasBudget: true });
+  if (!buffer) throw new ApexifyInputError(`${label} canvasBuffer must be a Buffer or CanvasResults containing a Buffer.`);
+  return buffer;
 }
 
 /** `createImage`, `createText`, `measureText`. */
@@ -34,7 +33,6 @@ export class ImageTextCreate {
     options?: CreateImageOptions
   ): Promise<Buffer> {
     validateImageInput(images, options);
-    await preflightCanvasBuffer(canvasBuffer, "createImage");
     return this.imageCreator.createImage(images, canvasBuffer, options);
   }
 
@@ -42,13 +40,15 @@ export class ImageTextCreate {
     textArray: TextProperties | TextProperties[],
     canvasBuffer: CanvasResults | Buffer
   ): Promise<Buffer> {
-    validateTextInput(textArray);
-    await preflightCanvasBuffer(canvasBuffer, "createText");
-    return this.textCreator.createText(textArray, canvasBuffer);
+    const textList = validateTextInput(textArray);
+    const buffer = canvasBufferOf(canvasBuffer, "createText");
+    const decoded = await loadImageCached(buffer);
+    assertCanvasResourceLimits(decoded.width, decoded.height);
+    return this.textCreator.createTextFromDecodedBase(textList, canvasBuffer, decoded);
   }
 
   measureText(textProps: TextProperties): Promise<TextMetrics> {
     validateTextProperties(textProps);
-    return this.textMetricsCreator.measureText(textProps);
+    return this.textMetricsCreator.measureValidatedText(textProps);
   }
 }

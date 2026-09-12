@@ -1,0 +1,63 @@
+name: Phase 14-P Canvas Backend Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase14p-performance-recovery
+    paths:
+      - '.github/workflows/phase14p-canvas-backend-probe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apexify-phase14p-canvas-backend-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Locked 0.1.100 vs candidate 1.0.8 / Node 24
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
+      APEXIFY_TEXT_STAGE_WARMUPS: 10
+      APEXIFY_TEXT_STAGE_SAMPLES: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.1
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Build package and internal benchmark fixture
+        run: |
+          npm run build
+          node scripts/build-phase14p-benchmark-fixture.mjs
+      - name: Locked backend identity
+        run: node -e "console.log('locked canvas version=' + require('@napi-rs/canvas/package.json').version)"
+      - name: Benchmark locked backend
+        run: node --expose-gc benchmarks/phase14p/text-stage-bench.cjs | tee /tmp/text-locked.log
+      - name: Install candidate backend without changing lockfile
+        run: npm install --no-save --package-lock=false --ignore-scripts @napi-rs/canvas@1.0.8
+      - name: Candidate backend identity
+        run: node -e "console.log('candidate canvas version=' + require('@napi-rs/canvas/package.json').version)"
+      - name: Rebuild against candidate
+        run: |
+          npm run build
+          node scripts/build-phase14p-benchmark-fixture.mjs
+      - name: Benchmark candidate backend
+        run: node --expose-gc benchmarks/phase14p/text-stage-bench.cjs | tee /tmp/text-candidate.log
+      - name: Candidate compatibility and regression gates
+        run: |
+          npm run test:phase14
+          npm run test:compat
+      - name: Compare text probe summaries
+        run: |
+          echo '=== locked 0.1.100 ==='
+          grep -E 'public createText|async output|sync output|public output|pngEncode|total' /tmp/text-locked.log
+          echo '=== candidate 1.0.8 ==='
+          grep -E 'public createText|async output|sync output|public output|pngEncode|total' /tmp/text-candidate.log

@@ -108,7 +108,14 @@ export function inspectWavPcm16(wav: Buffer): WavPcm16Info {
   };
 }
 
-export function encodeWavPcm16(samples: Float32Array, sampleRate: number, channels: 1 | 2): Buffer {
+interface WavEncodePlan { dataSize: number; outputBytes: number; }
+
+function validateWavEncodeRequest(
+  samples: Float32Array,
+  sampleRate: number,
+  channels: 1 | 2,
+  scanFinite: boolean
+): WavEncodePlan {
   if (!(samples instanceof Float32Array) || samples.length === 0) throw new ApexifyInputError("encodeWav: samples must be a non-empty Float32Array.");
   if (channels !== 1 && channels !== 2) throw new ApexifyInputError("encodeWav: channels must be 1 or 2.");
   if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new ApexifyInputError("encodeWav: sampleRate must be a positive integer.");
@@ -123,10 +130,21 @@ export function encodeWavPcm16(samples: Float32Array, sampleRate: number, channe
   if (!Number.isSafeInteger(outputBytes) || 36 + dataSize > 0xffffffff) throw new ApexifyInputError("encodeWav: output exceeds RIFF/WAVE 32-bit size limits.");
   assertWithinLimit("maxAudioBytes", samples.byteLength + outputBytes);
 
-  for (let i = 0; i < samples.length; i += 1) {
-    if (!Number.isFinite(samples[i])) throw new ApexifyInputError("encodeWav: samples must contain only finite values.", { details: { sampleIndex: i } });
+  if (scanFinite) {
+    for (let i = 0; i < samples.length; i += 1) {
+      if (!Number.isFinite(samples[i])) throw new ApexifyInputError("encodeWav: samples must contain only finite values.", { details: { sampleIndex: i } });
+    }
   }
+  return { dataSize, outputBytes };
+}
 
+function encodeWavPcm16Body(
+  samples: Float32Array,
+  sampleRate: number,
+  channels: 1 | 2,
+  plan: WavEncodePlan
+): Buffer {
+  const { dataSize, outputBytes } = plan;
   const buffer = Buffer.alloc(outputBytes);
   buffer.write("RIFF", 0, "ascii");
   buffer.writeUInt32LE(36 + dataSize, 4);
@@ -150,6 +168,18 @@ export function encodeWavPcm16(samples: Float32Array, sampleRate: number, channe
     offset += PCM16_BYTES_PER_SAMPLE;
   }
   return buffer;
+}
+
+export function encodeWavPcm16(samples: Float32Array, sampleRate: number, channels: 1 | 2): Buffer {
+  return encodeWavPcm16Body(samples, sampleRate, channels, validateWavEncodeRequest(samples, sampleRate, channels, true));
+}
+
+/**
+ * Trusted internal encoder for PCM that has already passed render/mix finite-sample checks.
+ * Structural/resource validation remains in place, but the duplicate O(n) finite scan is skipped.
+ */
+export function encodeValidatedWavPcm16(samples: Float32Array, sampleRate: number, channels: 1 | 2): Buffer {
+  return encodeWavPcm16Body(samples, sampleRate, channels, validateWavEncodeRequest(samples, sampleRate, channels, false));
 }
 
 /** Decode strict 16-bit integer PCM WAV to Float32 samples in [-1, 1). */

@@ -4,45 +4,26 @@ import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
 import { getCanvasContext } from "../core/errors";
-import { decodeImageSource } from "../image/image-source-validation";
+import { loadImageCached } from "../image/image-properties";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
+import { encodeTextCanvasPng } from "./text-png-encoder";
 
-/**
- * Extended class for text creation functionality
- */
+/** Extended class for text creation functionality. */
 export class TextCreator {
-  /**
-   * Validates text properties for required fields.
-   * @private
-   * @param textProps - Text properties to validate
-   */
   private validateTextProperties(textProps: TextProperties): void {
     if (!textProps.text || textProps.x == null || textProps.y == null) {
       throw new ApexifyInputError("createText: text, x, and y are required.");
     }
   }
 
-  /**
-   * Validates text properties array.
-   * @private
-   * @param textArray - Text properties to validate
-   */
-  private validateTextArray(textArray: TextProperties | TextProperties[]): void {
+  private validateTextArray(textArray: TextProperties | TextProperties[]): TextProperties[] {
     const textList = Array.isArray(textArray) ? textArray : [textArray];
-    if (textList.length === 0) {
-      throw new ApexifyInputError("createText: At least one text object is required.");
-    }
-    for (const textProps of textList) {
-      this.validateTextProperties(textProps);
-    }
+    if (textList.length === 0) throw new ApexifyInputError("createText: At least one text object is required.");
+    for (const textProps of textList) this.validateTextProperties(textProps);
+    return textList;
   }
 
-  /**
-   * Renders enhanced text using the new text renderer.
-   * @private
-   * @param ctx - Canvas 2D context
-   * @param textProps - Text properties
-   */
   private async renderEnhancedText(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
     try {
       await EnhancedTextRenderer.renderText(ctx, textProps);
@@ -52,49 +33,44 @@ export class TextCreator {
     }
   }
 
-  /**
-   * Renders one or more rich text objects onto an existing context (no buffer round-trip).
-   * Used by scene rendering and custom pipelines.
-   */
+  private async renderValidatedTextsOntoContext(ctx: SKRSContext2D, textList: TextProperties[]): Promise<void> {
+    for (const textProps of textList) await this.renderEnhancedText(ctx, textProps);
+  }
+
+  /** Renders one or more rich text objects onto an existing context (no buffer round-trip). */
   async renderTextsOntoContext(ctx: SKRSContext2D, textArray: TextProperties | TextProperties[]): Promise<void> {
-    this.validateTextArray(textArray);
-    const textList = Array.isArray(textArray) ? textArray : [textArray];
-    for (const textProps of textList) {
-      await this.renderEnhancedText(ctx, textProps);
-    }
+    const textList = this.validateTextArray(textArray);
+    await this.renderValidatedTextsOntoContext(ctx, textList);
   }
 
   /**
-   * Creates text on an existing canvas buffer with enhanced styling options.
-   *
-   * @param textArray - Single TextProperties object or array of TextProperties
-   * @param canvasBuffer - Existing canvas buffer (Buffer) or CanvasResults object
-   * @returns Promise<Buffer> - Updated canvas buffer in PNG format
+   * Trusted internal path used after the public facade or createText() has validated
+   * text and checked the decoded base against the current canvas resource limits.
    */
+  async createTextFromDecodedBase(
+    textArray: TextProperties | TextProperties[],
+    canvasBuffer: CanvasResults | Buffer,
+    existingImage: Image
+  ): Promise<Buffer> {
+    const textList = Array.isArray(textArray) ? textArray : [textArray];
+    const canvas = createCanvas(existingImage.width, existingImage.height);
+    const ctx = getCanvasContext(canvas);
+    ctx.drawImage(existingImage, 0, 0);
+    await this.renderValidatedTextsOntoContext(ctx, textList);
+    const encoded = await encodeTextCanvasPng(canvas);
+    return assignCanvasResultsBuffer(canvasBuffer, encoded);
+  }
+
+  /** Creates text on an existing canvas buffer with enhanced styling options. */
   async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
     try {
-      if (!canvasBuffer) {
-        throw new ApexifyInputError("createText: canvasBuffer is required.");
-      }
-      this.validateTextArray(textArray);
-
-      const textList = Array.isArray(textArray) ? textArray : [textArray];
+      if (!canvasBuffer) throw new ApexifyInputError("createText: canvasBuffer is required.");
+      const textList = this.validateTextArray(textArray);
       const sourceBuffer = Buffer.isBuffer(canvasBuffer) ? canvasBuffer : canvasBuffer?.buffer;
-      if (!sourceBuffer) {
-        throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
-      }
-
-      const existingImage: Image = await decodeImageSource(sourceBuffer, {
-        label: "createText canvasBuffer",
-        requireCanvasBudget: true,
-      });
-      const canvas = createCanvas(existingImage.width, existingImage.height);
-      const ctx = getCanvasContext(canvas);
-
-      ctx.drawImage(existingImage, 0, 0);
-      await this.renderTextsOntoContext(ctx, textList);
-
-      return assignCanvasResultsBuffer(canvasBuffer, canvas.toBuffer("image/png"));
+      if (!sourceBuffer) throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
+      const existingImage = await loadImageCached(sourceBuffer);
+      assertCanvasResourceLimits(existingImage.width, existingImage.height);
+      return await this.createTextFromDecodedBase(textList, canvasBuffer, existingImage);
     } catch (error) {
       if (error instanceof ApexifyError) throw error;
       throw new ApexifyDecodeError("createText failed.", { cause: error });

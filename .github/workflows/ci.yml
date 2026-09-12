@@ -21,6 +21,11 @@ jobs:
     name: Linux / Node ${{ matrix.node }} / full gate
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
     strategy:
       fail-fast: false
       matrix:
@@ -41,18 +46,43 @@ jobs:
           node --version
           npm --version
 
-      - name: Install controlled FFmpeg integration dependency
+      - name: Install controlled FFmpeg and font dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
+          fc-match 'DejaVu Sans'
 
       - name: Install locked dependency graph
         run: npm ci --ignore-scripts
 
-      - name: Full Phase 12 gate
+      - name: Full Phase 0-14 gate
         run: npm run test:ci
+
+      - name: Build Phase 14-P internal benchmark fixture
+        if: matrix.node == 24
+        run: node scripts/build-phase14p-benchmark-fixture.mjs
+
+      - name: Run Phase 14-P validation, config, security and memory audit
+        if: matrix.node == 24
+        run: |
+          mkdir -p artifacts/phase14p-main-ci
+          node benchmarks/phase14p/validation-config-audit.cjs \
+            --output artifacts/phase14p-main-ci/validation-config-audit.json
+
+      - name: Run permanent Phase 14-P stage benchmark suite
+        if: matrix.node == 24
+        run: |
+          node --expose-gc benchmarks/phase14p/stage-benchmarks.cjs \
+            --output artifacts/phase14p-main-ci/stage-benchmarks.json
+
+      - name: Enforce frozen Phase 14-P stage budgets
+        if: matrix.node == 24
+        run: |
+          node benchmarks/phase14p/assert-stage-budgets.cjs \
+            --baseline benchmarks/baselines/phase14p-stage-linux-x64-node24-schema2.json \
+            --current artifacts/phase14p-main-ci/stage-benchmarks.json
 
       - name: Audit all dependencies
         run: npm audit --audit-level=high --json > artifacts/dependency-audit-all-node-${{ matrix.node }}.json
@@ -63,7 +93,7 @@ jobs:
       - name: Inspect packed contents
         run: npm pack --dry-run --ignore-scripts --json > artifacts/package-dry-run-node-${{ matrix.node }}.json
 
-      - name: Upload Phase 12 evidence
+      - name: Upload Phase 0-14 and Phase 14-P evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
