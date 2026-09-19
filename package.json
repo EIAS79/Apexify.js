@@ -7,7 +7,7 @@
   "homepage": "https://apexifyjs.vercel.app",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EIAS79/Apexify.js.git"
+    "url": "git+https://github.com/EIAS79/Apexify.js.git"
   },
   "bugs": {
     "url": "https://github.com/EIAS79/Apexify.js/issues"
