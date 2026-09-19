@@ -1,0 +1,17 @@
+{
+  "name": "@apexify/web",
+  "version": "0.1.0",
+  "description": "Browser-native Apexify rendering runtime for Canvas2D Studio and realtime web surfaces.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": ["src", "README.md"],
+  "keywords": ["apexify", "canvas", "browser", "graphics", "renderer"],
+  "license": "MIT"
+}
