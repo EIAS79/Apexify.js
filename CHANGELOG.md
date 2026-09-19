@@ -5,7 +5,7 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.0.0] - Unreleased
+## [6.0.0] - 2026-09-19
 
 ### Phase 11 — package and API cleanup
 
@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚠️ Breaking
 
-- **Node.js support is now 22.x, 24.x, and 26.x.** Node 16, 18, and 20 are no longer supported. Raising the runtime floor is a breaking compatibility change, so this work is correctly staged as **6.0.0**, not a 5.4.x patch.
+- **Node.js support is now 22.x, 24.x, and 26.x.** Node 16, 18, and 20 are no longer supported. Raising the runtime floor is a breaking compatibility change, so this work is correctly versioned as **6.0.0**, not a 5.4.x patch.
 - The supported package-root runtime surface is explicitly **`ApexPainter`**. Low-level synthesis helpers remain internal; audio functionality is exposed through **`painter.createAudio`**.
 
 ### 📦 Runtime, package, and release correctness
