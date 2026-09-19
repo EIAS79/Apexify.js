@@ -7,6 +7,11 @@ on:
         description: Exact package version to publish
         required: true
         default: '6.0.0'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/npm-publish.trigger'
 
 permissions:
   contents: read
@@ -37,7 +42,7 @@ jobs:
 
       - name: Verify requested version
         env:
-          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_VERSION: ${{ inputs.expected_version || '6.0.0' }}
         run: |
           node -e "const p=require('./package.json'); if (p.version !== process.env.EXPECTED_VERSION) { console.error('Expected ' + process.env.EXPECTED_VERSION + ' but package.json is ' + p.version); process.exit(1); }"
 
