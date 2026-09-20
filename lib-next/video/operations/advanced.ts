@@ -179,7 +179,7 @@ export class AdvancedVideoOperations {
       void lutPath;
       const args = [
         "-i", video.videoPath,
-        "-vf", "lut3d=filename=lut.cube",
+        "-vf", "lut3d=file=lut.cube",
         "-map", "0:v:0",
         ...(info.audio ? ["-map", "0:a?", "-c:a", "copy"] : ["-an"]),
         "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
