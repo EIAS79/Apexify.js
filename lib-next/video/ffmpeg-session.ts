@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { MediaProcessRunner, type MediaProcessRunOptions } from "./process-runner";
 import type { TempWorkspaceOptions } from "./temp-workspace";
@@ -57,14 +56,15 @@ function executableFileName(executable: string): string {
 }
 
 /**
- * Resolve an executable to an absolute file path using the current process PATH.
- * This intentionally does not rely on child_process command lookup: on Windows,
- * WinGet/Scoop/custom PATH installs can be visible to the shell while bare-name
- * spawn() still fails with ENOENT in some environments.
+ * Produce absolute executable candidates from the current process PATH.
+ * Existence is deliberately not checked synchronously: checkAvailable() probes
+ * candidates through MediaProcessRunner, preserving Apexify's no-sync-I/O runtime policy.
  */
-export function resolveExecutableFromPath(executable: string, pathValue = executablePathValue()): string | undefined {
-  if (!pathValue) return undefined;
+export function executableCandidatesFromPath(executable: string, pathValue = executablePathValue()): string[] {
+  if (!pathValue) return [];
   const fileName = executableFileName(executable);
+  const seen = new Set<string>();
+  const candidates: string[] = [];
   for (const rawEntry of pathValue.split(path.delimiter)) {
     const trimmed = rawEntry.trim();
     const directory = trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
@@ -72,9 +72,23 @@ export function resolveExecutableFromPath(executable: string, pathValue = execut
       : trimmed;
     if (!directory) continue;
     const candidate = path.resolve(directory, fileName);
-    if (existsSync(candidate)) return candidate;
+    const key = process.platform === "win32" ? candidate.toLowerCase() : candidate;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(candidate);
   }
-  return undefined;
+  return candidates;
+}
+
+function pathExecutablePairs(pathValue = executablePathValue()): Array<{ ffmpegPath: string; ffprobePath: string }> {
+  const ffmpegCandidates = executableCandidatesFromPath("ffmpeg", pathValue);
+  const ffprobeCandidates = executableCandidatesFromPath("ffprobe", pathValue);
+  const count = Math.min(ffmpegCandidates.length, ffprobeCandidates.length);
+  const pairs: Array<{ ffmpegPath: string; ffprobePath: string }> = [];
+  for (let index = 0; index < count; index++) {
+    pairs.push({ ffmpegPath: ffmpegCandidates[index]!, ffprobePath: ffprobeCandidates[index]! });
+  }
+  return pairs;
 }
 
 function commonFfmpegPaths(): string[] {
@@ -102,11 +116,9 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
   const runtime = getDefaultApexifyRuntimeConfig();
   const explicitFfmpeg = options.ffmpegPath ?? runtime.ffmpeg.ffmpegPath ?? process.env.APEXIFY_FFMPEG_PATH;
   const explicitFfprobe = options.ffprobePath ?? runtime.ffmpeg.ffprobePath ?? process.env.APEXIFY_FFPROBE_PATH;
-  const discoveredFfmpeg = explicitFfmpeg ?? resolveExecutableFromPath("ffmpeg");
-  const discoveredFfprobe = explicitFfprobe ?? resolveExecutableFromPath("ffprobe");
   const runner = new MediaProcessRunner({
-    ffmpegPath: discoveredFfmpeg ?? "ffmpeg",
-    ffprobePath: discoveredFfprobe ?? "ffprobe",
+    ffmpegPath: explicitFfmpeg ?? "ffmpeg",
+    ffprobePath: explicitFfprobe ?? "ffprobe",
   });
   const initialExecutablePaths = runner.getExecutablePaths();
   const workspaceOptions: TempWorkspaceOptions = {
@@ -167,6 +179,14 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
 
       // Only auto-discover when the caller did not explicitly configure executables.
       if (!explicitFfmpeg && !explicitFfprobe) {
+        for (const executablePaths of pathExecutablePairs()) {
+          runner.setExecutablePaths(executablePaths);
+          if (await probePair()) {
+            available = true;
+            checked = true;
+            return true;
+          }
+        }
         for (const ffmpegPath of commonFfmpegPaths()) {
           const ffprobePath = pairedFfprobePath(ffmpegPath);
           runner.setExecutablePaths({ ffmpegPath, ffprobePath });
