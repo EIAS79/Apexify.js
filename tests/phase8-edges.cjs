@@ -41,11 +41,26 @@ function testPathExecutableDiscovery(root) {
   fs.writeFileSync(path.join(bin, ffprobeName), 'fixture');
 
   const syntheticPath = `${bin}${path.delimiter}${process.env.PATH || ''}`;
-  assert.equal(api.resolveExecutableFromPath('ffmpeg', syntheticPath), path.resolve(bin, ffmpegName));
-  assert.equal(api.resolveExecutableFromPath('ffprobe', syntheticPath), path.resolve(bin, ffprobeName));
+  const expectedFfmpeg = path.resolve(bin, ffmpegName);
+  const expectedFfprobe = path.resolve(bin, ffprobeName);
+  assert.equal(api.resolveExecutableFromPath('ffmpeg', syntheticPath), expectedFfmpeg);
+  assert.equal(api.resolveExecutableFromPath('ffprobe', syntheticPath), expectedFfprobe);
 
   const quotedSyntheticPath = `"${bin}"${path.delimiter}${process.env.PATH || ''}`;
-  assert.equal(api.resolveExecutableFromPath('ffmpeg', quotedSyntheticPath), path.resolve(bin, ffmpegName));
+  assert.equal(api.resolveExecutableFromPath('ffmpeg', quotedSyntheticPath), expectedFfmpeg);
+
+  const previousPath = process.env.PATH;
+  try {
+    process.env.PATH = syntheticPath;
+    const session = api.createFfmpegSession();
+    assert.deepEqual(session.runner.getExecutablePaths(), {
+      ffmpegPath: expectedFfmpeg,
+      ffprobePath: expectedFfprobe,
+    });
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+  }
 }
 
 async function main() {
