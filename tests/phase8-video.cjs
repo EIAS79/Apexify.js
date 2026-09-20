@@ -167,6 +167,29 @@ async function main() {
     approx(speedInfo.duration, 1.0, 0.18, '2x speed duration');
     assert.equal(speedInfo.audio, true);
 
+    const lut = path.join(dir, 'identity.cube');
+    fs.writeFileSync(lut, [
+      'TITLE "Apexify identity LUT"',
+      'LUT_3D_SIZE 2',
+      'DOMAIN_MIN 0 0 0',
+      'DOMAIN_MAX 1 1 1',
+      '0 0 0',
+      '0 0 1',
+      '0 1 0',
+      '0 1 1',
+      '1 0 0',
+      '1 0 1',
+      '1 1 0',
+      '1 1 1',
+      '',
+    ].join('\n'));
+    const lutOut = path.join(dir, 'lut.mp4');
+    await painter.createVideo({ source: sourceA, applyLUT: { lutPath: lut, intensity: 1, outputPath: lutOut } });
+    const lutInfo = probe(lutOut);
+    assert.equal(lutInfo.videoCodec, 'h264');
+    assert.equal(lutInfo.audio, true);
+    approx(lutInfo.duration, 2, 0.18, 'LUT duration');
+
     const replaced = path.join(dir, 'replaced.mp4');
     await painter.createVideo({
       source: sourceA,
