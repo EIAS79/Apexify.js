@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Apexify.js banner — charts, canvas, TypeScript](Apex-Banner.png)
+![Apexify.js — Build visual systems from code](Apex-Banner.svg)
 
 **Programmatic graphics and media generation for Node.js.**
 
