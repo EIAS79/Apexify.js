@@ -101,6 +101,21 @@ async function main() {
     (e) => e instanceof runtime.ApexifyInputError,
     'unsupported media protocol'
   );
+
+  // Windows drive-letter and UNC absolute paths contain a colon/backslashes,
+  // but must remain filesystem paths rather than being parsed as URI schemes.
+  const windowsAbsolutePath = 'D:\\apexify-media\\clip.mp4';
+  assert.equal(
+    await media.resolveMediaInput(windowsAbsolutePath, { kind: 'video' }),
+    windowsAbsolutePath,
+    'Windows absolute media path must not be treated as a URI protocol'
+  );
+  const windowsUncPath = '\\\\server\\share\\clip.mp4';
+  assert.equal(
+    await media.resolveMediaInput(windowsUncPath, { kind: 'video' }),
+    windowsUncPath,
+    'Windows UNC media path must remain a filesystem path'
+  );
   const localRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'apexify-phase3-source-'));
   try {
     const localPath = path.join(localRoot, 'media.bin');
