@@ -72,6 +72,7 @@ export class VideoOperations {
         details: {
           installInstructions: this.session.getInstallInstructions(),
           ...executablePaths,
+          attemptedExecutablePaths: this.session.getAvailabilityAttempts(),
           probeError: cause instanceof Error ? cause.message : cause === undefined ? undefined : String(cause),
         },
       });

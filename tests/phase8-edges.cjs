@@ -32,20 +32,21 @@ function probe(file) {
   };
 }
 
-function testPathExecutableDiscovery(root) {
-  const bin = path.join(root, 'ffmpeg-path-discovery');
-  fs.mkdirSync(bin, { recursive: true });
-  const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  const ffprobeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
-  const expectedFfmpeg = path.resolve(bin, ffmpegName);
-  const expectedFfprobe = path.resolve(bin, ffprobeName);
+function testNativeExecutableDiscoveryHelpers(root) {
+  const bin = path.join(root, 'ffmpeg-native-discovery');
+  const other = path.join(root, 'other-bin');
+  const ffmpegPath = path.join(bin, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffprobePath = path.join(bin, process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+  const secondProbe = path.join(other, process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
 
-  const syntheticPath = `${bin}${path.delimiter}${process.env.PATH || ''}`;
-  assert.equal(api.executableCandidatesFromPath('ffmpeg', syntheticPath)[0], expectedFfmpeg);
-  assert.equal(api.executableCandidatesFromPath('ffprobe', syntheticPath)[0], expectedFfprobe);
+  const parsed = api.parseExecutableLocatorOutput(`"${ffmpegPath}"\r\n${ffmpegPath}\r\n\r\n`);
+  assert.deepEqual(parsed, [ffmpegPath], 'native locator output must trim, unquote and deduplicate paths');
 
-  const quotedSyntheticPath = `"${bin}"${path.delimiter}${process.env.PATH || ''}`;
-  assert.equal(api.executableCandidatesFromPath('ffmpeg', quotedSyntheticPath)[0], expectedFfmpeg);
+  const pairs = api.pairLocatedExecutables(
+    [ffmpegPath],
+    [secondProbe, ffprobePath],
+  );
+  assert.deepEqual(pairs, [{ ffmpegPath, ffprobePath }], 'FFmpeg and ffprobe from the same package directory must be paired');
 }
 
 async function main() {
@@ -54,7 +55,7 @@ async function main() {
   const source = path.join(dir, 'source.mp4');
   const audioOnly = path.join(dir, 'audio-only.wav');
   const malformed = path.join(dir, 'malformed.mp4');
-  testPathExecutableDiscovery(dir);
+  testNativeExecutableDiscoveryHelpers(dir);
   makeVideo(source, 1);
   makeAudioOnly(audioOnly);
   fs.writeFileSync(malformed, Buffer.from('not a media container\0\xff\x00', 'latin1'));
@@ -129,7 +130,7 @@ async function main() {
       'speed above supported maximum must be rejected before FFmpeg'
     );
 
-    console.log('phase8-edges: PATH discovery, no-video/malformed metadata, timeout termination, extreme audio speeds, all advertised effects, and speed bounds passed.');
+    console.log('phase8-edges: native executable discovery, no-video/malformed metadata, timeout termination, extreme audio speeds, all advertised effects, and speed bounds passed.');
   } finally {
     api.resetApexifyRuntimeConfig();
     fs.rmSync(dir, { recursive: true, force: true });
