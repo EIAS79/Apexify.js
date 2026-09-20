@@ -80,10 +80,14 @@ export function decodeImageDataUrl(source: string): Buffer | undefined {
   }
 }
 
+function isAbsoluteLocalMediaPath(source: string): boolean {
+  return path.isAbsolute(source) || path.win32.isAbsolute(source);
+}
+
 export function resolveLocalMediaPath(source: string): string {
   const trimmed = source.trim();
   if (!trimmed) throw new ApexifyInputError("Media source path or URL is required.");
-  return path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
+  return isAbsoluteLocalMediaPath(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
 }
 
 export function normalizeMediaSource(source: MediaSource): string | Buffer {
@@ -148,6 +152,12 @@ export async function resolveMediaInput(source: MediaSource, options: ResolveMed
     assertMediaBytes(data, options);
     return data;
   }
+
+  // Filesystem paths must be recognized before the generic URI-scheme guard.
+  // Windows drive paths such as C:\\media\\clip.mp4 contain a colon but are
+  // local paths, not URI protocols. UNC paths are covered by path.win32 as well.
+  if (isAbsoluteLocalMediaPath(trimmed)) return resolveLocalMediaPath(trimmed);
+
   if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
     throw new ApexifyInputError("Unsupported media source protocol.");
   }
