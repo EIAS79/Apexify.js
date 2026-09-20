@@ -32,12 +32,29 @@ function probe(file) {
   };
 }
 
+function testPathExecutableDiscovery(root) {
+  const bin = path.join(root, 'ffmpeg-path-discovery');
+  fs.mkdirSync(bin, { recursive: true });
+  const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const ffprobeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const expectedFfmpeg = path.resolve(bin, ffmpegName);
+  const expectedFfprobe = path.resolve(bin, ffprobeName);
+
+  const syntheticPath = `${bin}${path.delimiter}${process.env.PATH || ''}`;
+  assert.equal(api.executableCandidatesFromPath('ffmpeg', syntheticPath)[0], expectedFfmpeg);
+  assert.equal(api.executableCandidatesFromPath('ffprobe', syntheticPath)[0], expectedFfprobe);
+
+  const quotedSyntheticPath = `"${bin}"${path.delimiter}${process.env.PATH || ''}`;
+  assert.equal(api.executableCandidatesFromPath('ffmpeg', quotedSyntheticPath)[0], expectedFfmpeg);
+}
+
 async function main() {
   api.resetApexifyRuntimeConfig();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apexify-phase8-edges-'));
   const source = path.join(dir, 'source.mp4');
   const audioOnly = path.join(dir, 'audio-only.wav');
   const malformed = path.join(dir, 'malformed.mp4');
+  testPathExecutableDiscovery(dir);
   makeVideo(source, 1);
   makeAudioOnly(audioOnly);
   fs.writeFileSync(malformed, Buffer.from('not a media container\0\xff\x00', 'latin1'));
@@ -112,7 +129,7 @@ async function main() {
       'speed above supported maximum must be rejected before FFmpeg'
     );
 
-    console.log('phase8-edges: no-video/malformed metadata, timeout termination, extreme audio speeds, all advertised effects, and speed bounds passed.');
+    console.log('phase8-edges: PATH discovery, no-video/malformed metadata, timeout termination, extreme audio speeds, all advertised effects, and speed bounds passed.');
   } finally {
     api.resetApexifyRuntimeConfig();
     fs.rmSync(dir, { recursive: true, force: true });

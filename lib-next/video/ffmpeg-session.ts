@@ -1,3 +1,4 @@
+import path from "node:path";
 import { MediaProcessRunner, type MediaProcessRunOptions } from "./process-runner";
 import type { TempWorkspaceOptions } from "./temp-workspace";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
@@ -39,9 +40,55 @@ export interface FfmpegSession {
   readonly runner: MediaProcessRunner;
   readonly workspaceOptions: TempWorkspaceOptions;
   getInstallInstructions(): string;
+  getAvailabilityError(): unknown;
   checkAvailable(): Promise<boolean>;
   runFfmpeg(args: readonly string[], options?: MediaProcessRunOptions): ReturnType<MediaProcessRunner["runFfmpeg"]>;
   runFfprobe(args: readonly string[], options?: MediaProcessRunOptions): ReturnType<MediaProcessRunner["runFfprobe"]>;
+}
+
+function executablePathValue(): string | undefined {
+  return process.env.PATH ?? process.env.Path ?? process.env.path;
+}
+
+function executableFileName(executable: string): string {
+  if (process.platform === "win32" && !/\.exe$/i.test(executable)) return `${executable}.exe`;
+  return executable;
+}
+
+/**
+ * Produce absolute executable candidates from the current process PATH.
+ * Existence is deliberately not checked synchronously: checkAvailable() probes
+ * candidates through MediaProcessRunner, preserving Apexify's no-sync-I/O runtime policy.
+ */
+export function executableCandidatesFromPath(executable: string, pathValue = executablePathValue()): string[] {
+  if (!pathValue) return [];
+  const fileName = executableFileName(executable);
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  for (const rawEntry of pathValue.split(path.delimiter)) {
+    const trimmed = rawEntry.trim();
+    const directory = trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+      ? trimmed.slice(1, -1)
+      : trimmed;
+    if (!directory) continue;
+    const candidate = path.resolve(directory, fileName);
+    const key = process.platform === "win32" ? candidate.toLowerCase() : candidate;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(candidate);
+  }
+  return candidates;
+}
+
+function pathExecutablePairs(pathValue = executablePathValue()): Array<{ ffmpegPath: string; ffprobePath: string }> {
+  const ffmpegCandidates = executableCandidatesFromPath("ffmpeg", pathValue);
+  const ffprobeCandidates = executableCandidatesFromPath("ffprobe", pathValue);
+  const count = Math.min(ffmpegCandidates.length, ffprobeCandidates.length);
+  const pairs: Array<{ ffmpegPath: string; ffprobePath: string }> = [];
+  for (let index = 0; index < count; index++) {
+    pairs.push({ ffmpegPath: ffmpegCandidates[index]!, ffprobePath: ffprobeCandidates[index]! });
+  }
+  return pairs;
 }
 
 function commonFfmpegPaths(): string[] {
@@ -73,6 +120,7 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
     ffmpegPath: explicitFfmpeg ?? "ffmpeg",
     ffprobePath: explicitFfprobe ?? "ffprobe",
   });
+  const initialExecutablePaths = runner.getExecutablePaths();
   const workspaceOptions: TempWorkspaceOptions = {
     rootDirectory: options.tempDirectory ?? runtime.temp.rootDirectory ?? process.env.APEXIFY_TEMP_DIR,
     retain: options.retainTempFiles ?? runtime.temp.retainFiles,
@@ -89,6 +137,7 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
 
   let checked = false;
   let available = false;
+  let availabilityError: unknown;
 
   async function probePair(): Promise<boolean> {
     const ffmpeg = getDefaultApexifyRuntimeConfig().ffmpeg;
@@ -103,8 +152,10 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
         maxStdoutBytes: Math.min(ffmpeg.maxStdoutBytes, 1024 * 1024),
         maxStderrBytes: Math.min(ffmpeg.maxStderrBytes, 1024 * 1024),
       });
+      availabilityError = undefined;
       return true;
-    } catch {
+    } catch (error) {
+      availabilityError = error;
       return false;
     }
   }
@@ -113,6 +164,7 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
     runner,
     workspaceOptions,
     getInstallInstructions: () => buildFfmpegInstallGuide(),
+    getAvailabilityError: () => availabilityError,
     runFfmpeg: (args, runOptions) => runner.runFfmpeg(args, { ...defaultProcessOptions(), ...runOptions }),
     runFfprobe: (args, runOptions) => runner.runFfprobe(args, { ...defaultProcessOptions(), ...runOptions }),
 
@@ -127,6 +179,14 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
 
       // Only auto-discover when the caller did not explicitly configure executables.
       if (!explicitFfmpeg && !explicitFfprobe) {
+        for (const executablePaths of pathExecutablePairs()) {
+          runner.setExecutablePaths(executablePaths);
+          if (await probePair()) {
+            available = true;
+            checked = true;
+            return true;
+          }
+        }
         for (const ffmpegPath of commonFfmpegPaths()) {
           const ffprobePath = pairedFfprobePath(ffmpegPath);
           runner.setExecutablePaths({ ffmpegPath, ffprobePath });
@@ -136,7 +196,7 @@ export function createFfmpegSession(options: FfmpegSessionOptions = {}): FfmpegS
             return true;
           }
         }
-        runner.setExecutablePaths({ ffmpegPath: "ffmpeg", ffprobePath: "ffprobe" });
+        runner.setExecutablePaths(initialExecutablePaths);
       }
 
       available = false;

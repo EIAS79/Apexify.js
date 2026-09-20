@@ -65,8 +65,15 @@ export class VideoOperations {
 
   private async ensureAvailable(): Promise<void> {
     if (!(await this.session.checkAvailable())) {
-      throw new ApexifyProcessError("Video processing features require FFmpeg/ffprobe to be installed.", {
-        details: { installInstructions: this.session.getInstallInstructions() },
+      const cause = this.session.getAvailabilityError();
+      const executablePaths = this.session.runner.getExecutablePaths();
+      throw new ApexifyProcessError("Video processing features require working FFmpeg/ffprobe executables.", {
+        cause,
+        details: {
+          installInstructions: this.session.getInstallInstructions(),
+          ...executablePaths,
+          probeError: cause instanceof Error ? cause.message : cause === undefined ? undefined : String(cause),
+        },
       });
     }
   }
