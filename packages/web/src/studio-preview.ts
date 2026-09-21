@@ -2285,8 +2285,22 @@ function phase7Path(value: Jsonish): Path2D {
     else if (type === 'circle') path.arc(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radius,0)), 0, Math.PI*2);
     else if (type === 'roundedRect') {
       const x=numberOf(command.x,0), y=numberOf(command.y,0), w=numberOf(command.width,0), h=numberOf(command.height,0);
-      const radius = typeof command.radius === 'number' ? Math.max(0,command.radius) : 0;
-      if (typeof path.roundRect === 'function') path.roundRect(x,y,w,h,radius); else path.rect(x,y,w,h);
+      const maxRadius=Math.max(0,Math.min(Math.abs(w)/2,Math.abs(h)/2));
+      const radius=isRecord(command.radius)?command.radius:null;
+      const tl=radius?Math.min(Math.max(0,numberOf(radius.tl,0)),maxRadius):Math.min(Math.max(0,numberOf(command.radius,0)),maxRadius);
+      const tr=radius?Math.min(Math.max(0,numberOf(radius.tr,0)),maxRadius):tl;
+      const br=radius?Math.min(Math.max(0,numberOf(radius.br,0)),maxRadius):tl;
+      const bl=radius?Math.min(Math.max(0,numberOf(radius.bl,0)),maxRadius):tl;
+      path.moveTo(x+tl,y);
+      path.lineTo(x+w-tr,y);
+      path.quadraticCurveTo(x+w,y,x+w,y+tr);
+      path.lineTo(x+w,y+h-br);
+      path.quadraticCurveTo(x+w,y+h,x+w-br,y+h);
+      path.lineTo(x+bl,y+h);
+      path.quadraticCurveTo(x,y+h,x,y+h-bl);
+      path.lineTo(x,y+tl);
+      path.quadraticCurveTo(x,y,x+tl,y);
+      path.closePath();
     } else if (type === 'polygon') {
       const points = Array.isArray(command.points) ? command.points.filter(isRecord) : [];
       if (points.length) {
@@ -2303,12 +2317,14 @@ function phase7Path(value: Jsonish): Path2D {
       }
       path.closePath();
     } else if (type === 'arrow') {
-      const x=numberOf(command.x,0), y=numberOf(command.y,0), length=Math.max(0,numberOf(command.length,0)), angle=numberOf(command.angle,0);
-      const head=Math.max(0,numberOf(command.headLength,Math.min(12,length*.25))), spread=numberOf(command.headAngle,Math.PI/6);
-      const ex=x+Math.cos(angle)*length, ey=y+Math.sin(angle)*length;
+      const x=numberOf(command.x,0), y=numberOf(command.y,0), length=Math.max(0,numberOf(command.length,0));
+      const rad=numberOf(command.angle,0)*Math.PI/180;
+      const head=Math.max(0,numberOf(command.headLength,length*.3));
+      const spread=numberOf(command.headAngle,45)*Math.PI/180;
+      const ex=x+Math.cos(rad)*length, ey=y+Math.sin(rad)*length;
       path.moveTo(x,y); path.lineTo(ex,ey);
-      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(angle-spread)*head,ey-Math.sin(angle-spread)*head);
-      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(angle+spread)*head,ey-Math.sin(angle+spread)*head);
+      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(rad-spread)*head,ey-Math.sin(rad-spread)*head);
+      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(rad+spread)*head,ey-Math.sin(rad+spread)*head);
     } else throw new Error('Unsupported Apexify Web path command: '+type);
   }
   return path;
@@ -2319,12 +2335,21 @@ function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonis
   const stroke=isRecord(options.stroke)?options.stroke:null, fill=isRecord(options.fill)?options.fill:null, shadow=isRecord(options.shadow)?options.shadow:null;
   const opacity=Math.min(1,Math.max(0,numberOf(options.opacity,1)));
   ctx.save();
-  const ox=numberOf(transform.originX,0), oy=numberOf(transform.originY,0);
-  if (ox||oy) ctx.translate(ox,oy);
-  ctx.translate(numberOf(transform.translateX,0),numberOf(transform.translateY,0));
-  const rotate=numberOf(transform.rotate,0); if (rotate) ctx.rotate(rotate*Math.PI/180);
-  ctx.scale(numberOf(transform.scaleX,1),numberOf(transform.scaleY,1));
-  if (ox||oy) ctx.translate(-ox,-oy);
+  const hasOrigin=typeof transform.originX==='number'&&typeof transform.originY==='number';
+  const rotate=numberOf(transform.rotate,0);
+  const scaleX=numberOf(transform.scaleX,1),scaleY=numberOf(transform.scaleY,1);
+  if(hasOrigin){
+    const ox=numberOf(transform.originX,0),oy=numberOf(transform.originY,0);
+    ctx.translate(ox,oy);
+    if(rotate)ctx.rotate(rotate*Math.PI/180);
+    if(scaleX!==1||scaleY!==1)ctx.scale(scaleX,scaleY);
+    ctx.translate(-ox,-oy);
+  }else{
+    const tx=numberOf(transform.translateX,0),ty=numberOf(transform.translateY,0);
+    if(tx||ty)ctx.translate(tx,ty);
+    if(rotate)ctx.rotate(rotate*Math.PI/180);
+    if(scaleX!==1||scaleY!==1)ctx.scale(scaleX,scaleY);
+  }
   const composite=stringOf(options.globalCompositeOperation,''); if (composite) { try { ctx.globalCompositeOperation=composite as GlobalCompositeOperation; } catch {} }
   if (shadow) { ctx.shadowColor=stringOf(shadow.color,'rgba(0,0,0,.45)'); ctx.shadowBlur=Math.max(0,numberOf(shadow.blur,0)); ctx.shadowOffsetX=numberOf(shadow.offsetX,0); ctx.shadowOffsetY=numberOf(shadow.offsetY,0); }
   if (stroke) {
@@ -2366,13 +2391,34 @@ function phase7Manipulate(ctx: CanvasRenderingContext2D, raw: Jsonish, width:num
   const w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))), h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))), filter=stringOf(options.filter,''), intensity=Math.min(1,Math.max(0,numberOf(options.intensity,1)));
   if(!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
   const image=ctx.getImageData(x,y,w,h),d=image.data,blend=(a:number,b:number)=>Math.round(a+(b-a)*intensity);
-  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];let nr=r,ng=g,nb=b;if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}else if(filter==='brightness'){nr=Math.min(255,r*1.2);ng=Math.min(255,g*1.2);nb=Math.min(255,b*1.2);}else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*1.2+128));ng=Math.min(255,Math.max(0,(g-128)*1.2+128));nb=Math.min(255,Math.max(0,(b-128)*1.2+128));}else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,q+(r-q)*1.35);ng=Math.min(255,q+(g-q)*1.35);nb=Math.min(255,q+(b-q)*1.35);}d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);}
+  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];let nr=r,ng=g,nb=b;if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}else if(filter==='brightness'){nr=Math.min(255,r+128);ng=Math.min(255,g+128);nb=Math.min(255,b+128);}else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*2+128));ng=Math.min(255,Math.max(0,(g-128)*2+128));nb=Math.min(255,Math.max(0,(b-128)*2+128));}else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,Math.max(0,q+(r-q)*2));ng=Math.min(255,Math.max(0,q+(g-q)*2));nb=Math.min(255,Math.max(0,q+(b-q)*2));}d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);}
   ctx.putImageData(image,x,y);
 }
 
 function phase7Color(ctx:CanvasRenderingContext2D,x:number,y:number){const d=ctx.getImageData(Math.max(0,Math.floor(x)),Math.max(0,Math.floor(y)),1,1).data;return{r:d[0],g:d[1],b:d[2],a:d[3]};}
-function phase7Region(ctx:CanvasRenderingContext2D,region:RecordValue,x:number,y:number,options:RecordValue){const type=stringOf(region.type,'rect'),t=Math.max(0,numberOf(options.tolerance,0));if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0),hit=x>=rx-t&&x<=rx+rw+t&&y>=ry-t&&y<=ry+rh+t;return{hit,hitType:hit?'fill':'outside'};}if(type==='circle'){const hit=Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0))<=Math.max(0,numberOf(region.radius,0))+t;return{hit,hitType:hit?'fill':'outside'};}if(type==='path'&&Array.isArray(region.path)){const hit=ctx.isPointInPath(phase7Path(region.path),x,y,stringOf(region.fillRule,'nonzero') as CanvasFillRule);return{hit,hitType:hit?'fill':'outside'};}return{hit:false,hitType:'outside'};}
-function phase7Distance(region:RecordValue,x:number,y:number){const type=stringOf(region.type,'');if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0);return Math.hypot(Math.max(rx-x,0,x-(rx+rw)),Math.max(ry-y,0,y-(ry+rh)));}if(type==='circle')return Math.max(0,Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0))-Math.max(0,numberOf(region.radius,0)));return null;}
+function phase7SegmentDistance(px:number,py:number,x1:number,y1:number,x2:number,y2:number){const vx=x2-x1,vy=y2-y1,len=vx*vx+vy*vy;if(len===0)return Math.hypot(px-x1,py-y1);const t=Math.max(0,Math.min(1,((px-x1)*vx+(py-y1)*vy)/len));return Math.hypot(px-(x1+t*vx),py-(y1+t*vy));}
+function phase7EllipseLocal(region:RecordValue,x:number,y:number){const cx=numberOf(region.x,0),cy=numberOf(region.y,0),rotation=numberOf(region.rotation,0),cos=Math.cos(-rotation),sin=Math.sin(-rotation),dx=x-cx,dy=y-cy;return{cx,cy,rotation,cos,sin,tx:dx*cos-dy*sin,ty:dx*sin+dy*cos,rx:Math.max(.000001,numberOf(region.radiusX,1)),ry:Math.max(.000001,numberOf(region.radiusY,1))};}
+function phase7PolygonPoints(region:RecordValue){return Array.isArray(region.points)?region.points.filter(isRecord):[];}
+function phase7PolygonHit(points:RecordValue[],x:number,y:number,tolerance:number){for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];if(phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0))<=tolerance+1e-9)return true;}let inside=false;for(let i=0,j=points.length-1;i<points.length;j=i++){const a=points[i],b=points[j],ax=numberOf(a.x,0),ay=numberOf(a.y,0),bx=numberOf(b.x,0),by=numberOf(b.y,0);if((ay>y)!==(by>y)&&x<((bx-ax)*(y-ay))/(by-ay)+ax)inside=!inside;}return inside;}
+function phase7EllipseDistance(region:RecordValue,x:number,y:number){const q=phase7EllipseLocal(region,x,y);const angle=Math.atan2(q.ty*q.rx,q.tx*q.ry),lx=q.rx*Math.cos(angle),ly=q.ry*Math.sin(angle),ex=q.cx+lx*q.cos-ly*q.sin,ey=q.cy+lx*q.sin+ly*q.cos;return Math.hypot(x-ex,y-ey);}
+function phase7Region(ctx:CanvasRenderingContext2D,region:RecordValue,x:number,y:number,options:RecordValue){
+  const type=stringOf(region.type,'rect'),t=Math.max(0,numberOf(options.tolerance,0));
+  let hit=false,stroke=false,distance: number | undefined;
+  if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0);hit=x>=rx-t&&x<=rx+rw+t&&y>=ry-t&&y<=ry+rh+t;distance=hit?0:Math.hypot(Math.max(rx-x,0,x-(rx+rw)),Math.max(ry-y,0,y-(ry+rh)));if(hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){const half=numberOf(options.strokeWidth,1)/2+t,outer=x>=rx-half&&x<=rx+rw+half&&y>=ry-half&&y<=ry+rh+half,inner=x>rx+half&&x<rx+rw-half&&y>ry+half&&y<ry+rh-half;stroke=outer&&!inner;}}
+  else if(type==='circle'){const radial=Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0)),radius=Math.max(0,numberOf(region.radius,0));hit=radial<=radius+t;distance=hit?0:radial-radius;if(hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number')stroke=Math.abs(radial-radius)<=numberOf(options.strokeWidth,1)/2+t;}
+  else if(type==='ellipse'){const q=phase7EllipseLocal(region,x,y),rx=q.rx+t,ry=q.ry+t;hit=(q.tx*q.tx)/(rx*rx)+(q.ty*q.ty)/(ry*ry)<=1+1e-9;distance=hit?0:phase7EllipseDistance(region,x,y);}
+  else if(type==='polygon'){const points=phase7PolygonPoints(region);hit=points.length>=3&&phase7PolygonHit(points,x,y,t);if(hit)distance=0;else if(points.length>=2){let min=Infinity;for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];min=Math.min(min,phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0)));}distance=Number.isFinite(min)?min:undefined;}}
+  else if(type==='path'&&Array.isArray(region.path)){const path=phase7Path(region.path);hit=ctx.isPointInPath(path,x,y,stringOf(region.fillRule,stringOf(options.fillRule,'nonzero')) as CanvasFillRule);}
+  return{hit,hitType:hit?(stroke?'stroke':'fill'):'outside',...(distance!==undefined?{distance}:{})};
+}
+function phase7Distance(region:RecordValue,x:number,y:number){
+  const type=stringOf(region.type,'');
+  if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0);return Math.hypot(Math.max(rx-x,0,x-(rx+rw)),Math.max(ry-y,0,y-(ry+rh)));}
+  if(type==='circle')return Math.max(0,Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0))-Math.max(0,numberOf(region.radius,0)));
+  if(type==='ellipse'){const q=phase7EllipseLocal(region,x,y);return(q.tx*q.tx)/(q.rx*q.rx)+(q.ty*q.ty)/(q.ry*q.ry)<=1+1e-9?0:phase7EllipseDistance(region,x,y);}
+  if(type==='polygon'){const points=phase7PolygonPoints(region);if(points.length<3)return null;if(phase7PolygonHit(points,x,y,0))return 0;let min=Infinity;for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];min=Math.min(min,phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0)));}return Number.isFinite(min)?min:null;}
+  return null;
+}
 
 export async function renderApexifyWebPreview(
   source: string,
@@ -2414,15 +2460,23 @@ export async function renderApexifyWebPreview(
       }
     };
 
-    const pathCommandsByIdentifier = new Map<string, Jsonish>();
-    for (const call of calls.filter((item) => item.method === 'path2d.create' && item.args[0])) {
-      const identifier = assignedIdentifierForCall(source, call);
-      if (identifier) pathCommandsByIdentifier.set(identifier, resolveCallArgument(source, call, call.args[0], resolve));
+    const pathDefinitionsByIdentifier = new Map<string, Array<{ index: number; value: Jsonish }>>();
+    for (const pathCall of calls.filter((item) => item.method === 'path2d.create' && item.args[0])) {
+      const identifier = assignedIdentifierForCall(source, pathCall);
+      if (!identifier) continue;
+      const definitions = pathDefinitionsByIdentifier.get(identifier) ?? [];
+      definitions.push({ index: pathCall.index, value: resolveCallArgument(source, pathCall, pathCall.args[0], resolve) });
+      pathDefinitionsByIdentifier.set(identifier, definitions);
     }
     const resolvePathArgument = (call: Call, expression: string | undefined): Jsonish => {
       if (!expression) return [];
       const identifier = expression.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
-      if (identifier && pathCommandsByIdentifier.has(identifier)) return pathCommandsByIdentifier.get(identifier)!;
+      if (identifier) {
+        const definitions = pathDefinitionsByIdentifier.get(identifier) ?? [];
+        for (let i = definitions.length - 1; i >= 0; i -= 1) {
+          if (definitions[i].index < call.index) return definitions[i].value;
+        }
+      }
       return resolveCallArgument(source, call, expression, resolve);
     };
 
