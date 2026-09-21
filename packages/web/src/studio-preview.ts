@@ -279,8 +279,8 @@ function extractCalls(source: string, methods: string[]): Call[] {
   const calls: Call[] = [];
 
   for (const method of methods) {
-    const methodPattern = method.split('.').join('\\\\s*\\\\.\\\\s*');
-    const re = new RegExp('\\\\.\\\\s*' + methodPattern + '\\\\s*\\\\(', 'g');
+    const methodPattern = method.split('.').join('\\s*\\.\\s*');
+    const re = new RegExp('\\.\\s*' + methodPattern + '\\s*\\(', 'g');
     let match: RegExpExecArray | null;
 
     while ((match = re.exec(source))) {
