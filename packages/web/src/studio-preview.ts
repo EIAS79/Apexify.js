@@ -853,79 +853,341 @@ function applyBlendMode(ctx: CanvasRenderingContext2D, value: Jsonish | undefine
   }
 }
 
+function previewTextLineDecoration(
+  ctx: CanvasRenderingContext2D,
+  value: Jsonish | undefined,
+  fallbackColor: string,
+  x0: number,
+  x1: number,
+  y: number,
+  fontSize: number,
+) {
+  if (!value) return;
+  const config = isRecord(value) ? value : {};
+  ctx.save();
+  ctx.lineWidth = Math.max(1, numberOf(config.width, fontSize * 0.05));
+  ctx.strokeStyle = isRecord(config.gradient)
+    ? createGradient(ctx, config.gradient, Math.max(1, x1 - x0), Math.max(1, fontSize))
+    : stringOf(config.color, fallbackColor);
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x1, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function previewTextLocalBounds(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+): { width: number; left: number; right: number } {
+  const width = ctx.measureText(text).width;
+  const align = ctx.textAlign;
+  if (align === 'center') return { width, left: -width / 2, right: width / 2 };
+  if (align === 'right' || align === 'end') return { width, left: -width, right: 0 };
+  return { width, left: 0, right: width };
+}
+
+function drawPreviewTextLine(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  item: RecordValue,
+  x: number,
+  y: number,
+  fontSize: number,
+) {
+  const fill = isRecord(item.fill) ? item.fill : {};
+  const effects = isRecord(item.effects) ? item.effects : {};
+  const decorations = isRecord(item.decorations) ? item.decorations : {};
+  const stroke = isRecord(item.stroke) ? item.stroke : {};
+  const highlight = isRecord(effects.highlight)
+    ? effects.highlight
+    : isRecord(item.highlight)
+      ? item.highlight
+      : null;
+  const glow = isRecord(effects.glow)
+    ? effects.glow
+    : isRecord(item.glow)
+      ? item.glow
+      : null;
+  const shadow = isRecord(effects.shadow)
+    ? effects.shadow
+    : isRecord(item.shadow)
+      ? item.shadow
+      : null;
+  const { width, left, right } = previewTextLocalBounds(ctx, text);
+  const fillColor = stringOf(fill.color, stringOf(item.color, '#000000'));
+
+  if (highlight) {
+    ctx.save();
+    ctx.globalAlpha *= Math.min(1, Math.max(0, numberOf(highlight.opacity, .3)));
+    ctx.fillStyle = isRecord(highlight.gradient)
+      ? createGradient(ctx, highlight.gradient, Math.max(1, width), fontSize)
+      : stringOf(highlight.color, '#ffff00');
+    ctx.fillRect(x + left, y - fontSize * .8, Math.max(1, width), fontSize);
+    ctx.restore();
+  }
+
+  if (glow) {
+    ctx.save();
+    ctx.globalAlpha *= Math.min(1, Math.max(0, numberOf(glow.opacity, .8)));
+    ctx.shadowColor = isRecord(glow.gradient)
+      ? stringOf(
+          Array.isArray(glow.gradient.colors) && isRecord(glow.gradient.colors[0])
+            ? glow.gradient.colors[0].color
+            : undefined,
+          '#ffffff',
+        )
+      : stringOf(glow.color, '#ffffff');
+    ctx.shadowBlur = Math.max(0, numberOf(glow.intensity, 10));
+    ctx.fillStyle = fillColor;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  if (shadow) {
+    ctx.save();
+    ctx.globalAlpha *= Math.min(1, Math.max(0, numberOf(shadow.opacity, 1)));
+    ctx.shadowColor = isRecord(shadow.gradient)
+      ? stringOf(
+          Array.isArray(shadow.gradient.colors) && isRecord(shadow.gradient.colors[0])
+            ? shadow.gradient.colors[0].color
+            : undefined,
+          'rgba(0,0,0,.5)',
+        )
+      : stringOf(shadow.color, 'rgba(0,0,0,.5)');
+    ctx.shadowBlur = Math.max(0, numberOf(shadow.blur, 4));
+    ctx.shadowOffsetX = numberOf(shadow.offsetX, 2);
+    ctx.shadowOffsetY = numberOf(shadow.offsetY, 2);
+    ctx.fillStyle = fillColor;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  const strokeWidth = Math.max(0, numberOf(stroke.width, 0));
+  if (strokeWidth > 0) {
+    ctx.save();
+    ctx.globalAlpha *= Math.min(1, Math.max(0, numberOf(stroke.opacity, 1)));
+    ctx.lineWidth = strokeWidth;
+    const strokeStyle = stringOf(stroke.style, 'solid');
+    if (strokeStyle === 'dashed') ctx.setLineDash([strokeWidth * 3, strokeWidth * 2]);
+    else if (strokeStyle === 'dotted') {
+      ctx.setLineDash([strokeWidth, strokeWidth]);
+      ctx.lineCap = 'round';
+    }
+    ctx.strokeStyle = isRecord(stroke.gradient)
+      ? createGradient(ctx, stroke.gradient, Math.max(1, width), fontSize)
+      : stringOf(stroke.color, '#000000');
+    ctx.strokeText(text, x, y);
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.fillStyle = isRecord(fill.gradient)
+    ? createGradient(ctx, fill.gradient, Math.max(1, width), fontSize)
+    : isRecord(item.gradient)
+      ? createGradient(ctx, item.gradient, Math.max(1, width), fontSize)
+      : fillColor;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+
+  const underline = decorations.underline ?? item.underline;
+  const overline = decorations.overline ?? item.overline;
+  const strikethrough = decorations.strikethrough ?? item.strikethrough;
+  previewTextLineDecoration(ctx, underline, fillColor, x + left, x + right, y + fontSize * .12, fontSize);
+  previewTextLineDecoration(ctx, overline, fillColor, x + left, x + right, y - fontSize * .78, fontSize);
+  previewTextLineDecoration(ctx, strikethrough, fillColor, x + left, x + right, y - fontSize * .3, fontSize);
+}
+
+function previewTextGraphemes(value: string): string[] {
+  try {
+    const Segmenter = (Intl as unknown as {
+      Segmenter?: new (
+        locales?: string,
+        options?: { granularity: 'grapheme' },
+      ) => { segment(text: string): Iterable<{ segment: string }> };
+    }).Segmenter;
+    if (Segmenter) {
+      return [...new Segmenter(undefined, { granularity: 'grapheme' }).segment(value)]
+        .map((entry) => entry.segment);
+    }
+  } catch {}
+  return Array.from(value);
+}
+
+function drawCurvedPreviewText(
+  ctx: CanvasRenderingContext2D,
+  line: string,
+  item: RecordValue,
+  curve: RecordValue,
+  fontSize: number,
+) {
+  const sweepDegrees = numberOf(curve.sweepAngle, 0);
+  if (!line || sweepDegrees <= 0 || sweepDegrees >= 360) {
+    drawPreviewTextLine(ctx, line, item, 0, 0, fontSize);
+    return;
+  }
+  const units = previewTextGraphemes(line);
+  if (!units.length) return;
+
+  const centers: number[] = [];
+  let previous = 0;
+  let acc = '';
+  for (const unit of units) {
+    acc += unit;
+    const right = ctx.measureText(acc).width;
+    centers.push((previous + right) / 2);
+    previous = right;
+  }
+  const width = Math.max(ctx.measureText(line).width, previous, 1e-6);
+  const userSweep = (sweepDegrees * Math.PI) / 180;
+  const fitRadius = width / userSweep;
+  const mode = stringOf(curve.layoutMode, 'clamp');
+  const requestedRadius =
+    typeof curve.radius === 'number' ? Math.max(.001, curve.radius) : undefined;
+  let radius = fitRadius;
+  let sweep = userSweep;
+  if (mode === 'override') {
+    radius = requestedRadius ?? fitRadius;
+    sweep = Math.max(userSweep, width / radius);
+  } else if (mode === 'clamp') {
+    radius = requestedRadius === undefined
+      ? fitRadius
+      : Math.max(requestedRadius, fitRadius);
+  }
+  const up = boolOf(curve.up, true);
+  const baselineOffset = numberOf(curve.baselineOffset, 0);
+  const drawRadius = radius + baselineOffset;
+  const startExtra = (numberOf(curve.startAngleDeg, 0) * Math.PI) / 180;
+  const centerY = up ? radius : -radius;
+
+  units.forEach((unit, index) => {
+    const t = centers[index]! / width;
+    const angle = up
+      ? startExtra - Math.PI / 2 - sweep / 2 + t * sweep
+      : startExtra + Math.PI / 2 + sweep / 2 - t * sweep;
+    const px = drawRadius * Math.cos(angle);
+    const py = centerY + drawRadius * Math.sin(angle);
+    const rotation = up
+      ? angle + Math.PI / 2
+      : Math.atan2(-Math.cos(angle), Math.sin(angle));
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(rotation);
+    const previousAlign = ctx.textAlign;
+    const previousBaseline = ctx.textBaseline;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    drawPreviewTextLine(ctx, unit, item, 0, 0, fontSize);
+    ctx.textAlign = previousAlign;
+    ctx.textBaseline = previousBaseline;
+    ctx.restore();
+  });
+}
+
+function previewWrappedTextLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string[] {
+  if (!(maxWidth > 0)) return text.split('\n');
+  const rendered: string[] = [];
+  for (const explicitLine of text.split('\n')) {
+    const words = explicitLine.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      rendered.push('');
+      continue;
+    }
+    let line = words[0]!;
+    for (let wordIndex = 1; wordIndex < words.length; wordIndex += 1) {
+      const candidate = line + ' ' + words[wordIndex]!;
+      if (ctx.measureText(candidate).width <= maxWidth) line = candidate;
+      else {
+        rendered.push(line);
+        line = words[wordIndex]!;
+      }
+    }
+    rendered.push(line);
+  }
+  return rendered;
+}
+
 function applyText(ctx: CanvasRenderingContext2D, value: Jsonish) {
   const list = Array.isArray(value) ? value : [value];
 
   for (const item of list) {
     if (!isRecord(item)) continue;
     const font = isRecord(item.font) ? item.font : {};
-    const fill = isRecord(item.fill) ? item.fill : {};
-    const stroke = isRecord(item.stroke) ? item.stroke : {};
+    const decorations = isRecord(item.decorations) ? item.decorations : {};
+    const layout = isRecord(item.layout) ? item.layout : {};
     const placement = isRecord(item.placement) ? item.placement : {};
+    const fill = isRecord(item.fill) ? item.fill : {};
 
-    const size = Math.max(1, numberOf(font.size, 32));
-    const family = stringOf(font.family, 'Arial');
-    const weight =
-      typeof font.weight === 'number'
-        ? String(font.weight)
-        : boolOf(item.bold, false)
-          ? '700'
-          : stringOf(font.weight, '400');
-    const style = boolOf(item.italic, false) ? 'italic' : stringOf(font.style, 'normal');
+    const size = Math.max(1, numberOf(font.size, numberOf(item.fontSize, 16)));
+    const family = stringOf(
+      font.name,
+      stringOf(
+        item.fontName,
+        stringOf(font.family, stringOf(item.fontFamily, 'Arial')),
+      ),
+    );
+    const bold = boolOf(decorations.bold, boolOf(item.bold, false));
+    const italic = boolOf(decorations.italic, boolOf(item.italic, false));
     const x = numberOf(item.x, 0);
     const y = numberOf(item.y, 0);
-    const rotation = (numberOf(item.rotation, 0) * Math.PI) / 180;
+    const rotation =
+      (numberOf(placement.rotation, numberOf(item.rotation, 0)) * Math.PI) / 180;
+    const opacity = Math.min(
+      1,
+      Math.max(0, numberOf(fill.opacity, numberOf(item.opacity, 1))),
+    );
+    const maxWidth = numberOf(layout.maxWidth, numberOf(item.maxWidth, 0));
+    const maxHeight = numberOf(layout.maxHeight, numberOf(item.maxHeight, 0));
+    const lineHeightFactor = Math.max(
+      .01,
+      numberOf(layout.lineHeight, numberOf(item.lineHeight, 1.4)),
+    );
+    const lineHeight = lineHeightFactor * size;
+    const curve = isRecord(item.textOnCurve) ? item.textOnCurve : null;
 
     ctx.save();
-    ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(item.opacity, 1)));
-    applyBlendMode(ctx, item.blendMode);
-    applyShadow(ctx, item.shadow);
+    ctx.globalAlpha = opacity;
     ctx.translate(x, y);
     if (rotation) ctx.rotate(rotation);
-    ctx.font = `${style} ${weight} ${size}px ${family}`;
-    ctx.textAlign = stringOf(item.textAlign, stringOf(placement.textAlign, 'left')) as CanvasTextAlign;
-    ctx.textBaseline = stringOf(item.textBaseline, stringOf(placement.textBaseline, 'alphabetic')) as CanvasTextBaseline;
-    if (isRecord(item.gradient)) {
-      ctx.fillStyle = createGradient(ctx, item.gradient, Math.max(1, numberOf(item.maxWidth, size * 12)), size * 2);
-    } else {
-      ctx.fillStyle = stringOf(fill.color, stringOf(item.color, '#ffffff'));
+    ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px "${family}"`;
+    if ('letterSpacing' in ctx) {
+      (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+        numberOf(layout.letterSpacing, numberOf(item.letterSpacing, 0)) + 'px';
     }
+    if ('wordSpacing' in ctx) {
+      (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing =
+        numberOf(layout.wordSpacing, numberOf(item.wordSpacing, 0)) + 'px';
+    }
+    ctx.textAlign = stringOf(
+      placement.textAlign,
+      stringOf(item.textAlign, 'left'),
+    ) as CanvasTextAlign;
+    ctx.textBaseline = stringOf(
+      placement.textBaseline,
+      stringOf(item.textBaseline, 'alphabetic'),
+    ) as CanvasTextBaseline;
 
     const text = stringOf(item.text, '');
-    const maxWidth = numberOf(item.maxWidth, 0);
-    const lineHeight = Math.max(0.8, numberOf(item.lineHeight, 1.2));
-    const explicitLines = text.split('\n');
-
-    if (maxWidth > 0) {
-      const rendered: string[] = [];
-      for (const explicitLine of explicitLines) {
-        const words = explicitLine.split(/\s+/).filter(Boolean);
-        if (!words.length) {
-          rendered.push('');
-          continue;
-        }
-        let line = words[0];
-        for (let wordIndex = 1; wordIndex < words.length; wordIndex += 1) {
-          const candidate = line + ' ' + words[wordIndex];
-          if (ctx.measureText(candidate).width <= maxWidth) line = candidate;
-          else {
-            rendered.push(line);
-            line = words[wordIndex];
-          }
-        }
-        rendered.push(line);
-      }
-      rendered.forEach((line, lineIndex) => ctx.fillText(line, 0, lineIndex * size * lineHeight));
+    if (curve) {
+      text.split('\n').forEach((line, lineIndex) => {
+        ctx.save();
+        ctx.translate(0, lineIndex * lineHeight);
+        drawCurvedPreviewText(ctx, line, item, curve, size);
+        ctx.restore();
+      });
     } else {
-      explicitLines.forEach((line, lineIndex) => ctx.fillText(line, 0, lineIndex * size * lineHeight));
-    }
-
-    const strokeWidth = numberOf(stroke.width, 0);
-    if (strokeWidth > 0) {
-      ctx.lineWidth = strokeWidth;
-      ctx.strokeStyle = stringOf(stroke.color, '#000000');
-      if (maxWidth > 0) ctx.strokeText(text, 0, 0, maxWidth);
-      else ctx.strokeText(text, 0, 0);
+      const lines = previewWrappedTextLines(ctx, text, maxWidth);
+      const maxLines = maxHeight > 0
+        ? Math.max(0, Math.floor(maxHeight / lineHeight))
+        : lines.length;
+      lines.slice(0, maxLines).forEach((line, lineIndex) => {
+        drawPreviewTextLine(ctx, line, item, 0, lineIndex * lineHeight, size);
+      });
     }
 
     ctx.restore();
