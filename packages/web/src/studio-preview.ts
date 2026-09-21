@@ -24,6 +24,7 @@ export type WebStudioPreviewResult =
       elapsedMs: number;
       supportedApis: string[];
       warnings: string[];
+      results?: Record<string, Jsonish>;
     }
   | {
       ok: false;
@@ -278,7 +279,8 @@ function extractCalls(source: string, methods: string[]): Call[] {
   const calls: Call[] = [];
 
   for (const method of methods) {
-    const re = new RegExp(`\\.\\s*${method}\\s*\\(`, 'g');
+    const methodPattern = method.split('.').join('\\\\s*\\\\.\\\\s*');
+    const re = new RegExp('\\\\.\\\\s*' + methodPattern + '\\\\s*\\\\(', 'g');
     let match: RegExpExecArray | null;
 
     while ((match = re.exec(source))) {
@@ -302,12 +304,12 @@ function assignedIdentifierForCall(source: string, call: Call): string | null {
   ) + 1;
   const prefix = source.slice(start, call.index);
   const match = prefix.match(
-    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*\s*$/,
+    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*$/,
   );
   if (match?.[1]) return match[1];
 
   const reassigned = prefix.match(
-    /([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*\s*$/,
+    /([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*$/,
   );
   return reassigned?.[1] ?? null;
 }
@@ -2258,13 +2260,132 @@ function createChartCanvas(chartType: string, rawData: Jsonish, optionsValue: Js
   return canvas;
 }
 
+
+function phase7PathCommands(value: Jsonish): RecordValue[] {
+  if (!Array.isArray(value)) throw new Error('Path commands must resolve to an array.');
+  const commands = value.filter(isRecord);
+  if (commands.length !== value.length) throw new Error('Every path command must be an object.');
+  if (commands.length > 10000) throw new Error('Apexify Web limits a path to 10,000 commands.');
+  return commands;
+}
+
+function phase7Path(value: Jsonish): Path2D {
+  const path = new Path2D();
+  for (const command of phase7PathCommands(value)) {
+    const type = stringOf(command.type, '');
+    if (type === 'moveTo') path.moveTo(numberOf(command.x, 0), numberOf(command.y, 0));
+    else if (type === 'lineTo') path.lineTo(numberOf(command.x, 0), numberOf(command.y, 0));
+    else if (type === 'arc') path.arc(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radius,0)), numberOf(command.startAngle,0), numberOf(command.endAngle,Math.PI*2), boolOf(command.counterclockwise,false));
+    else if (type === 'arcTo') path.arcTo(numberOf(command.x1,0), numberOf(command.y1,0), numberOf(command.x2,0), numberOf(command.y2,0), Math.max(0,numberOf(command.radius,0)));
+    else if (type === 'quadraticCurveTo') path.quadraticCurveTo(numberOf(command.cpx,0), numberOf(command.cpy,0), numberOf(command.x,0), numberOf(command.y,0));
+    else if (type === 'bezierCurveTo') path.bezierCurveTo(numberOf(command.cp1x,0), numberOf(command.cp1y,0), numberOf(command.cp2x,0), numberOf(command.cp2y,0), numberOf(command.x,0), numberOf(command.y,0));
+    else if (type === 'rect') path.rect(numberOf(command.x,0), numberOf(command.y,0), numberOf(command.width,0), numberOf(command.height,0));
+    else if (type === 'ellipse') path.ellipse(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radiusX,0)), Math.max(0,numberOf(command.radiusY,0)), numberOf(command.rotation,0), numberOf(command.startAngle,0), numberOf(command.endAngle,Math.PI*2), boolOf(command.counterclockwise,false));
+    else if (type === 'closePath') path.closePath();
+    else if (type === 'circle') path.arc(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radius,0)), 0, Math.PI*2);
+    else if (type === 'roundedRect') {
+      const x=numberOf(command.x,0), y=numberOf(command.y,0), w=numberOf(command.width,0), h=numberOf(command.height,0);
+      const radius = typeof command.radius === 'number' ? Math.max(0,command.radius) : 0;
+      if (typeof path.roundRect === 'function') path.roundRect(x,y,w,h,radius); else path.rect(x,y,w,h);
+    } else if (type === 'polygon') {
+      const points = Array.isArray(command.points) ? command.points.filter(isRecord) : [];
+      if (points.length) {
+        path.moveTo(numberOf(points[0].x,0), numberOf(points[0].y,0));
+        for (let i=1;i<points.length;i+=1) path.lineTo(numberOf(points[i].x,0), numberOf(points[i].y,0));
+        path.closePath();
+      }
+    } else if (type === 'star') {
+      const cx=numberOf(command.x,0), cy=numberOf(command.y,0), outer=Math.max(0,numberOf(command.outerRadius,0)), inner=Math.max(0,numberOf(command.innerRadius,outer/2));
+      const points=Math.max(2,Math.min(256,Math.round(numberOf(command.points,5))));
+      for (let i=0;i<points*2;i+=1) {
+        const angle=-Math.PI/2+(i*Math.PI)/points, radius=i%2===0?outer:inner, x=cx+Math.cos(angle)*radius, y=cy+Math.sin(angle)*radius;
+        if (i===0) path.moveTo(x,y); else path.lineTo(x,y);
+      }
+      path.closePath();
+    } else if (type === 'arrow') {
+      const x=numberOf(command.x,0), y=numberOf(command.y,0), length=Math.max(0,numberOf(command.length,0)), angle=numberOf(command.angle,0);
+      const head=Math.max(0,numberOf(command.headLength,Math.min(12,length*.25))), spread=numberOf(command.headAngle,Math.PI/6);
+      const ex=x+Math.cos(angle)*length, ey=y+Math.sin(angle)*length;
+      path.moveTo(x,y); path.lineTo(ex,ey);
+      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(angle-spread)*head,ey-Math.sin(angle-spread)*head);
+      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(angle+spread)*head,ey-Math.sin(angle+spread)*head);
+    } else throw new Error('Unsupported Apexify Web path command: '+type);
+  }
+  return path;
+}
+
+function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonish, width: number, height: number) {
+  const options=isRecord(raw)?raw:{}, transform=isRecord(options.transform)?options.transform:{};
+  const stroke=isRecord(options.stroke)?options.stroke:null, fill=isRecord(options.fill)?options.fill:null, shadow=isRecord(options.shadow)?options.shadow:null;
+  const opacity=Math.min(1,Math.max(0,numberOf(options.opacity,1)));
+  ctx.save();
+  const ox=numberOf(transform.originX,0), oy=numberOf(transform.originY,0);
+  if (ox||oy) ctx.translate(ox,oy);
+  ctx.translate(numberOf(transform.translateX,0),numberOf(transform.translateY,0));
+  const rotate=numberOf(transform.rotate,0); if (rotate) ctx.rotate(rotate*Math.PI/180);
+  ctx.scale(numberOf(transform.scaleX,1),numberOf(transform.scaleY,1));
+  if (ox||oy) ctx.translate(-ox,-oy);
+  const composite=stringOf(options.globalCompositeOperation,''); if (composite) { try { ctx.globalCompositeOperation=composite as GlobalCompositeOperation; } catch {} }
+  if (shadow) { ctx.shadowColor=stringOf(shadow.color,'rgba(0,0,0,.45)'); ctx.shadowBlur=Math.max(0,numberOf(shadow.blur,0)); ctx.shadowOffsetX=numberOf(shadow.offsetX,0); ctx.shadowOffsetY=numberOf(shadow.offsetY,0); }
+  if (stroke) {
+    ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(stroke.opacity,1)));
+    ctx.strokeStyle=isRecord(stroke.gradient)?createGradient(ctx,stroke.gradient,width,height):stringOf(stroke.color,'#ffffff');
+    ctx.lineWidth=Math.max(0,numberOf(stroke.width,1)); ctx.lineCap=stringOf(stroke.lineCap,'butt') as CanvasLineCap; ctx.lineJoin=stringOf(stroke.lineJoin,'miter') as CanvasLineJoin;
+    const dash=Array.isArray(stroke.dashArray)?stroke.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):stringOf(stroke.style,'')==='dashed'?[10,6]:stringOf(stroke.style,'')==='dotted'?[2,5]:[];
+    ctx.setLineDash(dash); ctx.lineDashOffset=numberOf(stroke.dashOffset,0); ctx.stroke(path); ctx.setLineDash([]);
+  }
+  if (fill) {
+    ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(fill.opacity,1)));
+    ctx.fillStyle=isRecord(fill.gradient)?createGradient(ctx,fill.gradient,width,height):stringOf(fill.color,'#ffffff');
+    ctx.fill(path,stringOf(fill.rule,'nonzero') as CanvasFillRule);
+  }
+  ctx.restore();
+}
+
+function phase7Arrow(ctx: CanvasRenderingContext2D,x:number,y:number,angle:number,size:number,style:string,color:string) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(angle); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-size,size*.48); ctx.lineTo(-size,-size*.48); ctx.closePath(); ctx.fillStyle=color; ctx.strokeStyle=color; if(style==='outline')ctx.stroke();else ctx.fill(); ctx.restore();
+}
+
+function phase7Custom(ctx: CanvasRenderingContext2D, raw: Jsonish) {
+  const list=Array.isArray(raw)?raw:[raw];
+  for(const item of list) {
+    if(!isRecord(item))continue;
+    const start=isRecord(item.startCoordinates)?item.startCoordinates:{}, end=isRecord(item.endCoordinates)?item.endCoordinates:{}, style=isRecord(item.lineStyle)?item.lineStyle:{}, arrow=isRecord(item.arrow)?item.arrow:null;
+    const sx=numberOf(start.x,0), sy=numberOf(start.y,0), ex=numberOf(end.x,0), ey=numberOf(end.y,0);
+    ctx.save(); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineWidth=Math.max(0,numberOf(style.width,1)); ctx.strokeStyle=stringOf(style.color,'#ffffff'); ctx.lineJoin=stringOf(style.lineJoin,'miter') as CanvasLineJoin; ctx.lineCap=stringOf(style.lineCap,'butt') as CanvasLineCap;
+    const dash=isRecord(style.lineDash)&&Array.isArray(style.lineDash.dashArray)?style.lineDash.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):[];
+    ctx.setLineDash(dash); if(isRecord(style.lineDash))ctx.lineDashOffset=numberOf(style.lineDash.offset,0); ctx.stroke();
+    if(arrow){const angle=Math.atan2(ey-sy,ex-sx),size=Math.max(1,numberOf(arrow.size,10)),color=stringOf(arrow.color,stringOf(style.color,'#ffffff')),kind=stringOf(arrow.style,'filled');if(boolOf(arrow.start,false))phase7Arrow(ctx,sx,sy,angle+Math.PI,size,kind,color);if(boolOf(arrow.end,false))phase7Arrow(ctx,ex,ey,angle,size,kind,color);}
+    if(Array.isArray(item.markers))for(const marker of item.markers){if(!isRecord(marker))continue;const t=Math.min(1,Math.max(0,numberOf(marker.position,0))),mx=sx+(ex-sx)*t,my=sy+(ey-sy)*t,size=Math.max(1,numberOf(marker.size,6)),shape=stringOf(marker.shape,'circle');ctx.beginPath();ctx.fillStyle=stringOf(marker.color,'#ffffff');if(shape==='square')ctx.rect(mx-size/2,my-size/2,size,size);else if(shape==='diamond'){ctx.moveTo(mx,my-size/2);ctx.lineTo(mx+size/2,my);ctx.lineTo(mx,my+size/2);ctx.lineTo(mx-size/2,my);ctx.closePath();}else ctx.arc(mx,my,size/2,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  }
+}
+
+function phase7Manipulate(ctx: CanvasRenderingContext2D, raw: Jsonish, width:number,height:number) {
+  const options=isRecord(raw)?raw:{}, region=isRecord(options.region)?options.region:{}, x=Math.max(0,Math.floor(numberOf(region.x,0))), y=Math.max(0,Math.floor(numberOf(region.y,0)));
+  const w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))), h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))), filter=stringOf(options.filter,''), intensity=Math.min(1,Math.max(0,numberOf(options.intensity,1)));
+  if(!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
+  const image=ctx.getImageData(x,y,w,h),d=image.data,blend=(a:number,b:number)=>Math.round(a+(b-a)*intensity);
+  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];let nr=r,ng=g,nb=b;if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}else if(filter==='brightness'){nr=Math.min(255,r*1.2);ng=Math.min(255,g*1.2);nb=Math.min(255,b*1.2);}else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*1.2+128));ng=Math.min(255,Math.max(0,(g-128)*1.2+128));nb=Math.min(255,Math.max(0,(b-128)*1.2+128));}else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,q+(r-q)*1.35);ng=Math.min(255,q+(g-q)*1.35);nb=Math.min(255,q+(b-q)*1.35);}d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);}
+  ctx.putImageData(image,x,y);
+}
+
+function phase7Color(ctx:CanvasRenderingContext2D,x:number,y:number){const d=ctx.getImageData(Math.max(0,Math.floor(x)),Math.max(0,Math.floor(y)),1,1).data;return{r:d[0],g:d[1],b:d[2],a:d[3]};}
+function phase7Region(ctx:CanvasRenderingContext2D,region:RecordValue,x:number,y:number,options:RecordValue){const type=stringOf(region.type,'rect'),t=Math.max(0,numberOf(options.tolerance,0));if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0),hit=x>=rx-t&&x<=rx+rw+t&&y>=ry-t&&y<=ry+rh+t;return{hit,hitType:hit?'fill':'outside'};}if(type==='circle'){const hit=Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0))<=Math.max(0,numberOf(region.radius,0))+t;return{hit,hitType:hit?'fill':'outside'};}if(type==='path'&&Array.isArray(region.path)){const hit=ctx.isPointInPath(phase7Path(region.path),x,y,stringOf(region.fillRule,'nonzero') as CanvasFillRule);return{hit,hitType:hit?'fill':'outside'};}return{hit:false,hitType:'outside'};}
+function phase7Distance(region:RecordValue,x:number,y:number){const type=stringOf(region.type,'');if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0);return Math.hypot(Math.max(rx-x,0,x-(rx+rw)),Math.max(ry-y,0,y-(ry+rh)));}if(type==='circle')return Math.max(0,Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0))-Math.max(0,numberOf(region.radius,0)));return null;}
+
 export async function renderApexifyWebPreview(
   source: string,
   studioAssets: readonly WebVirtualAsset[] = [],
 ): Promise<WebStudioPreviewResult> {
   const started = performance.now();
   const studioAssetsById = new Map(studioAssets.map((asset) => [asset.id, asset] as const));
-  const supportedApis = ['createCanvas', 'createText', 'createImage', 'createChart'];
+  const supportedApis = [
+    'createCanvas', 'createText', 'createImage', 'createChart',
+    'path2d.create', 'path2d.draw', 'path2d.custom',
+    'pixels.manipulate', 'pixels.getColor', 'pixels.setColor', 'pixels.getData',
+    'detect.path', 'detect.region', 'detect.anyRegion', 'detect.distance',
+  ];
   const warnings: string[] = [];
 
   if (
@@ -2283,6 +2404,7 @@ export async function renderApexifyWebPreview(
 
   try {
     const calls = extractCalls(source, [...supportedApis, ...UNSUPPORTED_APIS]);
+    const structuredResults: Record<string, Jsonish> = {};
     const resolver = createSafePreviewResolver(source);
     const resolve = (expression: string, sourceIndex: number): Jsonish => {
       try {
@@ -2290,6 +2412,18 @@ export async function renderApexifyWebPreview(
       } catch {
         return parseLiteral(expression);
       }
+    };
+
+    const pathCommandsByIdentifier = new Map<string, Jsonish>();
+    for (const call of calls.filter((item) => item.method === 'path2d.create' && item.args[0])) {
+      const identifier = assignedIdentifierForCall(source, call);
+      if (identifier) pathCommandsByIdentifier.set(identifier, resolveCallArgument(source, call, call.args[0], resolve));
+    }
+    const resolvePathArgument = (call: Call, expression: string | undefined): Jsonish => {
+      if (!expression) return [];
+      const identifier = expression.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
+      if (identifier && pathCommandsByIdentifier.has(identifier)) return pathCommandsByIdentifier.get(identifier)!;
+      return resolveCallArgument(source, call, expression, resolve);
     };
 
     const chartCalls = calls.filter((call) => call.method === 'createChart' && call.args[0]);
@@ -2445,6 +2579,30 @@ export async function renderApexifyWebPreview(
         }
       } else if (call.method === 'createChart') {
         // Charts are pre-rendered so their output can be used by later createImage() calls.
+      } else if (call.method === 'path2d.create') {
+        // Resource declaration only.
+      } else if (call.method === 'path2d.draw') {
+        phase7DrawPath(ctx, phase7Path(resolvePathArgument(call, call.args[1])), resolveCallArgument(source, call, call.args[2], resolve), width, height);
+      } else if (call.method === 'path2d.custom') {
+        phase7Custom(ctx, resolveCallArgument(source, call, call.args[0], resolve));
+      } else if (call.method === 'pixels.manipulate') {
+        phase7Manipulate(ctx, resolveCallArgument(source, call, call.args[1], resolve), width, height);
+      } else if (call.method === 'pixels.setColor') {
+        const x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),color=resolveCallArgument(source,call,call.args[3],resolve);
+        if(isRecord(color)){const d=ctx.createImageData(1,1);d.data[0]=Math.max(0,Math.min(255,numberOf(color.r,0)));d.data[1]=Math.max(0,Math.min(255,numberOf(color.g,0)));d.data[2]=Math.max(0,Math.min(255,numberOf(color.b,0)));d.data[3]=Math.max(0,Math.min(255,numberOf(color.a,255)));ctx.putImageData(d,Math.floor(x),Math.floor(y));}
+      } else if (call.method === 'pixels.getColor') {
+        const key=assignedIdentifierForCall(source,call)??'pixelColor';structuredResults[key]=phase7Color(ctx,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0));
+      } else if (call.method === 'pixels.getData') {
+        const regionValue=resolveCallArgument(source,call,call.args[1],resolve),region=isRecord(regionValue)?regionValue:{},x=Math.max(0,Math.floor(numberOf(region.x,0))),y=Math.max(0,Math.floor(numberOf(region.y,0))),w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))),h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))),data=ctx.getImageData(x,y,w,h).data;
+        structuredResults[assignedIdentifierForCall(source,call)??'pixelData']={width:w,height:h,sample:Array.from(data.slice(0,Math.min(64,data.length)))};
+      } else if (call.method === 'detect.path') {
+        const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,1)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
+      } else if (call.method === 'detect.region') {
+        const regionValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
+      } else if (call.method === 'detect.anyRegion') {
+        const regionsValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
+      } else if (call.method === 'detect.distance') {
+        const regionValue=resolveCallArgument(source,call,call.args[0],resolve);structuredResults[assignedIdentifierForCall(source,call)??'distance']=isRecord(regionValue)?phase7Distance(regionValue,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0)):null;
       } else if (UNSUPPORTED_APIS.includes(call.method)) {
         warnings.push(`${call.method}() requires the Node renderer and was not executed by Apexify Web.`);
       }
@@ -2480,6 +2638,7 @@ export async function renderApexifyWebPreview(
       elapsedMs: Math.round(performance.now() - started),
       supportedApis,
       warnings: [...new Set(warnings)],
+      ...(Object.keys(structuredResults).length ? { results: structuredResults } : {}),
     };
   } catch (error) {
     return {
