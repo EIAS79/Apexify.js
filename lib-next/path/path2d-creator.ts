@@ -118,13 +118,15 @@ export class Path2DCreator {
     ctx.save();
     if (options?.transform) {
       const { translateX, translateY, rotate, scaleX, scaleY, originX, originY } = options.transform;
+      if (translateX !== undefined || translateY !== undefined) {
+        ctx.translate(translateX ?? 0, translateY ?? 0);
+      }
       if (originX !== undefined && originY !== undefined) {
         ctx.translate(originX, originY);
         if (rotate !== undefined) ctx.rotate((rotate * Math.PI) / 180);
         if (scaleX !== undefined || scaleY !== undefined) ctx.scale(scaleX ?? 1, scaleY ?? 1);
         ctx.translate(-originX, -originY);
       } else {
-        if (translateX !== undefined || translateY !== undefined) ctx.translate(translateX ?? 0, translateY ?? 0);
         if (rotate !== undefined) ctx.rotate((rotate * Math.PI) / 180);
         if (scaleX !== undefined || scaleY !== undefined) ctx.scale(scaleX ?? 1, scaleY ?? 1);
       }
