@@ -2824,6 +2824,20 @@ export async function renderApexifyWebPreview(
       return resolveCallArgument(source, call, expression, resolve);
     };
 
+
+    const resolveRegionPaths = (call: Call, value: Jsonish): Jsonish => {
+      const resolveOne = (region: Jsonish): Jsonish => {
+        if (!isRecord(region) || region.type !== 'path') return region;
+        const label = unresolvedPreviewLabel(region.path);
+        if (!label) return region;
+        return {
+          ...region,
+          path: resolvePathArgument(call, label),
+        };
+      };
+      return Array.isArray(value) ? value.map(resolveOne) : resolveOne(value);
+    };
+
     const chartCalls = calls.filter((call) => call.method === 'createChart' && call.args[0]);
     const chartRecords = chartCalls.map((call) => {
       const typeValue = resolveCallArgument(source, call, call.args[0], resolve);
@@ -2984,7 +2998,21 @@ export async function renderApexifyWebPreview(
       } else if (call.method === 'path2d.custom') {
         phase7Custom(ctx, resolveCallArgument(source, call, call.args[0], resolve));
       } else if (call.method === 'pixels.manipulate') {
-        phase7Manipulate(ctx, resolveCallArgument(source, call, call.args[1], resolve), width, height);
+        const manipulation = phase7ManipulationArgument(source, call, resolve);
+        phase7Manipulate(
+          ctx,
+          manipulation.options,
+          width,
+          height,
+          manipulation.processorExpression
+            ? (r, g, b, a, x, y) =>
+                resolver.invokeAt(
+                  manipulation.processorExpression!,
+                  call.index,
+                  [r, g, b, a, x, y],
+                )
+            : undefined,
+        );
       } else if (call.method === 'pixels.setColor') {
         const x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),color=resolveCallArgument(source,call,call.args[3],resolve);
         if(isRecord(color)){const d=ctx.createImageData(1,1);d.data[0]=Math.max(0,Math.min(255,numberOf(color.r,0)));d.data[1]=Math.max(0,Math.min(255,numberOf(color.g,0)));d.data[2]=Math.max(0,Math.min(255,numberOf(color.b,0)));d.data[3]=Math.max(0,Math.min(255,numberOf(color.a,255)));ctx.putImageData(d,Math.floor(x),Math.floor(y));}
@@ -2996,9 +3024,9 @@ export async function renderApexifyWebPreview(
       } else if (call.method === 'detect.path') {
         const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
       } else if (call.method === 'detect.region') {
-        const regionValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
+        const rawRegion=resolveCallArgument(source,call,call.args[0],resolve),regionValue=resolveRegionPaths(call,rawRegion),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
       } else if (call.method === 'detect.anyRegion') {
-        const regionsValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
+        const rawRegions=resolveCallArgument(source,call,call.args[0],resolve),regionsValue=resolveRegionPaths(call,rawRegions),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
       } else if (call.method === 'detect.distance') {
         const regionValue=resolveCallArgument(source,call,call.args[0],resolve);structuredResults[assignedIdentifierForCall(source,call)??'distance']=isRecord(regionValue)?phase7Distance(regionValue,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0)):null;
       } else if (UNSUPPORTED_APIS.includes(call.method)) {
