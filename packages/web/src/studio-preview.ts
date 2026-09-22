@@ -1771,6 +1771,138 @@ function resolveCallArgument(
   }
 }
 
+
+function phase7ObjectProperty(
+  raw: string,
+  property: string,
+): { expression: string; start: number; end: number } | null {
+  const firstBrace = raw.indexOf('{');
+  const lastBrace = raw.lastIndexOf('}');
+  if (firstBrace < 0 || lastBrace <= firstBrace) return null;
+  const bodyStart = firstBrace + 1;
+  const bodyEnd = lastBrace;
+  const body = raw.slice(bodyStart, bodyEnd);
+  const re = new RegExp('(?:^|,)\\s*' + property + '\\s*(?::|(?=,|$))', 'g');
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(body))) {
+    const absoluteMatch = bodyStart + match.index;
+    const colonInMatch = match[0].lastIndexOf(':');
+    if (colonInMatch < 0) {
+      const tokenStart = absoluteMatch + match[0].lastIndexOf(property);
+      return {
+        expression: property,
+        start: tokenStart,
+        end: tokenStart + property.length,
+      };
+    }
+
+    const valueStart = absoluteMatch + colonInMatch + 1;
+    let paren = 0;
+    let brace = 0;
+    let bracket = 0;
+    let quote = '';
+    let escaped = false;
+    let lineComment = false;
+    let blockComment = false;
+
+    for (let i = valueStart; i < bodyEnd; i += 1) {
+      const ch = raw[i];
+      const next = raw[i + 1];
+      if (lineComment) {
+        if (ch === '\n') lineComment = false;
+        continue;
+      }
+      if (blockComment) {
+        if (ch === '*' && next === '/') {
+          blockComment = false;
+          i += 1;
+        }
+        continue;
+      }
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === quote) quote = '';
+        continue;
+      }
+      if (ch === '/' && next === '/') {
+        lineComment = true;
+        i += 1;
+        continue;
+      }
+      if (ch === '/' && next === '*') {
+        blockComment = true;
+        i += 1;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === String.fromCharCode(96)) {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(') paren += 1;
+      else if (ch === ')') paren -= 1;
+      else if (ch === '{') brace += 1;
+      else if (ch === '}') brace -= 1;
+      else if (ch === '[') bracket += 1;
+      else if (ch === ']') bracket -= 1;
+      else if (ch === ',' && paren === 0 && brace === 0 && bracket === 0) {
+        return {
+          expression: raw.slice(valueStart, i).trim(),
+          start: valueStart,
+          end: i,
+        };
+      }
+    }
+
+    return {
+      expression: raw.slice(valueStart, bodyEnd).trim(),
+      start: valueStart,
+      end: bodyEnd,
+    };
+  }
+
+  return null;
+}
+
+function phase7ManipulationArgument(
+  source: string,
+  call: Call,
+  resolve: (expression: string, sourceIndex: number) => Jsonish,
+): { options: Jsonish; processorExpression: string | null } {
+  const rawArgument = call.args[1] ?? '{}';
+  const directIdentifier = rawArgument.trim().match(/^[A-Za-z_$][\\w$]*$/)?.[0];
+  const rawOptions = directIdentifier
+    ? findInitializerBefore(source, directIdentifier, call.index) ?? rawArgument
+    : rawArgument;
+  const processor = phase7ObjectProperty(rawOptions, 'processor');
+
+  if (!processor) {
+    return {
+      options: resolveCallArgument(source, call, rawArgument, resolve),
+      processorExpression: null,
+    };
+  }
+
+  const sanitized =
+    processor.expression === 'processor'
+      ? rawOptions.slice(0, processor.start) +
+        'processor: null' +
+        rawOptions.slice(processor.end)
+      : rawOptions.slice(0, processor.start) +
+        ' null' +
+        rawOptions.slice(processor.end);
+
+  let options: Jsonish;
+  try {
+    options = resolve(sanitized, call.index);
+  } catch {
+    options = parseLiteral(sanitized);
+  }
+
+  return { options, processorExpression: processor.expression };
+}
+
 function chartPadding(options: RecordValue) {
   const dimensions = isRecord(options.dimensions) ? options.dimensions : {};
   const padding = isRecord(dimensions.padding) ? dimensions.padding : {};
