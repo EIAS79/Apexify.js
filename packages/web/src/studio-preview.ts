@@ -1871,7 +1871,7 @@ function phase7ManipulationArgument(
   resolve: (expression: string, sourceIndex: number) => Jsonish,
 ): { options: Jsonish; processorExpression: string | null } {
   const rawArgument = call.args[1] ?? '{}';
-  const directIdentifier = rawArgument.trim().match(/^[A-Za-z_$][\\w$]*$/)?.[0];
+  const directIdentifier = rawArgument.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
   const rawOptions = directIdentifier
     ? findInitializerBefore(source, directIdentifier, call.index) ?? rawArgument
     : rawArgument;
@@ -2825,14 +2825,36 @@ export async function renderApexifyWebPreview(
     };
 
 
-    const resolveRegionPaths = (call: Call, value: Jsonish): Jsonish => {
+    const pathRegionIdentifiers = (
+      call: Call,
+      expression: string | undefined,
+    ): string[] => {
+      if (!expression) return [];
+      const direct = expression.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
+      const raw = direct
+        ? findInitializerBefore(source, direct, call.index) ?? expression
+        : expression;
+      const identifiers: string[] = [];
+      const re = /\bpath\s*:\s*([A-Za-z_$][\w$]*)/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(raw))) identifiers.push(match[1]);
+      return identifiers;
+    };
+
+    const resolveRegionPaths = (
+      call: Call,
+      value: Jsonish,
+      resourceIdentifiers: string[],
+    ): Jsonish => {
+      let resourceIndex = 0;
       const resolveOne = (region: Jsonish): Jsonish => {
         if (!isRecord(region) || region.type !== 'path') return region;
-        const label = unresolvedPreviewLabel(region.path);
-        if (!label) return region;
+        if (Array.isArray(region.path)) return region;
+        const identifier = resourceIdentifiers[resourceIndex++];
+        if (!identifier) return region;
         return {
           ...region,
-          path: resolvePathArgument(call, label),
+          path: resolvePathArgument(call, identifier),
         };
       };
       return Array.isArray(value) ? value.map(resolveOne) : resolveOne(value);
@@ -3024,9 +3046,9 @@ export async function renderApexifyWebPreview(
       } else if (call.method === 'detect.path') {
         const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
       } else if (call.method === 'detect.region') {
-        const rawRegion=resolveCallArgument(source,call,call.args[0],resolve),regionValue=resolveRegionPaths(call,rawRegion),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
+        const rawRegion=resolveCallArgument(source,call,call.args[0],resolve),regionValue=resolveRegionPaths(call,rawRegion,pathRegionIdentifiers(call,call.args[0])),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
       } else if (call.method === 'detect.anyRegion') {
-        const rawRegions=resolveCallArgument(source,call,call.args[0],resolve),regionsValue=resolveRegionPaths(call,rawRegions),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
+        const rawRegions=resolveCallArgument(source,call,call.args[0],resolve),regionsValue=resolveRegionPaths(call,rawRegions,pathRegionIdentifiers(call,call.args[0])),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
       } else if (call.method === 'detect.distance') {
         const regionValue=resolveCallArgument(source,call,call.args[0],resolve);structuredResults[assignedIdentifierForCall(source,call)??'distance']=isRecord(regionValue)?phase7Distance(regionValue,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0)):null;
       } else if (UNSUPPORTED_APIS.includes(call.method)) {
