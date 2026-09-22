@@ -2639,6 +2639,8 @@ function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonis
   const hasOrigin=typeof transform.originX==='number'&&typeof transform.originY==='number';
   const rotate=numberOf(transform.rotate,0);
   const scaleX=numberOf(transform.scaleX,1),scaleY=numberOf(transform.scaleY,1);
+  const tx=numberOf(transform.translateX,0),ty=numberOf(transform.translateY,0);
+  if(tx||ty)ctx.translate(tx,ty);
   if(hasOrigin){
     const ox=numberOf(transform.originX,0),oy=numberOf(transform.originY,0);
     ctx.translate(ox,oy);
@@ -2646,8 +2648,6 @@ function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonis
     if(scaleX!==1||scaleY!==1)ctx.scale(scaleX,scaleY);
     ctx.translate(-ox,-oy);
   }else{
-    const tx=numberOf(transform.translateX,0),ty=numberOf(transform.translateY,0);
-    if(tx||ty)ctx.translate(tx,ty);
     if(rotate)ctx.rotate(rotate*Math.PI/180);
     if(scaleX!==1||scaleY!==1)ctx.scale(scaleX,scaleY);
   }
