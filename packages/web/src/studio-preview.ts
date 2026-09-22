@@ -52,8 +52,6 @@ const MAX_REMOTE_IMAGE_COUNT = 8;
 const REMOTE_IMAGE_TIMEOUT_MS = 8_000;
 
 const UNSUPPORTED_APIS = [
-  'createComparisonChart',
-  'createComboChart',
   'createScene',
   'renderScene',
   'createTemplate',
@@ -2392,6 +2390,171 @@ function createChartCanvas(chartType: string, rawData: Jsonish, optionsValue: Js
   return canvas;
 }
 
+function drawChartContain(
+  ctx: CanvasRenderingContext2D,
+  source: HTMLCanvasElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const scale = Math.min(width / source.width, height / source.height);
+  const drawWidth = source.width * scale;
+  const drawHeight = source.height * scale;
+  ctx.drawImage(
+    source,
+    x + (width - drawWidth) / 2,
+    y + (height - drawHeight) / 2,
+    drawWidth,
+    drawHeight,
+  );
+}
+
+function createComparisonChartCanvas(optionsValue: Jsonish): HTMLCanvasElement | null {
+  if (!isRecord(optionsValue)) return null;
+  const dimensions = isRecord(optionsValue.dimensions) ? optionsValue.dimensions : {};
+  const width = Math.round(Math.min(4096, Math.max(240, numberOf(dimensions.width, 900))));
+  const height = Math.round(Math.min(4096, Math.max(180, numberOf(dimensions.height, 480))));
+  const chart1 = isRecord(optionsValue.chart1) ? optionsValue.chart1 : null;
+  const chart2 = isRecord(optionsValue.chart2) ? optionsValue.chart2 : null;
+  if (!chart1 || !chart2) return null;
+
+  const renderChild = (config: RecordValue) => {
+    const type = stringOf(config.type, 'bar');
+    const childOptions = isRecord(config.options) ? { ...config.options } : {};
+    if (type === 'donut') childOptions.type = 'donut';
+    const title = isRecord(config.title) ? config.title : null;
+    if (title) {
+      const labels = isRecord(childOptions.labels) ? childOptions.labels : {};
+      childOptions.labels = { ...labels, title };
+    }
+    return createChartCanvas(type === 'donut' ? 'pie' : type, config.data ?? [], childOptions);
+  };
+
+  const first = renderChild(chart1);
+  const second = renderChild(chart2);
+  if (!first || !second) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return null;
+
+  const appearance = isRecord(optionsValue.appearance) ? optionsValue.appearance : {};
+  ctx.fillStyle = stringOf(appearance.backgroundColor, '#0f172a');
+  ctx.fillRect(0, 0, width, height);
+
+  const padding = isRecord(dimensions.padding) ? dimensions.padding : {};
+  const left = Math.max(12, numberOf(padding.left, 28));
+  const right = Math.max(12, numberOf(padding.right, 28));
+  const top = Math.max(12, numberOf(padding.top, 28));
+  const bottom = Math.max(12, numberOf(padding.bottom, 28));
+  const spacing = Math.max(0, numberOf(optionsValue.spacing, 18));
+  const title = isRecord(optionsValue.generalTitle) ? optionsValue.generalTitle : {};
+  const titleText = stringOf(title.text, '');
+  const titleSize = Math.max(12, numberOf(title.fontSize, 22));
+  const titleHeight = titleText ? titleSize + 18 : 0;
+
+  if (titleText) {
+    ctx.save();
+    ctx.fillStyle = stringOf(title.color, '#f8fafc');
+    ctx.font = `700 ${titleSize}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(titleText, width / 2, top * 0.35);
+    ctx.restore();
+  }
+
+  const x = left;
+  const y = top + titleHeight;
+  const innerWidth = Math.max(40, width - left - right);
+  const innerHeight = Math.max(40, height - y - bottom);
+  const layout = stringOf(optionsValue.layout, 'sideBySide');
+  if (layout === 'topBottom') {
+    const cellHeight = Math.max(20, (innerHeight - spacing) / 2);
+    drawChartContain(ctx, first, x, y, innerWidth, cellHeight);
+    drawChartContain(ctx, second, x, y + cellHeight + spacing, innerWidth, cellHeight);
+  } else {
+    const cellWidth = Math.max(20, (innerWidth - spacing) / 2);
+    drawChartContain(ctx, first, x, y, cellWidth, innerHeight);
+    drawChartContain(ctx, second, x + cellWidth + spacing, y, cellWidth, innerHeight);
+  }
+  return canvas;
+}
+
+function createComboChartCanvas(optionsValue: Jsonish): HTMLCanvasElement | null {
+  if (!isRecord(optionsValue)) return null;
+  const bars = Array.isArray(optionsValue.bars) ? optionsValue.bars : [];
+  const lines = Array.isArray(optionsValue.lines) ? optionsValue.lines : [];
+  if (!bars.length || !lines.length) return null;
+
+  const axes = isRecord(optionsValue.axes) ? optionsValue.axes : {};
+  const primaryOptions: RecordValue = {
+    ...optionsValue,
+    axes: {
+      ...axes,
+      y: isRecord(axes.y) ? axes.y : {},
+    },
+  };
+  delete primaryOptions.bars;
+  delete primaryOptions.lines;
+  delete primaryOptions.secondaryYAxis;
+  delete primaryOptions.opacity;
+  delete primaryOptions.barStyle;
+
+  const base = createChartCanvas('bar', bars, primaryOptions);
+  if (!base) return null;
+
+  const transparentAppearance: RecordValue = {
+    ...(isRecord(optionsValue.appearance) ? optionsValue.appearance : {}),
+    backgroundColor: 'rgba(0,0,0,0)',
+    bgLayers: [],
+  };
+  delete transparentAppearance.backgroundGradient;
+  delete transparentAppearance.patternBg;
+  delete transparentAppearance.noiseBg;
+
+  const secondary = isRecord(axes.ySecondary)
+    ? axes.ySecondary
+    : isRecord(axes.y)
+      ? axes.y
+      : {};
+  const lineOptions: RecordValue = {
+    ...optionsValue,
+    appearance: transparentAppearance,
+    axes: {
+      ...axes,
+      y: {
+        ...secondary,
+        color: 'rgba(0,0,0,0)',
+        labelColor: 'rgba(0,0,0,0)',
+        tickColor: 'rgba(0,0,0,0)',
+      },
+      x: {
+        ...(isRecord(axes.x) ? axes.x : {}),
+        color: 'rgba(0,0,0,0)',
+        labelColor: 'rgba(0,0,0,0)',
+        tickColor: 'rgba(0,0,0,0)',
+      },
+    },
+    grid: { show: false },
+    labels: { title: { text: '' } },
+    legend: { show: false },
+  };
+  delete lineOptions.bars;
+  delete lineOptions.lines;
+  delete lineOptions.secondaryYAxis;
+  delete lineOptions.opacity;
+  delete lineOptions.barStyle;
+
+  const overlay = createChartCanvas('line', lines, lineOptions);
+  if (!overlay) return base;
+  const ctx = base.getContext('2d');
+  ctx?.drawImage(overlay, 0, 0, base.width, base.height);
+  return base;
+}
+
 
 function phase7PathCommands(value: Jsonish): RecordValue[] {
   if (!Array.isArray(value)) throw new Error('Path commands must resolve to an array.');
@@ -2772,6 +2935,7 @@ export async function renderApexifyWebPreview(
   const studioAssetsById = new Map(studioAssets.map((asset) => [asset.id, asset] as const));
   const supportedApis = [
     'createCanvas', 'createText', 'createImage', 'createChart',
+    'createComparisonChart', 'createComboChart',
     'path2d.create', 'path2d.draw', 'path2d.custom',
     'pixels.manipulate', 'pixels.getColor', 'pixels.setColor', 'pixels.getData',
     'detect.path', 'detect.region', 'detect.anyRegion', 'detect.distance',
@@ -2860,15 +3024,31 @@ export async function renderApexifyWebPreview(
       return Array.isArray(value) ? value.map(resolveOne) : resolveOne(value);
     };
 
-    const chartCalls = calls.filter((call) => call.method === 'createChart' && call.args[0]);
+    const chartCalls = calls.filter((call) =>
+      (call.method === 'createChart' ||
+        call.method === 'createComparisonChart' ||
+        call.method === 'createComboChart') &&
+      call.args[0],
+    );
     const chartRecords = chartCalls.map((call) => {
-      const typeValue = resolveCallArgument(source, call, call.args[0], resolve);
-      const dataValue = resolveCallArgument(source, call, call.args[1], resolve);
-      const optionsValue = resolveCallArgument(source, call, call.args[2], resolve);
-      const canvas =
-        hasUnresolved(dataValue) || hasUnresolved(optionsValue)
-          ? null
-          : createChartCanvas(stringOf(typeValue, 'bar'), dataValue, optionsValue);
+      let canvas: HTMLCanvasElement | null = null;
+      if (call.method === 'createChart') {
+        const typeValue = resolveCallArgument(source, call, call.args[0], resolve);
+        const dataValue = resolveCallArgument(source, call, call.args[1], resolve);
+        const optionsValue = resolveCallArgument(source, call, call.args[2], resolve);
+        canvas =
+          hasUnresolved(dataValue) || hasUnresolved(optionsValue)
+            ? null
+            : createChartCanvas(stringOf(typeValue, 'bar'), dataValue, optionsValue);
+      } else {
+        const optionsValue = resolveCallArgument(source, call, call.args[0], resolve);
+        if (!hasUnresolved(optionsValue)) {
+          canvas =
+            call.method === 'createComparisonChart'
+              ? createComparisonChartCanvas(optionsValue)
+              : createComboChartCanvas(optionsValue);
+        }
+      }
       return {
         call,
         canvas,
@@ -2936,7 +3116,7 @@ export async function renderApexifyWebPreview(
       return {
         ok: false,
         elapsedMs: Math.round(performance.now() - started),
-        error: 'Apexify Web needs a supported painter.createCanvas(...) or painter.createChart(...) call before it can render a preview.',
+        error: 'Apexify Web needs a supported painter.createCanvas(...) or chart creation call before it can render a preview.',
         supportedApis,
       };
     }
@@ -3011,7 +3191,11 @@ export async function renderApexifyWebPreview(
         if (unsupportedImage) {
           warnings.push('Local/Node-only bitmap sources were skipped; Apexify Web rendered supported shapes, generated charts, and browser-fetchable HTTP(S) images.');
         }
-      } else if (call.method === 'createChart') {
+      } else if (
+        call.method === 'createChart' ||
+        call.method === 'createComparisonChart' ||
+        call.method === 'createComboChart'
+      ) {
         // Charts are pre-rendered so their output can be used by later createImage() calls.
       } else if (call.method === 'path2d.create') {
         // Resource declaration only.
