@@ -2330,9 +2330,178 @@ function phase7Path(value: Jsonish): Path2D {
   return path;
 }
 
+
+function phase7Gradient(
+  ctx: CanvasRenderingContext2D,
+  config: RecordValue,
+  bounds: { x: number; y: number; w: number; h: number },
+): CanvasGradient | CanvasPattern {
+  const makeGradient = (
+    target: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): CanvasGradient => {
+    const rotatePoint = (
+      px: number,
+      py: number,
+      pivotX: number,
+      pivotY: number,
+      deg: number,
+    ): [number, number] => {
+      if (!deg) return [px, py];
+      const a = (deg * Math.PI) / 180;
+      const dx = px - pivotX;
+      const dy = py - pivotY;
+      return [
+        pivotX + dx * Math.cos(a) - dy * Math.sin(a),
+        pivotY + dx * Math.sin(a) + dy * Math.cos(a),
+      ];
+    };
+
+    const type = stringOf(config.type, 'linear');
+    let gradient: CanvasGradient;
+    if (type === 'radial') {
+      const rotate = numberOf(config.rotate, 0);
+      const pivotX = numberOf(config.pivotX, w / 2);
+      const pivotY = numberOf(config.pivotY, h / 2);
+      const [sx, sy] = rotatePoint(
+        numberOf(config.startX, w / 2),
+        numberOf(config.startY, h / 2),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      const [ex, ey] = rotatePoint(
+        numberOf(config.endX, w / 2),
+        numberOf(config.endY, h / 2),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      gradient = target.createRadialGradient(
+        x + sx,
+        y + sy,
+        Math.max(0, numberOf(config.startRadius, 0)),
+        x + ex,
+        y + ey,
+        Math.max(0, numberOf(config.endRadius, Math.max(w, h) / 2)),
+      );
+    } else if (type === 'conic' && typeof target.createConicGradient === 'function') {
+      const rotate = numberOf(config.rotate, 0);
+      const pivotX = numberOf(config.pivotX, w / 2);
+      const pivotY = numberOf(config.pivotY, h / 2);
+      const [cx, cy] = rotatePoint(
+        numberOf(config.centerX, w / 2),
+        numberOf(config.centerY, h / 2),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      gradient = target.createConicGradient(
+        ((numberOf(config.startAngle, 0) + rotate) * Math.PI) / 180,
+        x + cx,
+        y + cy,
+      );
+    } else {
+      const rotate = numberOf(config.rotate, 0);
+      const pivotX = numberOf(config.pivotX, w / 2);
+      const pivotY = numberOf(config.pivotY, h / 2);
+      const [sx, sy] = rotatePoint(
+        numberOf(config.startX, 0),
+        numberOf(config.startY, 0),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      const [ex, ey] = rotatePoint(
+        numberOf(config.endX, w),
+        numberOf(config.endY, 0),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      gradient = target.createLinearGradient(x + sx, y + sy, x + ex, y + ey);
+    }
+
+    const colors = Array.isArray(config.colors)
+      ? config.colors.filter(isRecord).slice().sort(
+          (a, b) => numberOf(a.stop, 0) - numberOf(b.stop, 0),
+        )
+      : [];
+    if (colors.length < 2) {
+      throw new Error('Gradient colors must contain at least two stops.');
+    }
+    for (const stop of colors) {
+      gradient.addColorStop(
+        Math.min(1, Math.max(0, numberOf(stop.stop, 0))),
+        stringOf(stop.color, '#ffffff'),
+      );
+    }
+    return gradient;
+  };
+
+  const w = Math.max(1, bounds.w);
+  const h = Math.max(1, bounds.h);
+  const repeat = stringOf(config.repeat, 'no-repeat');
+  if (repeat !== 'repeat' && repeat !== 'reflect') {
+    return makeGradient(ctx, bounds.x, bounds.y, w, h);
+  }
+
+  const period = document.createElement('canvas');
+  period.width = Math.max(1, Math.ceil(w));
+  period.height = Math.max(1, Math.ceil(h));
+  const periodCtx = period.getContext('2d');
+  if (!periodCtx) throw new Error('Gradient period canvas is unavailable.');
+  periodCtx.fillStyle = makeGradient(periodCtx, 0, 0, w, h);
+  periodCtx.fillRect(0, 0, period.width, period.height);
+
+  let source: CanvasImageSource = period;
+  if (repeat === 'reflect') {
+    const reflected = document.createElement('canvas');
+    reflected.width = period.width * 2;
+    reflected.height = period.height * 2;
+    const reflectedCtx = reflected.getContext('2d');
+    if (!reflectedCtx) throw new Error('Reflected gradient canvas is unavailable.');
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.save();
+    reflectedCtx.translate(reflected.width, 0);
+    reflectedCtx.scale(-1, 1);
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.restore();
+    reflectedCtx.save();
+    reflectedCtx.translate(0, reflected.height);
+    reflectedCtx.scale(1, -1);
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.restore();
+    reflectedCtx.save();
+    reflectedCtx.translate(reflected.width, reflected.height);
+    reflectedCtx.scale(-1, -1);
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.restore();
+    source = reflected;
+  }
+
+  const pattern = ctx.createPattern(source, 'repeat');
+  if (!pattern) throw new Error('Failed to create repeating gradient pattern.');
+  if (typeof pattern.setTransform === 'function' && typeof DOMMatrix !== 'undefined') {
+    pattern.setTransform(new DOMMatrix().translate(bounds.x, bounds.y));
+  }
+  return pattern;
+}
+
 function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonish, width: number, height: number) {
   const options=isRecord(raw)?raw:{}, transform=isRecord(options.transform)?options.transform:{};
   const stroke=isRecord(options.stroke)?options.stroke:null, fill=isRecord(options.fill)?options.fill:null, shadow=isRecord(options.shadow)?options.shadow:null;
+  const gradientBounds=isRecord(options.gradientBounds)
+    ? {
+        x:numberOf(options.gradientBounds.x,0),
+        y:numberOf(options.gradientBounds.y,0),
+        w:Math.max(1,numberOf(options.gradientBounds.w,width)),
+        h:Math.max(1,numberOf(options.gradientBounds.h,height)),
+      }
+    : {x:0,y:0,w:width,h:height};
   const opacity=Math.min(1,Math.max(0,numberOf(options.opacity,1)));
   ctx.save();
   const hasOrigin=typeof transform.originX==='number'&&typeof transform.originY==='number';
@@ -2354,14 +2523,14 @@ function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonis
   if (shadow) { ctx.shadowColor=stringOf(shadow.color,'rgba(0,0,0,.45)'); ctx.shadowBlur=Math.max(0,numberOf(shadow.blur,0)); ctx.shadowOffsetX=numberOf(shadow.offsetX,0); ctx.shadowOffsetY=numberOf(shadow.offsetY,0); }
   if (stroke) {
     ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(stroke.opacity,1)));
-    ctx.strokeStyle=isRecord(stroke.gradient)?createGradient(ctx,stroke.gradient,width,height):stringOf(stroke.color,'#ffffff');
+    ctx.strokeStyle=isRecord(stroke.gradient)?phase7Gradient(ctx,stroke.gradient,gradientBounds):stringOf(stroke.color,'#ffffff');
     ctx.lineWidth=Math.max(0,numberOf(stroke.width,1)); ctx.lineCap=stringOf(stroke.lineCap,'butt') as CanvasLineCap; ctx.lineJoin=stringOf(stroke.lineJoin,'miter') as CanvasLineJoin;
     const dash=Array.isArray(stroke.dashArray)?stroke.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):stringOf(stroke.style,'')==='dashed'?[10,6]:stringOf(stroke.style,'')==='dotted'?[2,5]:[];
     ctx.setLineDash(dash); ctx.lineDashOffset=numberOf(stroke.dashOffset,0); ctx.stroke(path); ctx.setLineDash([]);
   }
   if (fill) {
     ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(fill.opacity,1)));
-    ctx.fillStyle=isRecord(fill.gradient)?createGradient(ctx,fill.gradient,width,height):stringOf(fill.color,'#ffffff');
+    ctx.fillStyle=isRecord(fill.gradient)?phase7Gradient(ctx,fill.gradient,gradientBounds):stringOf(fill.color,'#ffffff');
     ctx.fill(path,stringOf(fill.rule,'nonzero') as CanvasFillRule);
   }
   ctx.restore();
@@ -2377,10 +2546,10 @@ function phase7Custom(ctx: CanvasRenderingContext2D, raw: Jsonish) {
     if(!isRecord(item))continue;
     const start=isRecord(item.startCoordinates)?item.startCoordinates:{}, end=isRecord(item.endCoordinates)?item.endCoordinates:{}, style=isRecord(item.lineStyle)?item.lineStyle:{}, arrow=isRecord(item.arrow)?item.arrow:null;
     const sx=numberOf(start.x,0), sy=numberOf(start.y,0), ex=numberOf(end.x,0), ey=numberOf(end.y,0);
-    ctx.save(); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineWidth=Math.max(0,numberOf(style.width,1)); ctx.strokeStyle=stringOf(style.color,'#ffffff'); ctx.lineJoin=stringOf(style.lineJoin,'miter') as CanvasLineJoin; ctx.lineCap=stringOf(style.lineCap,'butt') as CanvasLineCap;
+    ctx.save(); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineWidth=Math.max(0,numberOf(style.width,1)); ctx.strokeStyle=stringOf(style.color,'black'); ctx.lineJoin=stringOf(style.lineJoin,'miter') as CanvasLineJoin; ctx.lineCap=stringOf(style.lineCap,'butt') as CanvasLineCap;
     const dash=isRecord(style.lineDash)&&Array.isArray(style.lineDash.dashArray)?style.lineDash.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):[];
     ctx.setLineDash(dash); if(isRecord(style.lineDash))ctx.lineDashOffset=numberOf(style.lineDash.offset,0); ctx.stroke();
-    if(arrow){const angle=Math.atan2(ey-sy,ex-sx),size=Math.max(1,numberOf(arrow.size,10)),color=stringOf(arrow.color,stringOf(style.color,'#ffffff')),kind=stringOf(arrow.style,'filled');if(boolOf(arrow.start,false))phase7Arrow(ctx,sx,sy,angle+Math.PI,size,kind,color);if(boolOf(arrow.end,false))phase7Arrow(ctx,ex,ey,angle,size,kind,color);}
+    if(arrow){const angle=Math.atan2(ey-sy,ex-sx),size=Math.max(1,numberOf(arrow.size,10)),color=stringOf(arrow.color,stringOf(style.color,'black')),kind=stringOf(arrow.style,'filled');if(boolOf(arrow.start,false))phase7Arrow(ctx,sx,sy,angle+Math.PI,size,kind,color);if(boolOf(arrow.end,false))phase7Arrow(ctx,ex,ey,angle,size,kind,color);}
     if(Array.isArray(item.markers))for(const marker of item.markers){if(!isRecord(marker))continue;const t=Math.min(1,Math.max(0,numberOf(marker.position,0))),mx=sx+(ex-sx)*t,my=sy+(ey-sy)*t,size=Math.max(1,numberOf(marker.size,6)),shape=stringOf(marker.shape,'circle');ctx.beginPath();ctx.fillStyle=stringOf(marker.color,'#ffffff');if(shape==='square')ctx.rect(mx-size/2,my-size/2,size,size);else if(shape==='diamond'){ctx.moveTo(mx,my-size/2);ctx.lineTo(mx+size/2,my);ctx.lineTo(mx,my+size/2);ctx.lineTo(mx-size/2,my);ctx.closePath();}else ctx.arc(mx,my,size/2,0,Math.PI*2);ctx.fill();}
     ctx.restore();
   }
@@ -2408,7 +2577,17 @@ function phase7Region(ctx:CanvasRenderingContext2D,region:RecordValue,x:number,y
   else if(type==='circle'){const radial=Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0)),radius=Math.max(0,numberOf(region.radius,0));hit=radial<=radius+t;distance=hit?0:radial-radius;if(hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number')stroke=Math.abs(radial-radius)<=numberOf(options.strokeWidth,1)/2+t;}
   else if(type==='ellipse'){const q=phase7EllipseLocal(region,x,y),rx=q.rx+t,ry=q.ry+t;hit=(q.tx*q.tx)/(rx*rx)+(q.ty*q.ty)/(ry*ry)<=1+1e-9;distance=hit?0:phase7EllipseDistance(region,x,y);}
   else if(type==='polygon'){const points=phase7PolygonPoints(region);hit=points.length>=3&&phase7PolygonHit(points,x,y,t);if(hit)distance=0;else if(points.length>=2){let min=Infinity;for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];min=Math.min(min,phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0)));}distance=Number.isFinite(min)?min:undefined;}}
-  else if(type==='path'&&Array.isArray(region.path)){const path=phase7Path(region.path);hit=ctx.isPointInPath(path,x,y,stringOf(region.fillRule,stringOf(options.fillRule,'nonzero')) as CanvasFillRule);}
+  else if(type==='path'&&Array.isArray(region.path)){
+    const path=phase7Path(region.path);
+    hit=ctx.isPointInPath(path,x,y,stringOf(region.fillRule,stringOf(options.fillRule,'nonzero')) as CanvasFillRule);
+    if(!hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){
+      ctx.save();
+      ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*t);
+      stroke=ctx.isPointInStroke(path,x,y);
+      ctx.restore();
+      hit=stroke;
+    }
+  }
   return{hit,hitType:hit?(stroke?'stroke':'fill'):'outside',...(distance!==undefined?{distance}:{})};
 }
 function phase7Distance(region:RecordValue,x:number,y:number){
@@ -2650,7 +2829,7 @@ export async function renderApexifyWebPreview(
         const regionValue=resolveCallArgument(source,call,call.args[1],resolve),region=isRecord(regionValue)?regionValue:{},x=Math.max(0,Math.floor(numberOf(region.x,0))),y=Math.max(0,Math.floor(numberOf(region.y,0))),w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))),h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))),data=ctx.getImageData(x,y,w,h).data;
         structuredResults[assignedIdentifierForCall(source,call)??'pixelData']={width:w,height:h,sample:Array.from(data.slice(0,Math.min(64,data.length)))};
       } else if (call.method === 'detect.path') {
-        const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,1)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
+        const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
       } else if (call.method === 'detect.region') {
         const regionValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
       } else if (call.method === 'detect.anyRegion') {
