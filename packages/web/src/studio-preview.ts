@@ -2555,12 +2555,45 @@ function phase7Custom(ctx: CanvasRenderingContext2D, raw: Jsonish) {
   }
 }
 
-function phase7Manipulate(ctx: CanvasRenderingContext2D, raw: Jsonish, width:number,height:number) {
+type Phase7PixelProcessor = (
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  x: number,
+  y: number,
+) => Jsonish;
+
+function phase7Manipulate(
+  ctx: CanvasRenderingContext2D,
+  raw: Jsonish,
+  width: number,
+  height: number,
+  processor?: Phase7PixelProcessor,
+) {
   const options=isRecord(raw)?raw:{}, region=isRecord(options.region)?options.region:{}, x=Math.max(0,Math.floor(numberOf(region.x,0))), y=Math.max(0,Math.floor(numberOf(region.y,0)));
   const w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))), h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))), filter=stringOf(options.filter,''), intensity=Math.min(1,Math.max(0,numberOf(options.intensity,1)));
-  if(!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
+  if(!processor&&!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
   const image=ctx.getImageData(x,y,w,h),d=image.data,blend=(a:number,b:number)=>Math.round(a+(b-a)*intensity);
-  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];let nr=r,ng=g,nb=b;if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}else if(filter==='brightness'){nr=Math.min(255,r+128);ng=Math.min(255,g+128);nb=Math.min(255,b+128);}else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*2+128));ng=Math.min(255,Math.max(0,(g-128)*2+128));nb=Math.min(255,Math.max(0,(b-128)*2+128));}else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,Math.max(0,q+(r-q)*2));ng=Math.min(255,Math.max(0,q+(g-q)*2));nb=Math.min(255,Math.max(0,q+(b-q)*2));}d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);}
+  for(let i=0;i<d.length;i+=4){
+    const pixel=i/4,px=pixel%w,py=Math.floor(pixel/w),r=d[i],g=d[i+1],b=d[i+2],a=d[i+3];
+    if(processor){
+      const output=processor(r,g,b,a,x+px,y+py);
+      if(!Array.isArray(output)||output.length!==4||output.some((value)=>typeof value!=='number'||!Number.isFinite(value))){
+        throw new Error('pixels.manipulate processor must synchronously return four finite channel values.');
+      }
+      d[i]=output[0] as number;d[i+1]=output[1] as number;d[i+2]=output[2] as number;d[i+3]=output[3] as number;
+      continue;
+    }
+    let nr=r,ng=g,nb=b;
+    if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}
+    else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}
+    else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}
+    else if(filter==='brightness'){nr=Math.min(255,r+128);ng=Math.min(255,g+128);nb=Math.min(255,b+128);}
+    else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*2+128));ng=Math.min(255,Math.max(0,(g-128)*2+128));nb=Math.min(255,Math.max(0,(b-128)*2+128));}
+    else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,Math.max(0,q+(r-q)*2));ng=Math.min(255,Math.max(0,q+(g-q)*2));nb=Math.min(255,Math.max(0,q+(b-q)*2));}
+    d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);
+  }
   ctx.putImageData(image,x,y);
 }
 
