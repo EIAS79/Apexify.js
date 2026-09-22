@@ -38,6 +38,11 @@ type Runtime = {
 export type SafePreviewResolver = {
   resolve(expression: string): PreviewJsonish;
   resolveAt(expression: string, sourceIndex: number): PreviewJsonish;
+  invokeAt(
+    expression: string,
+    sourceIndex: number,
+    args: PreviewJsonish[],
+  ): PreviewJsonish;
   unresolved(): string[];
 };
 
@@ -1004,6 +1009,14 @@ export function createSafePreviewResolver(source: string): SafePreviewResolver {
     resolveAt(expression: string, sourceIndex: number) {
       const env = environmentAt(sourceIndex, runtime);
       return toJsonish(new Parser(expression, env, runtime, 0).parse(), unresolved);
+    },
+    invokeAt(expression: string, sourceIndex: number, args: PreviewJsonish[]) {
+      const env = environmentAt(sourceIndex, runtime);
+      const value = new Parser(expression, env, runtime, 0).parse();
+      if (!isCallable(value)) {
+        return toJsonish(unknown('processor'), unresolved);
+      }
+      return toJsonish(value.call(args as SafeValue[]), unresolved);
     },
     unresolved() {
       return [...unresolved];

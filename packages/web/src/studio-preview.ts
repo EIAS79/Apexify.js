@@ -1771,6 +1771,138 @@ function resolveCallArgument(
   }
 }
 
+
+function phase7ObjectProperty(
+  raw: string,
+  property: string,
+): { expression: string; start: number; end: number } | null {
+  const firstBrace = raw.indexOf('{');
+  const lastBrace = raw.lastIndexOf('}');
+  if (firstBrace < 0 || lastBrace <= firstBrace) return null;
+  const bodyStart = firstBrace + 1;
+  const bodyEnd = lastBrace;
+  const body = raw.slice(bodyStart, bodyEnd);
+  const re = new RegExp('(?:^|,)\\s*' + property + '\\s*(?::|(?=,|$))', 'g');
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(body))) {
+    const absoluteMatch = bodyStart + match.index;
+    const colonInMatch = match[0].lastIndexOf(':');
+    if (colonInMatch < 0) {
+      const tokenStart = absoluteMatch + match[0].lastIndexOf(property);
+      return {
+        expression: property,
+        start: tokenStart,
+        end: tokenStart + property.length,
+      };
+    }
+
+    const valueStart = absoluteMatch + colonInMatch + 1;
+    let paren = 0;
+    let brace = 0;
+    let bracket = 0;
+    let quote = '';
+    let escaped = false;
+    let lineComment = false;
+    let blockComment = false;
+
+    for (let i = valueStart; i < bodyEnd; i += 1) {
+      const ch = raw[i];
+      const next = raw[i + 1];
+      if (lineComment) {
+        if (ch === '\n') lineComment = false;
+        continue;
+      }
+      if (blockComment) {
+        if (ch === '*' && next === '/') {
+          blockComment = false;
+          i += 1;
+        }
+        continue;
+      }
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === quote) quote = '';
+        continue;
+      }
+      if (ch === '/' && next === '/') {
+        lineComment = true;
+        i += 1;
+        continue;
+      }
+      if (ch === '/' && next === '*') {
+        blockComment = true;
+        i += 1;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === String.fromCharCode(96)) {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(') paren += 1;
+      else if (ch === ')') paren -= 1;
+      else if (ch === '{') brace += 1;
+      else if (ch === '}') brace -= 1;
+      else if (ch === '[') bracket += 1;
+      else if (ch === ']') bracket -= 1;
+      else if (ch === ',' && paren === 0 && brace === 0 && bracket === 0) {
+        return {
+          expression: raw.slice(valueStart, i).trim(),
+          start: valueStart,
+          end: i,
+        };
+      }
+    }
+
+    return {
+      expression: raw.slice(valueStart, bodyEnd).trim(),
+      start: valueStart,
+      end: bodyEnd,
+    };
+  }
+
+  return null;
+}
+
+function phase7ManipulationArgument(
+  source: string,
+  call: Call,
+  resolve: (expression: string, sourceIndex: number) => Jsonish,
+): { options: Jsonish; processorExpression: string | null } {
+  const rawArgument = call.args[1] ?? '{}';
+  const directIdentifier = rawArgument.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
+  const rawOptions = directIdentifier
+    ? findInitializerBefore(source, directIdentifier, call.index) ?? rawArgument
+    : rawArgument;
+  const processor = phase7ObjectProperty(rawOptions, 'processor');
+
+  if (!processor) {
+    return {
+      options: resolveCallArgument(source, call, rawArgument, resolve),
+      processorExpression: null,
+    };
+  }
+
+  const sanitized =
+    processor.expression === 'processor'
+      ? rawOptions.slice(0, processor.start) +
+        'processor: null' +
+        rawOptions.slice(processor.end)
+      : rawOptions.slice(0, processor.start) +
+        ' null' +
+        rawOptions.slice(processor.end);
+
+  let options: Jsonish;
+  try {
+    options = resolve(sanitized, call.index);
+  } catch {
+    options = parseLiteral(sanitized);
+  }
+
+  return { options, processorExpression: processor.expression };
+}
+
 function chartPadding(options: RecordValue) {
   const dimensions = isRecord(options.dimensions) ? options.dimensions : {};
   const padding = isRecord(dimensions.padding) ? dimensions.padding : {};
@@ -2523,14 +2655,14 @@ function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonis
   if (shadow) { ctx.shadowColor=stringOf(shadow.color,'rgba(0,0,0,.45)'); ctx.shadowBlur=Math.max(0,numberOf(shadow.blur,0)); ctx.shadowOffsetX=numberOf(shadow.offsetX,0); ctx.shadowOffsetY=numberOf(shadow.offsetY,0); }
   if (stroke) {
     ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(stroke.opacity,1)));
-    ctx.strokeStyle=isRecord(stroke.gradient)?phase7Gradient(ctx,stroke.gradient,gradientBounds):stringOf(stroke.color,'#ffffff');
+    ctx.strokeStyle=isRecord(stroke.gradient)?phase7Gradient(ctx,stroke.gradient,gradientBounds):stringOf(stroke.color,'black');
     ctx.lineWidth=Math.max(0,numberOf(stroke.width,1)); ctx.lineCap=stringOf(stroke.lineCap,'butt') as CanvasLineCap; ctx.lineJoin=stringOf(stroke.lineJoin,'miter') as CanvasLineJoin;
     const dash=Array.isArray(stroke.dashArray)?stroke.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):stringOf(stroke.style,'')==='dashed'?[10,6]:stringOf(stroke.style,'')==='dotted'?[2,5]:[];
     ctx.setLineDash(dash); ctx.lineDashOffset=numberOf(stroke.dashOffset,0); ctx.stroke(path); ctx.setLineDash([]);
   }
   if (fill) {
     ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(fill.opacity,1)));
-    ctx.fillStyle=isRecord(fill.gradient)?phase7Gradient(ctx,fill.gradient,gradientBounds):stringOf(fill.color,'#ffffff');
+    ctx.fillStyle=isRecord(fill.gradient)?phase7Gradient(ctx,fill.gradient,gradientBounds):stringOf(fill.color,'black');
     ctx.fill(path,stringOf(fill.rule,'nonzero') as CanvasFillRule);
   }
   ctx.restore();
@@ -2546,7 +2678,7 @@ function phase7Custom(ctx: CanvasRenderingContext2D, raw: Jsonish) {
     if(!isRecord(item))continue;
     const start=isRecord(item.startCoordinates)?item.startCoordinates:{}, end=isRecord(item.endCoordinates)?item.endCoordinates:{}, style=isRecord(item.lineStyle)?item.lineStyle:{}, arrow=isRecord(item.arrow)?item.arrow:null;
     const sx=numberOf(start.x,0), sy=numberOf(start.y,0), ex=numberOf(end.x,0), ey=numberOf(end.y,0);
-    ctx.save(); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineWidth=Math.max(0,numberOf(style.width,1)); ctx.strokeStyle=stringOf(style.color,'black'); ctx.lineJoin=stringOf(style.lineJoin,'miter') as CanvasLineJoin; ctx.lineCap=stringOf(style.lineCap,'butt') as CanvasLineCap;
+    ctx.save(); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineWidth=Math.max(0,numberOf(style.width,1)); ctx.strokeStyle=isRecord(style.gradient)?phase7Gradient(ctx,style.gradient,{x:sx,y:sy,w:ex-sx,h:ey-sy}):stringOf(style.color,'black'); ctx.lineJoin=stringOf(style.lineJoin,'miter') as CanvasLineJoin; ctx.lineCap=stringOf(style.lineCap,'butt') as CanvasLineCap;
     const dash=isRecord(style.lineDash)&&Array.isArray(style.lineDash.dashArray)?style.lineDash.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):[];
     ctx.setLineDash(dash); if(isRecord(style.lineDash))ctx.lineDashOffset=numberOf(style.lineDash.offset,0); ctx.stroke();
     if(arrow){const angle=Math.atan2(ey-sy,ex-sx),size=Math.max(1,numberOf(arrow.size,10)),color=stringOf(arrow.color,stringOf(style.color,'black')),kind=stringOf(arrow.style,'filled');if(boolOf(arrow.start,false))phase7Arrow(ctx,sx,sy,angle+Math.PI,size,kind,color);if(boolOf(arrow.end,false))phase7Arrow(ctx,ex,ey,angle,size,kind,color);}
@@ -2555,12 +2687,45 @@ function phase7Custom(ctx: CanvasRenderingContext2D, raw: Jsonish) {
   }
 }
 
-function phase7Manipulate(ctx: CanvasRenderingContext2D, raw: Jsonish, width:number,height:number) {
+type Phase7PixelProcessor = (
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  x: number,
+  y: number,
+) => Jsonish;
+
+function phase7Manipulate(
+  ctx: CanvasRenderingContext2D,
+  raw: Jsonish,
+  width: number,
+  height: number,
+  processor?: Phase7PixelProcessor,
+) {
   const options=isRecord(raw)?raw:{}, region=isRecord(options.region)?options.region:{}, x=Math.max(0,Math.floor(numberOf(region.x,0))), y=Math.max(0,Math.floor(numberOf(region.y,0)));
   const w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))), h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))), filter=stringOf(options.filter,''), intensity=Math.min(1,Math.max(0,numberOf(options.intensity,1)));
-  if(!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
+  if(!processor&&!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
   const image=ctx.getImageData(x,y,w,h),d=image.data,blend=(a:number,b:number)=>Math.round(a+(b-a)*intensity);
-  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];let nr=r,ng=g,nb=b;if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}else if(filter==='brightness'){nr=Math.min(255,r+128);ng=Math.min(255,g+128);nb=Math.min(255,b+128);}else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*2+128));ng=Math.min(255,Math.max(0,(g-128)*2+128));nb=Math.min(255,Math.max(0,(b-128)*2+128));}else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,Math.max(0,q+(r-q)*2));ng=Math.min(255,Math.max(0,q+(g-q)*2));nb=Math.min(255,Math.max(0,q+(b-q)*2));}d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);}
+  for(let i=0;i<d.length;i+=4){
+    const pixel=i/4,px=pixel%w,py=Math.floor(pixel/w),r=d[i],g=d[i+1],b=d[i+2],a=d[i+3];
+    if(processor){
+      const output=processor(r,g,b,a,x+px,y+py);
+      if(!Array.isArray(output)||output.length!==4||output.some((value)=>typeof value!=='number'||!Number.isFinite(value))){
+        throw new Error('pixels.manipulate processor must synchronously return four finite channel values.');
+      }
+      d[i]=output[0] as number;d[i+1]=output[1] as number;d[i+2]=output[2] as number;d[i+3]=output[3] as number;
+      continue;
+    }
+    let nr=r,ng=g,nb=b;
+    if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}
+    else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}
+    else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}
+    else if(filter==='brightness'){nr=Math.min(255,r+128);ng=Math.min(255,g+128);nb=Math.min(255,b+128);}
+    else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*2+128));ng=Math.min(255,Math.max(0,(g-128)*2+128));nb=Math.min(255,Math.max(0,(b-128)*2+128));}
+    else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,Math.max(0,q+(r-q)*2));ng=Math.min(255,Math.max(0,q+(g-q)*2));nb=Math.min(255,Math.max(0,q+(b-q)*2));}
+    d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);
+  }
   ctx.putImageData(image,x,y);
 }
 
@@ -2657,6 +2822,42 @@ export async function renderApexifyWebPreview(
         }
       }
       return resolveCallArgument(source, call, expression, resolve);
+    };
+
+
+    const pathRegionIdentifiers = (
+      call: Call,
+      expression: string | undefined,
+    ): string[] => {
+      if (!expression) return [];
+      const direct = expression.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
+      const raw = direct
+        ? findInitializerBefore(source, direct, call.index) ?? expression
+        : expression;
+      const identifiers: string[] = [];
+      const re = /\bpath\s*:\s*([A-Za-z_$][\w$]*)/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(raw))) identifiers.push(match[1]);
+      return identifiers;
+    };
+
+    const resolveRegionPaths = (
+      call: Call,
+      value: Jsonish,
+      resourceIdentifiers: string[],
+    ): Jsonish => {
+      let resourceIndex = 0;
+      const resolveOne = (region: Jsonish): Jsonish => {
+        if (!isRecord(region) || region.type !== 'path') return region;
+        if (Array.isArray(region.path)) return region;
+        const identifier = resourceIdentifiers[resourceIndex++];
+        if (!identifier) return region;
+        return {
+          ...region,
+          path: resolvePathArgument(call, identifier),
+        };
+      };
+      return Array.isArray(value) ? value.map(resolveOne) : resolveOne(value);
     };
 
     const chartCalls = calls.filter((call) => call.method === 'createChart' && call.args[0]);
@@ -2819,7 +3020,21 @@ export async function renderApexifyWebPreview(
       } else if (call.method === 'path2d.custom') {
         phase7Custom(ctx, resolveCallArgument(source, call, call.args[0], resolve));
       } else if (call.method === 'pixels.manipulate') {
-        phase7Manipulate(ctx, resolveCallArgument(source, call, call.args[1], resolve), width, height);
+        const manipulation = phase7ManipulationArgument(source, call, resolve);
+        phase7Manipulate(
+          ctx,
+          manipulation.options,
+          width,
+          height,
+          manipulation.processorExpression
+            ? (r, g, b, a, x, y) =>
+                resolver.invokeAt(
+                  manipulation.processorExpression!,
+                  call.index,
+                  [r, g, b, a, x, y],
+                )
+            : undefined,
+        );
       } else if (call.method === 'pixels.setColor') {
         const x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),color=resolveCallArgument(source,call,call.args[3],resolve);
         if(isRecord(color)){const d=ctx.createImageData(1,1);d.data[0]=Math.max(0,Math.min(255,numberOf(color.r,0)));d.data[1]=Math.max(0,Math.min(255,numberOf(color.g,0)));d.data[2]=Math.max(0,Math.min(255,numberOf(color.b,0)));d.data[3]=Math.max(0,Math.min(255,numberOf(color.a,255)));ctx.putImageData(d,Math.floor(x),Math.floor(y));}
@@ -2831,9 +3046,9 @@ export async function renderApexifyWebPreview(
       } else if (call.method === 'detect.path') {
         const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
       } else if (call.method === 'detect.region') {
-        const regionValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
+        const rawRegion=resolveCallArgument(source,call,call.args[0],resolve),regionValue=resolveRegionPaths(call,rawRegion,pathRegionIdentifiers(call,call.args[0])),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
       } else if (call.method === 'detect.anyRegion') {
-        const regionsValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
+        const rawRegions=resolveCallArgument(source,call,call.args[0],resolve),regionsValue=resolveRegionPaths(call,rawRegions,pathRegionIdentifiers(call,call.args[0])),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
       } else if (call.method === 'detect.distance') {
         const regionValue=resolveCallArgument(source,call,call.args[0],resolve);structuredResults[assignedIdentifierForCall(source,call)??'distance']=isRecord(regionValue)?phase7Distance(regionValue,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0)):null;
       } else if (UNSUPPORTED_APIS.includes(call.method)) {
