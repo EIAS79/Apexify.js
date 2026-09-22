@@ -24,6 +24,7 @@ export type WebStudioPreviewResult =
       elapsedMs: number;
       supportedApis: string[];
       warnings: string[];
+      results?: Record<string, Jsonish>;
     }
   | {
       ok: false;
@@ -278,7 +279,8 @@ function extractCalls(source: string, methods: string[]): Call[] {
   const calls: Call[] = [];
 
   for (const method of methods) {
-    const re = new RegExp(`\\.\\s*${method}\\s*\\(`, 'g');
+    const methodPattern = method.split('.').join('\\s*\\.\\s*');
+    const re = new RegExp('\\.\\s*' + methodPattern + '\\s*\\(', 'g');
     let match: RegExpExecArray | null;
 
     while ((match = re.exec(source))) {
@@ -302,12 +304,12 @@ function assignedIdentifierForCall(source: string, call: Call): string | null {
   ) + 1;
   const prefix = source.slice(start, call.index);
   const match = prefix.match(
-    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*\s*$/,
+    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*$/,
   );
   if (match?.[1]) return match[1];
 
   const reassigned = prefix.match(
-    /([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*\s*$/,
+    /([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*$/,
   );
   return reassigned?.[1] ?? null;
 }
@@ -2258,13 +2260,357 @@ function createChartCanvas(chartType: string, rawData: Jsonish, optionsValue: Js
   return canvas;
 }
 
+
+function phase7PathCommands(value: Jsonish): RecordValue[] {
+  if (!Array.isArray(value)) throw new Error('Path commands must resolve to an array.');
+  const commands = value.filter(isRecord);
+  if (commands.length !== value.length) throw new Error('Every path command must be an object.');
+  if (commands.length > 10000) throw new Error('Apexify Web limits a path to 10,000 commands.');
+  return commands;
+}
+
+function phase7Path(value: Jsonish): Path2D {
+  const path = new Path2D();
+  for (const command of phase7PathCommands(value)) {
+    const type = stringOf(command.type, '');
+    if (type === 'moveTo') path.moveTo(numberOf(command.x, 0), numberOf(command.y, 0));
+    else if (type === 'lineTo') path.lineTo(numberOf(command.x, 0), numberOf(command.y, 0));
+    else if (type === 'arc') path.arc(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radius,0)), numberOf(command.startAngle,0), numberOf(command.endAngle,Math.PI*2), boolOf(command.counterclockwise,false));
+    else if (type === 'arcTo') path.arcTo(numberOf(command.x1,0), numberOf(command.y1,0), numberOf(command.x2,0), numberOf(command.y2,0), Math.max(0,numberOf(command.radius,0)));
+    else if (type === 'quadraticCurveTo') path.quadraticCurveTo(numberOf(command.cpx,0), numberOf(command.cpy,0), numberOf(command.x,0), numberOf(command.y,0));
+    else if (type === 'bezierCurveTo') path.bezierCurveTo(numberOf(command.cp1x,0), numberOf(command.cp1y,0), numberOf(command.cp2x,0), numberOf(command.cp2y,0), numberOf(command.x,0), numberOf(command.y,0));
+    else if (type === 'rect') path.rect(numberOf(command.x,0), numberOf(command.y,0), numberOf(command.width,0), numberOf(command.height,0));
+    else if (type === 'ellipse') path.ellipse(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radiusX,0)), Math.max(0,numberOf(command.radiusY,0)), numberOf(command.rotation,0), numberOf(command.startAngle,0), numberOf(command.endAngle,Math.PI*2), boolOf(command.counterclockwise,false));
+    else if (type === 'closePath') path.closePath();
+    else if (type === 'circle') path.arc(numberOf(command.x,0), numberOf(command.y,0), Math.max(0,numberOf(command.radius,0)), 0, Math.PI*2);
+    else if (type === 'roundedRect') {
+      const x=numberOf(command.x,0), y=numberOf(command.y,0), w=numberOf(command.width,0), h=numberOf(command.height,0);
+      const maxRadius=Math.max(0,Math.min(Math.abs(w)/2,Math.abs(h)/2));
+      const radius=isRecord(command.radius)?command.radius:null;
+      const tl=radius?Math.min(Math.max(0,numberOf(radius.tl,0)),maxRadius):Math.min(Math.max(0,numberOf(command.radius,0)),maxRadius);
+      const tr=radius?Math.min(Math.max(0,numberOf(radius.tr,0)),maxRadius):tl;
+      const br=radius?Math.min(Math.max(0,numberOf(radius.br,0)),maxRadius):tl;
+      const bl=radius?Math.min(Math.max(0,numberOf(radius.bl,0)),maxRadius):tl;
+      path.moveTo(x+tl,y);
+      path.lineTo(x+w-tr,y);
+      path.quadraticCurveTo(x+w,y,x+w,y+tr);
+      path.lineTo(x+w,y+h-br);
+      path.quadraticCurveTo(x+w,y+h,x+w-br,y+h);
+      path.lineTo(x+bl,y+h);
+      path.quadraticCurveTo(x,y+h,x,y+h-bl);
+      path.lineTo(x,y+tl);
+      path.quadraticCurveTo(x,y,x+tl,y);
+      path.closePath();
+    } else if (type === 'polygon') {
+      const points = Array.isArray(command.points) ? command.points.filter(isRecord) : [];
+      if (points.length) {
+        path.moveTo(numberOf(points[0].x,0), numberOf(points[0].y,0));
+        for (let i=1;i<points.length;i+=1) path.lineTo(numberOf(points[i].x,0), numberOf(points[i].y,0));
+        path.closePath();
+      }
+    } else if (type === 'star') {
+      const cx=numberOf(command.x,0), cy=numberOf(command.y,0), outer=Math.max(0,numberOf(command.outerRadius,0)), inner=Math.max(0,numberOf(command.innerRadius,outer/2));
+      const points=Math.max(2,Math.min(256,Math.round(numberOf(command.points,5))));
+      for (let i=0;i<points*2;i+=1) {
+        const angle=-Math.PI/2+(i*Math.PI)/points, radius=i%2===0?outer:inner, x=cx+Math.cos(angle)*radius, y=cy+Math.sin(angle)*radius;
+        if (i===0) path.moveTo(x,y); else path.lineTo(x,y);
+      }
+      path.closePath();
+    } else if (type === 'arrow') {
+      const x=numberOf(command.x,0), y=numberOf(command.y,0), length=Math.max(0,numberOf(command.length,0));
+      const rad=numberOf(command.angle,0)*Math.PI/180;
+      const head=Math.max(0,numberOf(command.headLength,length*.3));
+      const spread=numberOf(command.headAngle,45)*Math.PI/180;
+      const ex=x+Math.cos(rad)*length, ey=y+Math.sin(rad)*length;
+      path.moveTo(x,y); path.lineTo(ex,ey);
+      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(rad-spread)*head,ey-Math.sin(rad-spread)*head);
+      path.moveTo(ex,ey); path.lineTo(ex-Math.cos(rad+spread)*head,ey-Math.sin(rad+spread)*head);
+    } else throw new Error('Unsupported Apexify Web path command: '+type);
+  }
+  return path;
+}
+
+
+function phase7Gradient(
+  ctx: CanvasRenderingContext2D,
+  config: RecordValue,
+  bounds: { x: number; y: number; w: number; h: number },
+): CanvasGradient | CanvasPattern {
+  const makeGradient = (
+    target: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): CanvasGradient => {
+    const rotatePoint = (
+      px: number,
+      py: number,
+      pivotX: number,
+      pivotY: number,
+      deg: number,
+    ): [number, number] => {
+      if (!deg) return [px, py];
+      const a = (deg * Math.PI) / 180;
+      const dx = px - pivotX;
+      const dy = py - pivotY;
+      return [
+        pivotX + dx * Math.cos(a) - dy * Math.sin(a),
+        pivotY + dx * Math.sin(a) + dy * Math.cos(a),
+      ];
+    };
+
+    const type = stringOf(config.type, 'linear');
+    let gradient: CanvasGradient;
+    if (type === 'radial') {
+      const rotate = numberOf(config.rotate, 0);
+      const pivotX = numberOf(config.pivotX, w / 2);
+      const pivotY = numberOf(config.pivotY, h / 2);
+      const [sx, sy] = rotatePoint(
+        numberOf(config.startX, w / 2),
+        numberOf(config.startY, h / 2),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      const [ex, ey] = rotatePoint(
+        numberOf(config.endX, w / 2),
+        numberOf(config.endY, h / 2),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      gradient = target.createRadialGradient(
+        x + sx,
+        y + sy,
+        Math.max(0, numberOf(config.startRadius, 0)),
+        x + ex,
+        y + ey,
+        Math.max(0, numberOf(config.endRadius, Math.max(w, h) / 2)),
+      );
+    } else if (type === 'conic' && typeof target.createConicGradient === 'function') {
+      const rotate = numberOf(config.rotate, 0);
+      const pivotX = numberOf(config.pivotX, w / 2);
+      const pivotY = numberOf(config.pivotY, h / 2);
+      const [cx, cy] = rotatePoint(
+        numberOf(config.centerX, w / 2),
+        numberOf(config.centerY, h / 2),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      gradient = target.createConicGradient(
+        ((numberOf(config.startAngle, 0) + rotate) * Math.PI) / 180,
+        x + cx,
+        y + cy,
+      );
+    } else {
+      const rotate = numberOf(config.rotate, 0);
+      const pivotX = numberOf(config.pivotX, w / 2);
+      const pivotY = numberOf(config.pivotY, h / 2);
+      const [sx, sy] = rotatePoint(
+        numberOf(config.startX, 0),
+        numberOf(config.startY, 0),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      const [ex, ey] = rotatePoint(
+        numberOf(config.endX, w),
+        numberOf(config.endY, 0),
+        pivotX,
+        pivotY,
+        rotate,
+      );
+      gradient = target.createLinearGradient(x + sx, y + sy, x + ex, y + ey);
+    }
+
+    const colors = Array.isArray(config.colors)
+      ? config.colors.filter(isRecord).slice().sort(
+          (a, b) => numberOf(a.stop, 0) - numberOf(b.stop, 0),
+        )
+      : [];
+    if (colors.length < 2) {
+      throw new Error('Gradient colors must contain at least two stops.');
+    }
+    for (const stop of colors) {
+      gradient.addColorStop(
+        Math.min(1, Math.max(0, numberOf(stop.stop, 0))),
+        stringOf(stop.color, '#ffffff'),
+      );
+    }
+    return gradient;
+  };
+
+  const w = Math.max(1, bounds.w);
+  const h = Math.max(1, bounds.h);
+  const repeat = stringOf(config.repeat, 'no-repeat');
+  if (repeat !== 'repeat' && repeat !== 'reflect') {
+    return makeGradient(ctx, bounds.x, bounds.y, w, h);
+  }
+
+  const period = document.createElement('canvas');
+  period.width = Math.max(1, Math.ceil(w));
+  period.height = Math.max(1, Math.ceil(h));
+  const periodCtx = period.getContext('2d');
+  if (!periodCtx) throw new Error('Gradient period canvas is unavailable.');
+  periodCtx.fillStyle = makeGradient(periodCtx, 0, 0, w, h);
+  periodCtx.fillRect(0, 0, period.width, period.height);
+
+  let source: CanvasImageSource = period;
+  if (repeat === 'reflect') {
+    const reflected = document.createElement('canvas');
+    reflected.width = period.width * 2;
+    reflected.height = period.height * 2;
+    const reflectedCtx = reflected.getContext('2d');
+    if (!reflectedCtx) throw new Error('Reflected gradient canvas is unavailable.');
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.save();
+    reflectedCtx.translate(reflected.width, 0);
+    reflectedCtx.scale(-1, 1);
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.restore();
+    reflectedCtx.save();
+    reflectedCtx.translate(0, reflected.height);
+    reflectedCtx.scale(1, -1);
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.restore();
+    reflectedCtx.save();
+    reflectedCtx.translate(reflected.width, reflected.height);
+    reflectedCtx.scale(-1, -1);
+    reflectedCtx.drawImage(period, 0, 0);
+    reflectedCtx.restore();
+    source = reflected;
+  }
+
+  const pattern = ctx.createPattern(source, 'repeat');
+  if (!pattern) throw new Error('Failed to create repeating gradient pattern.');
+  if (typeof pattern.setTransform === 'function' && typeof DOMMatrix !== 'undefined') {
+    pattern.setTransform(new DOMMatrix().translate(bounds.x, bounds.y));
+  }
+  return pattern;
+}
+
+function phase7DrawPath(ctx: CanvasRenderingContext2D, path: Path2D, raw: Jsonish, width: number, height: number) {
+  const options=isRecord(raw)?raw:{}, transform=isRecord(options.transform)?options.transform:{};
+  const stroke=isRecord(options.stroke)?options.stroke:null, fill=isRecord(options.fill)?options.fill:null, shadow=isRecord(options.shadow)?options.shadow:null;
+  const gradientBounds=isRecord(options.gradientBounds)
+    ? {
+        x:numberOf(options.gradientBounds.x,0),
+        y:numberOf(options.gradientBounds.y,0),
+        w:Math.max(1,numberOf(options.gradientBounds.w,width)),
+        h:Math.max(1,numberOf(options.gradientBounds.h,height)),
+      }
+    : {x:0,y:0,w:width,h:height};
+  const opacity=Math.min(1,Math.max(0,numberOf(options.opacity,1)));
+  ctx.save();
+  const hasOrigin=typeof transform.originX==='number'&&typeof transform.originY==='number';
+  const rotate=numberOf(transform.rotate,0);
+  const scaleX=numberOf(transform.scaleX,1),scaleY=numberOf(transform.scaleY,1);
+  if(hasOrigin){
+    const ox=numberOf(transform.originX,0),oy=numberOf(transform.originY,0);
+    ctx.translate(ox,oy);
+    if(rotate)ctx.rotate(rotate*Math.PI/180);
+    if(scaleX!==1||scaleY!==1)ctx.scale(scaleX,scaleY);
+    ctx.translate(-ox,-oy);
+  }else{
+    const tx=numberOf(transform.translateX,0),ty=numberOf(transform.translateY,0);
+    if(tx||ty)ctx.translate(tx,ty);
+    if(rotate)ctx.rotate(rotate*Math.PI/180);
+    if(scaleX!==1||scaleY!==1)ctx.scale(scaleX,scaleY);
+  }
+  const composite=stringOf(options.globalCompositeOperation,''); if (composite) { try { ctx.globalCompositeOperation=composite as GlobalCompositeOperation; } catch {} }
+  if (shadow) { ctx.shadowColor=stringOf(shadow.color,'rgba(0,0,0,.45)'); ctx.shadowBlur=Math.max(0,numberOf(shadow.blur,0)); ctx.shadowOffsetX=numberOf(shadow.offsetX,0); ctx.shadowOffsetY=numberOf(shadow.offsetY,0); }
+  if (stroke) {
+    ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(stroke.opacity,1)));
+    ctx.strokeStyle=isRecord(stroke.gradient)?phase7Gradient(ctx,stroke.gradient,gradientBounds):stringOf(stroke.color,'#ffffff');
+    ctx.lineWidth=Math.max(0,numberOf(stroke.width,1)); ctx.lineCap=stringOf(stroke.lineCap,'butt') as CanvasLineCap; ctx.lineJoin=stringOf(stroke.lineJoin,'miter') as CanvasLineJoin;
+    const dash=Array.isArray(stroke.dashArray)?stroke.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):stringOf(stroke.style,'')==='dashed'?[10,6]:stringOf(stroke.style,'')==='dotted'?[2,5]:[];
+    ctx.setLineDash(dash); ctx.lineDashOffset=numberOf(stroke.dashOffset,0); ctx.stroke(path); ctx.setLineDash([]);
+  }
+  if (fill) {
+    ctx.globalAlpha=opacity*Math.min(1,Math.max(0,numberOf(fill.opacity,1)));
+    ctx.fillStyle=isRecord(fill.gradient)?phase7Gradient(ctx,fill.gradient,gradientBounds):stringOf(fill.color,'#ffffff');
+    ctx.fill(path,stringOf(fill.rule,'nonzero') as CanvasFillRule);
+  }
+  ctx.restore();
+}
+
+function phase7Arrow(ctx: CanvasRenderingContext2D,x:number,y:number,angle:number,size:number,style:string,color:string) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(angle); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-size,size*.48); ctx.lineTo(-size,-size*.48); ctx.closePath(); ctx.fillStyle=color; ctx.strokeStyle=color; if(style==='outline')ctx.stroke();else ctx.fill(); ctx.restore();
+}
+
+function phase7Custom(ctx: CanvasRenderingContext2D, raw: Jsonish) {
+  const list=Array.isArray(raw)?raw:[raw];
+  for(const item of list) {
+    if(!isRecord(item))continue;
+    const start=isRecord(item.startCoordinates)?item.startCoordinates:{}, end=isRecord(item.endCoordinates)?item.endCoordinates:{}, style=isRecord(item.lineStyle)?item.lineStyle:{}, arrow=isRecord(item.arrow)?item.arrow:null;
+    const sx=numberOf(start.x,0), sy=numberOf(start.y,0), ex=numberOf(end.x,0), ey=numberOf(end.y,0);
+    ctx.save(); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineWidth=Math.max(0,numberOf(style.width,1)); ctx.strokeStyle=stringOf(style.color,'black'); ctx.lineJoin=stringOf(style.lineJoin,'miter') as CanvasLineJoin; ctx.lineCap=stringOf(style.lineCap,'butt') as CanvasLineCap;
+    const dash=isRecord(style.lineDash)&&Array.isArray(style.lineDash.dashArray)?style.lineDash.dashArray.filter((v):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0):[];
+    ctx.setLineDash(dash); if(isRecord(style.lineDash))ctx.lineDashOffset=numberOf(style.lineDash.offset,0); ctx.stroke();
+    if(arrow){const angle=Math.atan2(ey-sy,ex-sx),size=Math.max(1,numberOf(arrow.size,10)),color=stringOf(arrow.color,stringOf(style.color,'black')),kind=stringOf(arrow.style,'filled');if(boolOf(arrow.start,false))phase7Arrow(ctx,sx,sy,angle+Math.PI,size,kind,color);if(boolOf(arrow.end,false))phase7Arrow(ctx,ex,ey,angle,size,kind,color);}
+    if(Array.isArray(item.markers))for(const marker of item.markers){if(!isRecord(marker))continue;const t=Math.min(1,Math.max(0,numberOf(marker.position,0))),mx=sx+(ex-sx)*t,my=sy+(ey-sy)*t,size=Math.max(1,numberOf(marker.size,6)),shape=stringOf(marker.shape,'circle');ctx.beginPath();ctx.fillStyle=stringOf(marker.color,'#ffffff');if(shape==='square')ctx.rect(mx-size/2,my-size/2,size,size);else if(shape==='diamond'){ctx.moveTo(mx,my-size/2);ctx.lineTo(mx+size/2,my);ctx.lineTo(mx,my+size/2);ctx.lineTo(mx-size/2,my);ctx.closePath();}else ctx.arc(mx,my,size/2,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  }
+}
+
+function phase7Manipulate(ctx: CanvasRenderingContext2D, raw: Jsonish, width:number,height:number) {
+  const options=isRecord(raw)?raw:{}, region=isRecord(options.region)?options.region:{}, x=Math.max(0,Math.floor(numberOf(region.x,0))), y=Math.max(0,Math.floor(numberOf(region.y,0)));
+  const w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))), h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))), filter=stringOf(options.filter,''), intensity=Math.min(1,Math.max(0,numberOf(options.intensity,1)));
+  if(!['grayscale','invert','sepia','brightness','contrast','saturate'].includes(filter))return;
+  const image=ctx.getImageData(x,y,w,h),d=image.data,blend=(a:number,b:number)=>Math.round(a+(b-a)*intensity);
+  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2];let nr=r,ng=g,nb=b;if(filter==='grayscale'){const q=.299*r+.587*g+.114*b;nr=ng=nb=q;}else if(filter==='invert'){nr=255-r;ng=255-g;nb=255-b;}else if(filter==='sepia'){nr=Math.min(255,.393*r+.769*g+.189*b);ng=Math.min(255,.349*r+.686*g+.168*b);nb=Math.min(255,.272*r+.534*g+.131*b);}else if(filter==='brightness'){nr=Math.min(255,r+128);ng=Math.min(255,g+128);nb=Math.min(255,b+128);}else if(filter==='contrast'){nr=Math.min(255,Math.max(0,(r-128)*2+128));ng=Math.min(255,Math.max(0,(g-128)*2+128));nb=Math.min(255,Math.max(0,(b-128)*2+128));}else if(filter==='saturate'){const q=.299*r+.587*g+.114*b;nr=Math.min(255,Math.max(0,q+(r-q)*2));ng=Math.min(255,Math.max(0,q+(g-q)*2));nb=Math.min(255,Math.max(0,q+(b-q)*2));}d[i]=blend(r,nr);d[i+1]=blend(g,ng);d[i+2]=blend(b,nb);}
+  ctx.putImageData(image,x,y);
+}
+
+function phase7Color(ctx:CanvasRenderingContext2D,x:number,y:number){const d=ctx.getImageData(Math.max(0,Math.floor(x)),Math.max(0,Math.floor(y)),1,1).data;return{r:d[0],g:d[1],b:d[2],a:d[3]};}
+function phase7SegmentDistance(px:number,py:number,x1:number,y1:number,x2:number,y2:number){const vx=x2-x1,vy=y2-y1,len=vx*vx+vy*vy;if(len===0)return Math.hypot(px-x1,py-y1);const t=Math.max(0,Math.min(1,((px-x1)*vx+(py-y1)*vy)/len));return Math.hypot(px-(x1+t*vx),py-(y1+t*vy));}
+function phase7EllipseLocal(region:RecordValue,x:number,y:number){const cx=numberOf(region.x,0),cy=numberOf(region.y,0),rotation=numberOf(region.rotation,0),cos=Math.cos(-rotation),sin=Math.sin(-rotation),dx=x-cx,dy=y-cy;return{cx,cy,rotation,cos,sin,tx:dx*cos-dy*sin,ty:dx*sin+dy*cos,rx:Math.max(.000001,numberOf(region.radiusX,1)),ry:Math.max(.000001,numberOf(region.radiusY,1))};}
+function phase7PolygonPoints(region:RecordValue){return Array.isArray(region.points)?region.points.filter(isRecord):[];}
+function phase7PolygonHit(points:RecordValue[],x:number,y:number,tolerance:number){for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];if(phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0))<=tolerance+1e-9)return true;}let inside=false;for(let i=0,j=points.length-1;i<points.length;j=i++){const a=points[i],b=points[j],ax=numberOf(a.x,0),ay=numberOf(a.y,0),bx=numberOf(b.x,0),by=numberOf(b.y,0);if((ay>y)!==(by>y)&&x<((bx-ax)*(y-ay))/(by-ay)+ax)inside=!inside;}return inside;}
+function phase7EllipseDistance(region:RecordValue,x:number,y:number){const q=phase7EllipseLocal(region,x,y);const angle=Math.atan2(q.ty*q.rx,q.tx*q.ry),lx=q.rx*Math.cos(angle),ly=q.ry*Math.sin(angle),ex=q.cx+lx*q.cos-ly*q.sin,ey=q.cy+lx*q.sin+ly*q.cos;return Math.hypot(x-ex,y-ey);}
+function phase7Region(ctx:CanvasRenderingContext2D,region:RecordValue,x:number,y:number,options:RecordValue){
+  const type=stringOf(region.type,'rect'),t=Math.max(0,numberOf(options.tolerance,0));
+  let hit=false,stroke=false,distance: number | undefined;
+  if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0);hit=x>=rx-t&&x<=rx+rw+t&&y>=ry-t&&y<=ry+rh+t;distance=hit?0:Math.hypot(Math.max(rx-x,0,x-(rx+rw)),Math.max(ry-y,0,y-(ry+rh)));if(hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){const half=numberOf(options.strokeWidth,1)/2+t,outer=x>=rx-half&&x<=rx+rw+half&&y>=ry-half&&y<=ry+rh+half,inner=x>rx+half&&x<rx+rw-half&&y>ry+half&&y<ry+rh-half;stroke=outer&&!inner;}}
+  else if(type==='circle'){const radial=Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0)),radius=Math.max(0,numberOf(region.radius,0));hit=radial<=radius+t;distance=hit?0:radial-radius;if(hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number')stroke=Math.abs(radial-radius)<=numberOf(options.strokeWidth,1)/2+t;}
+  else if(type==='ellipse'){const q=phase7EllipseLocal(region,x,y),rx=q.rx+t,ry=q.ry+t;hit=(q.tx*q.tx)/(rx*rx)+(q.ty*q.ty)/(ry*ry)<=1+1e-9;distance=hit?0:phase7EllipseDistance(region,x,y);}
+  else if(type==='polygon'){const points=phase7PolygonPoints(region);hit=points.length>=3&&phase7PolygonHit(points,x,y,t);if(hit)distance=0;else if(points.length>=2){let min=Infinity;for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];min=Math.min(min,phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0)));}distance=Number.isFinite(min)?min:undefined;}}
+  else if(type==='path'&&Array.isArray(region.path)){
+    const path=phase7Path(region.path);
+    hit=ctx.isPointInPath(path,x,y,stringOf(region.fillRule,stringOf(options.fillRule,'nonzero')) as CanvasFillRule);
+    if(!hit&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){
+      ctx.save();
+      ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*t);
+      stroke=ctx.isPointInStroke(path,x,y);
+      ctx.restore();
+      hit=stroke;
+    }
+  }
+  return{hit,hitType:hit?(stroke?'stroke':'fill'):'outside',...(distance!==undefined?{distance}:{})};
+}
+function phase7Distance(region:RecordValue,x:number,y:number){
+  const type=stringOf(region.type,'');
+  if(type==='rect'){const rx=numberOf(region.x,0),ry=numberOf(region.y,0),rw=numberOf(region.width,0),rh=numberOf(region.height,0);return Math.hypot(Math.max(rx-x,0,x-(rx+rw)),Math.max(ry-y,0,y-(ry+rh)));}
+  if(type==='circle')return Math.max(0,Math.hypot(x-numberOf(region.x,0),y-numberOf(region.y,0))-Math.max(0,numberOf(region.radius,0)));
+  if(type==='ellipse'){const q=phase7EllipseLocal(region,x,y);return(q.tx*q.tx)/(q.rx*q.rx)+(q.ty*q.ty)/(q.ry*q.ry)<=1+1e-9?0:phase7EllipseDistance(region,x,y);}
+  if(type==='polygon'){const points=phase7PolygonPoints(region);if(points.length<3)return null;if(phase7PolygonHit(points,x,y,0))return 0;let min=Infinity;for(let i=0;i<points.length;i+=1){const a=points[i],b=points[(i+1)%points.length];min=Math.min(min,phase7SegmentDistance(x,y,numberOf(a.x,0),numberOf(a.y,0),numberOf(b.x,0),numberOf(b.y,0)));}return Number.isFinite(min)?min:null;}
+  return null;
+}
+
 export async function renderApexifyWebPreview(
   source: string,
   studioAssets: readonly WebVirtualAsset[] = [],
 ): Promise<WebStudioPreviewResult> {
   const started = performance.now();
   const studioAssetsById = new Map(studioAssets.map((asset) => [asset.id, asset] as const));
-  const supportedApis = ['createCanvas', 'createText', 'createImage', 'createChart'];
+  const supportedApis = [
+    'createCanvas', 'createText', 'createImage', 'createChart',
+    'path2d.create', 'path2d.draw', 'path2d.custom',
+    'pixels.manipulate', 'pixels.getColor', 'pixels.setColor', 'pixels.getData',
+    'detect.path', 'detect.region', 'detect.anyRegion', 'detect.distance',
+  ];
   const warnings: string[] = [];
 
   if (
@@ -2283,6 +2629,7 @@ export async function renderApexifyWebPreview(
 
   try {
     const calls = extractCalls(source, [...supportedApis, ...UNSUPPORTED_APIS]);
+    const structuredResults: Record<string, Jsonish> = {};
     const resolver = createSafePreviewResolver(source);
     const resolve = (expression: string, sourceIndex: number): Jsonish => {
       try {
@@ -2290,6 +2637,26 @@ export async function renderApexifyWebPreview(
       } catch {
         return parseLiteral(expression);
       }
+    };
+
+    const pathDefinitionsByIdentifier = new Map<string, Array<{ index: number; value: Jsonish }>>();
+    for (const pathCall of calls.filter((item) => item.method === 'path2d.create' && item.args[0])) {
+      const identifier = assignedIdentifierForCall(source, pathCall);
+      if (!identifier) continue;
+      const definitions = pathDefinitionsByIdentifier.get(identifier) ?? [];
+      definitions.push({ index: pathCall.index, value: resolveCallArgument(source, pathCall, pathCall.args[0], resolve) });
+      pathDefinitionsByIdentifier.set(identifier, definitions);
+    }
+    const resolvePathArgument = (call: Call, expression: string | undefined): Jsonish => {
+      if (!expression) return [];
+      const identifier = expression.trim().match(/^[A-Za-z_$][\w$]*$/)?.[0];
+      if (identifier) {
+        const definitions = pathDefinitionsByIdentifier.get(identifier) ?? [];
+        for (let i = definitions.length - 1; i >= 0; i -= 1) {
+          if (definitions[i].index < call.index) return definitions[i].value;
+        }
+      }
+      return resolveCallArgument(source, call, expression, resolve);
     };
 
     const chartCalls = calls.filter((call) => call.method === 'createChart' && call.args[0]);
@@ -2445,6 +2812,30 @@ export async function renderApexifyWebPreview(
         }
       } else if (call.method === 'createChart') {
         // Charts are pre-rendered so their output can be used by later createImage() calls.
+      } else if (call.method === 'path2d.create') {
+        // Resource declaration only.
+      } else if (call.method === 'path2d.draw') {
+        phase7DrawPath(ctx, phase7Path(resolvePathArgument(call, call.args[1])), resolveCallArgument(source, call, call.args[2], resolve), width, height);
+      } else if (call.method === 'path2d.custom') {
+        phase7Custom(ctx, resolveCallArgument(source, call, call.args[0], resolve));
+      } else if (call.method === 'pixels.manipulate') {
+        phase7Manipulate(ctx, resolveCallArgument(source, call, call.args[1], resolve), width, height);
+      } else if (call.method === 'pixels.setColor') {
+        const x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),color=resolveCallArgument(source,call,call.args[3],resolve);
+        if(isRecord(color)){const d=ctx.createImageData(1,1);d.data[0]=Math.max(0,Math.min(255,numberOf(color.r,0)));d.data[1]=Math.max(0,Math.min(255,numberOf(color.g,0)));d.data[2]=Math.max(0,Math.min(255,numberOf(color.b,0)));d.data[3]=Math.max(0,Math.min(255,numberOf(color.a,255)));ctx.putImageData(d,Math.floor(x),Math.floor(y));}
+      } else if (call.method === 'pixels.getColor') {
+        const key=assignedIdentifierForCall(source,call)??'pixelColor';structuredResults[key]=phase7Color(ctx,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0));
+      } else if (call.method === 'pixels.getData') {
+        const regionValue=resolveCallArgument(source,call,call.args[1],resolve),region=isRecord(regionValue)?regionValue:{},x=Math.max(0,Math.floor(numberOf(region.x,0))),y=Math.max(0,Math.floor(numberOf(region.y,0))),w=Math.max(1,Math.min(width-x,Math.floor(numberOf(region.width,width-x)))),h=Math.max(1,Math.min(height-y,Math.floor(numberOf(region.height,height-y)))),data=ctx.getImageData(x,y,w,h).data;
+        structuredResults[assignedIdentifierForCall(source,call)??'pixelData']={width:w,height:h,sample:Array.from(data.slice(0,Math.min(64,data.length)))};
+      } else if (call.method === 'detect.path') {
+        const path=phase7Path(resolvePathArgument(call,call.args[0])),x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),options=isRecord(optionsValue)?optionsValue:{},fill=ctx.isPointInPath(path,x,y,stringOf(options.fillRule,'nonzero') as CanvasFillRule);let stroke=false;if(!fill&&boolOf(options.includeStroke,false)&&typeof options.strokeWidth==='number'){ctx.save();ctx.lineWidth=Math.max(.001,numberOf(options.strokeWidth,0)+2*Math.max(0,numberOf(options.tolerance,0)));stroke=ctx.isPointInStroke(path,x,y);ctx.restore();}structuredResults[assignedIdentifierForCall(source,call)??'pathHit']={hit:fill||stroke,hitType:fill?'fill':stroke?'stroke':'outside'};
+      } else if (call.method === 'detect.region') {
+        const regionValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve);structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=phase7Region(ctx,isRecord(regionValue)?regionValue:{},numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),isRecord(optionsValue)?optionsValue:{});
+      } else if (call.method === 'detect.anyRegion') {
+        const regionsValue=resolveCallArgument(source,call,call.args[0],resolve),optionsValue=resolveCallArgument(source,call,call.args[3],resolve),regions=Array.isArray(regionsValue)?regionsValue.filter(isRecord):[],x=numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),y=numberOf(resolveCallArgument(source,call,call.args[2],resolve),0),options=isRecord(optionsValue)?optionsValue:{};let result:RecordValue={hit:false,hitType:'outside'};for(let i=0;i<regions.length;i+=1){const candidate=phase7Region(ctx,regions[i],x,y,options);if(candidate.hit){result={...candidate,hitRegion:i};break;}}structuredResults[assignedIdentifierForCall(source,call)??'regionHit']=result;
+      } else if (call.method === 'detect.distance') {
+        const regionValue=resolveCallArgument(source,call,call.args[0],resolve);structuredResults[assignedIdentifierForCall(source,call)??'distance']=isRecord(regionValue)?phase7Distance(regionValue,numberOf(resolveCallArgument(source,call,call.args[1],resolve),0),numberOf(resolveCallArgument(source,call,call.args[2],resolve),0)):null;
       } else if (UNSUPPORTED_APIS.includes(call.method)) {
         warnings.push(`${call.method}() requires the Node renderer and was not executed by Apexify Web.`);
       }
@@ -2480,6 +2871,7 @@ export async function renderApexifyWebPreview(
       elapsedMs: Math.round(performance.now() - started),
       supportedApis,
       warnings: [...new Set(warnings)],
+      ...(Object.keys(structuredResults).length ? { results: structuredResults } : {}),
     };
   } catch (error) {
     return {
