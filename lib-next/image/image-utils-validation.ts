@@ -113,7 +113,7 @@ export function validateConverterInputs(source: string | Buffer, newExtension: s
   }
 }
 
-export function validateEffectsInputs(source: string, filters: ImageFilter[]): void {
+export function validateEffectsInputs(source: string | Buffer, filters: ImageFilter[]): void {
   assertSource(source, "image.effects.source");
   assertCollection(filters, "image.effects.filters", { min: 1, limit: "maxFiltersPerOperation" });
   filters.forEach((filter, i) => {
@@ -122,12 +122,12 @@ export function validateEffectsInputs(source: string, filters: ImageFilter[]): v
   });
 }
 
-export function validateColorFilterInputs(source: string, opacity: number): void {
+export function validateColorFilterInputs(source: string | Buffer, opacity: number): void {
   assertSource(source, "image.colorsFilter.source");
   assertOpacity(opacity, "image.colorsFilter.opacity");
 }
 
-export function validateColorRemovalInputs(source: string, color: { red: number; green: number; blue: number }): void {
+export function validateColorRemovalInputs(source: string | Buffer, color: { red: number; green: number; blue: number }): void {
   assertSource(source, "image.colorsRemover.source");
   assertRecord(color, "image.colorsRemover.colorToRemove");
   assertFiniteNumber(color.red, "image.colorsRemover.colorToRemove.red", { min: 0, max: 255, integer: true });
