@@ -12,8 +12,8 @@ export interface PainterImageUtils {
   extractPalette(image: string | Buffer, options?: PaletteOptions): Promise<Array<{ color: string; percentage: number }>>;
   resize(resizeOptions: ResizeOptions): Promise<Buffer>;
   imgConverter(source: string | Buffer, newExtension: string): Promise<Buffer>;
-  effects(source: string, filters: ImageFilter[]): Promise<Buffer>;
-  colorsFilter(source: string, filterColor: string | GradientConfig, opacity?: number): Promise<Buffer>;
+  effects(source: string | Buffer, filters: ImageFilter[]): Promise<Buffer>;
+  colorsFilter(source: string | Buffer, filterColor: string | GradientConfig, opacity?: number): Promise<Buffer>;
   colorAnalysis(source: string): Promise<{ color: string; frequency: string }[]>;
   /** Operational failures throw structured Apexify errors; successful calls always return bytes. */
   colorsRemover(source: string, colorToRemove: { red: number; green: number; blue: number }): Promise<Buffer>;
