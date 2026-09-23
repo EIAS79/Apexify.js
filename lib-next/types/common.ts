@@ -72,7 +72,7 @@ export interface cropCoordinate {
 
 export interface cropOptions {
   coordinates: cropCoordinate[];
-  imageSource: string;
+  imageSource: string | Buffer;
   crop: "inner" | "outer";
   radius: number | "circular";
 }

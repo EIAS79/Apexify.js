@@ -27,7 +27,7 @@ type LegacyImageFilter = {
 };
 
 /** Apply a solid color or authoritative Apexify gradient overlay to a preflighted image source. */
-export async function applyColorFilters(imagePath: string, gradientOptions: string | GradientConfig, opacity = 1): Promise<Buffer> {
+export async function applyColorFilters(imagePath: string | Buffer, gradientOptions: string | GradientConfig, opacity = 1): Promise<Buffer> {
   if (typeof gradientOptions !== "string" && (!gradientOptions || typeof gradientOptions !== "object")) {
     throw new ApexifyInputError("image.colorsFilter.filterColor must be a color string or GradientConfig.");
   }
