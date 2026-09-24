@@ -512,6 +512,8 @@ export class ApexPainter {
         opts?.resolveAssetRefs
           ? opts.resolve ?? ((ref: string) => this.assets.resolve(ref))
           : undefined,
+      concurrency: opts?.concurrency,
+      signal: opts?.signal,
     });
   }
 
@@ -522,6 +524,8 @@ export class ApexPainter {
         opts?.resolveAssetRefs
           ? opts.resolve ?? ((ref: string) => this.assets.resolve(ref))
           : undefined,
+      concurrency: opts?.concurrency,
+      signal: opts?.signal,
     });
   }
 

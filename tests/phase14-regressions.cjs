@@ -92,6 +92,38 @@ test('native font registration admission is bounded even while registrations are
   await assert.rejects(first, api.ApexifyInputError);
 });
 
+
+test('ApexPainter batch/chain facade forwards per-call concurrency and abort signal', async () => {
+  const painter = new api.ApexPainter();
+  let active = 0;
+  let peak = 0;
+  painter.createCanvas = async (config) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 8));
+    active -= 1;
+    return { buffer: Buffer.from([config.width]), canvas: { width: config.width, height: config.height } };
+  };
+
+  const outputs = await painter.batch(
+    [1, 2, 3].map((width) => ({ type: 'canvas', config: { width, height: 1 } })),
+    { concurrency: 1 },
+  );
+  assert.deepEqual(outputs.map((buffer) => buffer[0]), [1, 2, 3]);
+  assert.equal(peak, 1);
+
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    () => painter.batch([{ type: 'canvas', config: { width: 1, height: 1 } }], { signal: controller.signal }),
+    (error) => error instanceof api.ApexifyInputError && /aborted/i.test(error.message),
+  );
+  await assert.rejects(
+    () => painter.chain([{ method: 'createCanvas', args: [{ width: 1, height: 1 }] }], { signal: controller.signal }),
+    (error) => error instanceof api.ApexifyInputError && /aborted/i.test(error.message),
+  );
+});
+
 test('structured error base contract remains stable', () => {
   const error = new api.ApexifyInputError('bad input', { details: { field: 'x' } });
   assert.equal(error.code, 'APEXIFY_INPUT');
