@@ -21,6 +21,8 @@ export type WebStudioPreviewResult =
       ok: true;
       dataUrl: string;
       mime: 'image/png';
+      width: number;
+      height: number;
       elapsedMs: number;
       supportedApis: string[];
       warnings: string[];
@@ -3107,6 +3109,8 @@ export async function renderApexifyWebPreview(
           ok: true,
           dataUrl: chartOnly.toDataURL('image/png'),
           mime: 'image/png',
+          width: chartOnly.width,
+          height: chartOnly.height,
           elapsedMs: Math.round(performance.now() - started),
           supportedApis,
           warnings: [...new Set(warnings)],
@@ -3296,6 +3300,8 @@ export async function renderApexifyWebPreview(
       ok: true,
       dataUrl: canvas.toDataURL('image/png'),
       mime: 'image/png',
+      width,
+      height,
       elapsedMs: Math.round(performance.now() - started),
       supportedApis,
       warnings: [...new Set(warnings)],
