@@ -3126,8 +3126,37 @@ export async function renderApexifyWebPreview(
       throw new Error('createCanvas() options must resolve to an object.');
     }
 
-    const width = Math.round(numberOf(canvasConfig.width, 640));
-    const height = Math.round(numberOf(canvasConfig.height, 360));
+    let width = Math.round(numberOf(canvasConfig.width, 640));
+    let height = Math.round(numberOf(canvasConfig.height, 360));
+
+    // Match the Node/native CanvasCreator contract: customBg.inherit means the
+    // output canvas adopts the source bitmap's natural pixel dimensions.
+    // Without this, browser Studio silently fell back to 640×360 and stretched
+    // large imported artwork, producing visibly soft/distorted previews.
+    const inheritedBackground = isRecord(canvasConfig.customBg)
+      ? canvasConfig.customBg
+      : null;
+    if (inheritedBackground && boolOf(inheritedBackground.inherit, false)) {
+      const source = stringOf(inheritedBackground.source, '');
+      if (!source) {
+        throw new Error('customBg.inherit requires a resolvable image source.');
+      }
+      const bitmap = await previewBitmapFromSource(
+        source,
+        studioAssetsById,
+        warnings,
+        'customBg inherit',
+      );
+      if (!bitmap) {
+        throw new Error('Apexify Web could not resolve customBg source dimensions.');
+      }
+      try {
+        width = bitmap.width;
+        height = bitmap.height;
+      } finally {
+        bitmap.close();
+      }
+    }
 
     if (width < 1 || height < 1 || width > 4096 || height > 4096 || width * height > 12_000_000) {
       throw new Error('Apexify Web limits output to 4096×4096 and 12 million pixels.');
