@@ -1,4 +1,4 @@
-import type { SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import type { borderPosition, StrokeOptions } from "../types";
 import type { gradient } from "../types";
 import { buildPath, buildPartialRectStrokeEdges, parseStrokeSideSet } from "./clip-path";
@@ -190,8 +190,18 @@ export function applyStroke(
     }
   };
 
+  if (blur > 0) {
+    const layer = createCanvas(ctx.canvas.width, ctx.canvas.height);
+    const layerCtx = layer.getContext("2d") as SKRSContext2D;
+    applyStroke(layerCtx, { ...stroke, blur: 0 }, rect.x, rect.y, rect.w, rect.h, radius, roundedCornersMask);
+    ctx.save();
+    ctx.filter = `blur(${blur}px)`;
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
-  if (blur > 0) ctx.filter = `blur(${blur}px)`;
   ctx.globalAlpha = opacity;
 
   buildStrokePath();
