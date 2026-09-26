@@ -13,6 +13,13 @@ const BG_TYPES = ["color", "gradient", "image", "pattern", "presetPattern", "noi
 
 const PATTERN_TYPES = ["grid", "dots", "diagonal", "stripes", "waves", "crosses", "hexagons", "checkerboard", "diamonds", "triangles", "stars", "polka", "custom"] as const;
 const PATTERN_REPEAT = ["repeat", "repeat-x", "repeat-y", "no-repeat"] as const;
+const COMPOSITE_MODES = [
+  "source-over","source-in","source-out","source-atop",
+  "destination-over","destination-in","destination-out","destination-atop",
+  "lighter","copy","xor","multiply","screen","overlay","darken","lighten",
+  "color-dodge","color-burn","hard-light","soft-light","difference","exclusion",
+  "hue","saturation","color","luminosity",
+] as const;
 
 export function validatePatternOptions(pattern: PatternOptions, name = "pattern"): void {
   assertRecord(pattern, name);
@@ -25,8 +32,18 @@ export function validatePatternOptions(pattern: PatternOptions, name = "pattern"
   assertOptionalFiniteNumber(pattern.offsetX, `${name}.offsetX`);
   assertOptionalFiniteNumber(pattern.offsetY, `${name}.offsetY`);
   assertOptionalEnum(pattern.repeat, `${name}.repeat`, PATTERN_REPEAT);
-  if (pattern.color !== undefined) assertNonEmptyString(pattern.color, `${name}.color`, 512);
-  if (pattern.secondaryColor !== undefined) assertNonEmptyString(pattern.secondaryColor, `${name}.secondaryColor`, 512);
+  assertOptionalEnum(pattern.blendMode, `${name}.blendMode`, COMPOSITE_MODES);
+  if (pattern.gradient !== undefined) {
+    assertGradient(pattern.gradient, `${name}.gradient`);
+    if (pattern.color !== undefined || pattern.secondaryColor !== undefined) {
+      throw new ApexifyInputError(
+        `${name} must use either gradient paint or color/secondaryColor paint, not both.`
+      );
+    }
+  } else {
+    if (pattern.color !== undefined) assertNonEmptyString(pattern.color, `${name}.color`, 512);
+    if (pattern.secondaryColor !== undefined) assertNonEmptyString(pattern.secondaryColor, `${name}.secondaryColor`, 512);
+  }
   if (pattern.type === "custom") {
     assertNonEmptyString(pattern.customPatternImage, `${name}.customPatternImage`, 16_384);
   }
@@ -47,6 +64,7 @@ function validateBackgroundLayer(layer: unknown, index: number): void {
   assertRecord(layer, name);
   assertEnum(layer.type, `${name}.type`, BG_TYPES);
   assertOpacity(layer.opacity, `${name}.opacity`);
+  assertOptionalEnum(layer.blendMode, `${name}.blendMode`, COMPOSITE_MODES);
   if (layer.type === "color") assertNonEmptyString(layer.value, `${name}.value`, 512);
   if (layer.type === "gradient") assertGradient(layer.value, `${name}.value`);
   if (layer.type === "image" || layer.type === "pattern") {
@@ -75,6 +93,7 @@ export function validateCanvasConfig(canvas: CanvasConfig): void {
   assertOptionalFiniteNumber(canvas.x, "canvas.x");
   assertOptionalFiniteNumber(canvas.y, "canvas.y");
   assertOpacity(canvas.opacity, "canvas.opacity");
+  assertOptionalEnum(canvas.blendMode, "canvas.blendMode", COMPOSITE_MODES);
   assertOptionalFiniteNumber(canvas.blur, "canvas.blur", { min: 0 });
   assertOptionalFiniteNumber(canvas.rotation, "canvas.rotation");
   if (canvas.borderRadius !== undefined && canvas.borderRadius !== "circular") {

@@ -1104,11 +1104,11 @@ async function applyBackground(
     if (isRecord(config.patternBg)) {
       ctx.save();
       const pattern = config.patternBg;
-      const blend = stringOf(pattern.blendMode, 'overlay');
+      const blend = stringOf(pattern.blendMode, 'source-over');
       try {
         ctx.globalCompositeOperation = blend as GlobalCompositeOperation;
       } catch {
-        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalCompositeOperation = 'source-over';
       }
       drawPattern(ctx, pattern, width, height);
       ctx.restore();
@@ -1181,6 +1181,7 @@ function drawPattern(
       )
     : null;
   const primaryPaint = gradientPaint ?? color;
+  const secondaryPaint = gradientPaint ?? secondary;
   const margin = Math.ceil(Math.hypot(width, height) * 0.8);
   const left = -margin;
   const top = -margin;
@@ -1240,10 +1241,16 @@ function drawPattern(
         ctx.fill();
       }
     }
-  } else if (type === 'stripes' || type === 'diagonal') {
+  } else if (type === 'stripes') {
+    const step = Math.max(2, size + spacing);
+    for (let y = top, row = 0; y <= bottom; y += step, row += 1) {
+      ctx.fillStyle = row % 2 === 0 ? primaryPaint : secondaryPaint;
+      ctx.fillRect(left, y, spanWidth, size);
+    }
+  } else if (type === 'diagonal') {
     ctx.strokeStyle = primaryPaint;
     const step = Math.max(5, size + spacing);
-    const diagonal = type === 'diagonal' ? height + margin * 2 : 0;
+    const diagonal = height + margin * 2;
     for (let x = left - diagonal; x <= right + diagonal; x += step) {
       ctx.beginPath();
       ctx.moveTo(x, top);
@@ -1263,7 +1270,7 @@ function drawPattern(
         if (x === left) ctx.moveTo(x, waveY);
         else ctx.lineTo(x, waveY);
       }
-      ctx.strokeStyle = Math.round((y - top) / stepY) % 2 ? secondary : color;
+      ctx.strokeStyle = Math.round((y - top) / stepY) % 2 ? secondaryPaint : primaryPaint;
       ctx.stroke();
     }
   } else if (type === 'crosses') {
@@ -1271,7 +1278,7 @@ function drawPattern(
     const arm = Math.max(2, size / 2);
     for (let y = top; y <= bottom; y += step) {
       for (let x = left; x <= right; x += step) {
-        ctx.strokeStyle = Math.round((x + y) / step) % 2 ? secondary : color;
+        ctx.strokeStyle = Math.round((x + y) / step) % 2 ? secondaryPaint : primaryPaint;
         ctx.beginPath();
         ctx.moveTo(x - arm, y);
         ctx.lineTo(x + arm, y);
@@ -1294,14 +1301,14 @@ function drawPattern(
           const angle = (Math.PI / 3) * i;
           points.push([x + Math.cos(angle) * radius, y + Math.sin(angle) * radius]);
         }
-        strokePolygon(points, (col + row) % 2 ? secondary : color);
+        strokePolygon(points, (col + row) % 2 ? secondaryPaint : primaryPaint);
       }
     }
   } else if (type === 'checkerboard') {
     const cell = bounded2dStep(Math.max(4, size + spacing));
     for (let y = top, row = 0; y <= bottom; y += cell, row += 1) {
       for (let x = left, col = 0; x <= right; x += cell, col += 1) {
-        ctx.fillStyle = (row + col) % 2 ? secondary : color;
+        ctx.fillStyle = (row + col) % 2 ? secondaryPaint : primaryPaint;
         ctx.fillRect(x, y, cell, cell);
       }
     }
@@ -1340,7 +1347,7 @@ function drawPattern(
       ctx.stroke();
     }
     for (let y = top; y <= bottom; y += step) {
-      ctx.strokeStyle = secondary;
+      ctx.strokeStyle = secondaryPaint;
       ctx.beginPath();
       ctx.moveTo(left, y);
       ctx.lineTo(right, y);

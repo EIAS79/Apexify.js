@@ -1,8 +1,9 @@
-import { SKRSContext2D } from '@napi-rs/canvas';
+import { createCanvas, SKRSContext2D } from '@napi-rs/canvas';
 import type { PatternOptions, PatternViewport, RenderPatternStackOptions } from "../types";
 import { validatePatternOptions } from "./canvas-validation";
 import { loadImageCached } from "../image/image-properties";
 import { emitDiagnostic } from "../runtime/diagnostics";
+import { createGradientFill } from "../render/gradient-fill";
 
 export type { PatternViewport, RenderPatternStackOptions };
 
@@ -24,82 +25,128 @@ export class EnhancedPatternRenderer {
 
     const cw = viewport.width;
     const ch = viewport.height;
+    const incomingComposite = ctx.globalCompositeOperation;
+    const opacity = patternOptions.opacity ?? 1;
+    const composite =
+      patternOptions.blendMode ??
+      (stack?.stackedInLayer ? incomingComposite : ("source-over" as GlobalCompositeOperation));
 
-    ctx.save();
+    const layer = createCanvas(cw, ch);
+    const layerCtx = layer.getContext("2d") as SKRSContext2D;
 
+    const usesGradient = patternOptions.gradient !== undefined;
+    const geometryOptions: PatternOptions = usesGradient
+      ? {
+          ...patternOptions,
+          color: "#ffffff",
+          secondaryColor: "#ffffff",
+          gradient: undefined,
+          opacity: 1,
+          blendMode: "source-over",
+        }
+      : {
+          ...patternOptions,
+          opacity: 1,
+          blendMode: "source-over",
+        };
+
+    layerCtx.save();
     try {
-      /** Multiply by incoming alpha so canvas `opacity` and nested saves compose correctly */
-      const opacity = patternOptions.opacity !== undefined ? patternOptions.opacity : 0.3;
-      ctx.globalAlpha = ctx.globalAlpha * opacity;
-
-      const overlayDefault: GlobalCompositeOperation | undefined = stack?.stackedInLayer
-        ? undefined
-        : 'overlay';
-      const composite = patternOptions.blendMode ?? overlayDefault;
-      if (composite !== undefined) {
-        ctx.globalCompositeOperation = composite;
+      if (geometryOptions.offsetX !== undefined || geometryOptions.offsetY !== undefined) {
+        layerCtx.translate(geometryOptions.offsetX ?? 0, geometryOptions.offsetY ?? 0);
       }
 
-      if (patternOptions.rotation && patternOptions.rotation !== 0) {
+      const rotation = geometryOptions.rotation ?? 0;
+      const scale =
+        geometryOptions.type === "custom"
+          ? 1
+          : (geometryOptions.scale ?? 1);
+
+      if (rotation !== 0 || scale !== 1) {
         const centerX = cw / 2;
         const centerY = ch / 2;
-        ctx.translate(centerX, centerY);
-        ctx.rotate((patternOptions.rotation * Math.PI) / 180);
-        ctx.translate(-centerX, -centerY);
+        layerCtx.translate(centerX, centerY);
+        if (rotation !== 0) {
+          layerCtx.rotate((rotation * Math.PI) / 180);
+        }
+        if (scale !== 1) {
+          layerCtx.scale(scale, scale);
+        }
+        layerCtx.translate(-centerX, -centerY);
       }
 
-      if (patternOptions.offsetX !== undefined || patternOptions.offsetY !== undefined) {
-        ctx.translate(patternOptions.offsetX ?? 0, patternOptions.offsetY ?? 0);
-      }
-
-      switch (patternOptions.type) {
+      switch (geometryOptions.type) {
         case 'grid':
-          this.renderGridPattern(ctx, cw, ch, patternOptions);
+          this.renderGridPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'dots':
-          this.renderDotsPattern(ctx, cw, ch, patternOptions);
+          this.renderDotsPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'diagonal':
-          this.renderDiagonalPattern(ctx, cw, ch, patternOptions);
+          this.renderDiagonalPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'stripes':
-          this.renderStripesPattern(ctx, cw, ch, patternOptions);
+          this.renderStripesPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'waves':
-          this.renderWavesPattern(ctx, cw, ch, patternOptions);
+          this.renderWavesPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'crosses':
-          this.renderCrossesPattern(ctx, cw, ch, patternOptions);
+          this.renderCrossesPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'hexagons':
-          this.renderHexagonsPattern(ctx, cw, ch, patternOptions);
+          this.renderHexagonsPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'checkerboard':
-          this.renderCheckerboardPattern(ctx, cw, ch, patternOptions);
+          this.renderCheckerboardPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'diamonds':
-          this.renderDiamondsPattern(ctx, cw, ch, patternOptions);
+          this.renderDiamondsPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'triangles':
-          this.renderTrianglesPattern(ctx, cw, ch, patternOptions);
+          this.renderTrianglesPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'stars':
-          this.renderStarsPattern(ctx, cw, ch, patternOptions);
+          this.renderStarsPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'polka':
-          this.renderPolkaPattern(ctx, cw, ch, patternOptions);
+          this.renderPolkaPattern(layerCtx, cw, ch, geometryOptions);
           break;
         case 'custom':
-          await this.renderCustomPattern(ctx, cw, ch, patternOptions);
+          await this.renderCustomPattern(layerCtx, cw, ch, geometryOptions);
           break;
         default:
           emitDiagnostic({
             level: "warn",
             code: "PATTERN_TYPE_UNKNOWN",
             message: "Unknown pattern type ignored.",
-            details: { type: String(patternOptions.type) },
+            details: { type: String(geometryOptions.type) },
           });
       }
+    } finally {
+      layerCtx.restore();
+    }
+
+    if (patternOptions.gradient) {
+      layerCtx.save();
+      try {
+        layerCtx.globalCompositeOperation = "source-in";
+        layerCtx.fillStyle = createGradientFill(
+          layerCtx,
+          patternOptions.gradient,
+          { x: 0, y: 0, w: cw, h: ch }
+        );
+        layerCtx.fillRect(0, 0, cw, ch);
+      } finally {
+        layerCtx.restore();
+      }
+    }
+
+    ctx.save();
+    try {
+      ctx.globalAlpha = ctx.globalAlpha * opacity;
+      ctx.globalCompositeOperation = composite;
+      ctx.drawImage(layer, 0, 0);
     } finally {
       ctx.restore();
     }
