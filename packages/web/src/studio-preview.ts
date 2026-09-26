@@ -407,61 +407,387 @@ function createGradient(
   config: RecordValue,
   width: number,
   height: number,
-): CanvasGradient {
-  const type = stringOf(config.type, 'linear');
-  let gradient: CanvasGradient;
+): CanvasGradient | CanvasPattern {
+  return phase7Gradient(ctx, config, { x: 0, y: 0, w: width, h: height });
+}
 
-  if (type === 'radial') {
-    gradient = ctx.createRadialGradient(
-      numberOf(config.startX, width / 2),
-      numberOf(config.startY, height / 2),
-      Math.max(0, numberOf(config.startRadius, 0)),
-      numberOf(config.endX, width / 2),
-      numberOf(config.endY, height / 2),
-      Math.max(1, numberOf(config.endRadius, Math.max(width, height) / 2)),
-    );
-  } else if (type === 'conic' && typeof ctx.createConicGradient === 'function') {
-    gradient = ctx.createConicGradient(
-      (numberOf(config.startAngle, 0) * Math.PI) / 180,
-      numberOf(config.centerX, width / 2),
-      numberOf(config.centerY, height / 2),
-    );
-  } else {
-    const angle = numberOf(config.rotate, Number.NaN);
-    if (Number.isFinite(angle)) {
-      const radians = (angle * Math.PI) / 180;
-      const cx = width / 2;
-      const cy = height / 2;
-      const radius = Math.abs(width * Math.cos(radians)) + Math.abs(height * Math.sin(radians));
-      const dx = Math.cos(radians) * radius * 0.5;
-      const dy = Math.sin(radians) * radius * 0.5;
-      gradient = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
-    } else {
-      gradient = ctx.createLinearGradient(
-        numberOf(config.startX, 0),
-        numberOf(config.startY, 0),
-        numberOf(config.endX, width),
-        numberOf(config.endY, height),
-      );
+function canvasPositionSet(value: Jsonish | undefined): Set<string> {
+  return new Set(
+    stringOf(value, 'all')
+      .toLowerCase()
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+}
+
+function canvasCornerRadii(
+  borderPosition: Jsonish | undefined,
+  radius: number,
+  width: number,
+  height: number,
+) {
+  const selected = canvasPositionSet(borderPosition);
+  const has = (name: string) =>
+    selected.has('all') ||
+    selected.has(name) ||
+    (name === 'top-left' && (selected.has('top') || selected.has('left'))) ||
+    (name === 'top-right' && (selected.has('top') || selected.has('right'))) ||
+    (name === 'bottom-right' && (selected.has('bottom') || selected.has('right'))) ||
+    (name === 'bottom-left' && (selected.has('bottom') || selected.has('left')));
+  const r = Math.min(Math.max(0, radius), width / 2, height / 2);
+  return {
+    tl: has('top-left') ? r : 0,
+    tr: has('top-right') ? r : 0,
+    br: has('bottom-right') ? r : 0,
+    bl: has('bottom-left') ? r : 0,
+  };
+}
+
+function drawCanvasPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radiusValue: Jsonish | undefined,
+  borderPosition: Jsonish | undefined = 'all',
+) {
+  ctx.beginPath();
+  if (radiusValue === 'circular') {
+    const radius = Math.min(width, height) / 2;
+    ctx.arc(x + width / 2, y + height / 2, radius, 0, Math.PI * 2);
+    ctx.closePath();
+    return;
+  }
+
+  const radius = typeof radiusValue === 'number' && Number.isFinite(radiusValue)
+    ? Math.max(0, radiusValue)
+    : 0;
+  if (radius <= 0) {
+    ctx.rect(x, y, width, height);
+    ctx.closePath();
+    return;
+  }
+
+  const { tl, tr, br, bl } = canvasCornerRadii(
+    borderPosition,
+    radius,
+    width,
+    height,
+  );
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + width - tr, y);
+  if (tr) ctx.arcTo(x + width, y, x + width, y + tr, tr);
+  ctx.lineTo(x + width, y + height - br);
+  if (br) ctx.arcTo(x + width, y + height, x + width - br, y + height, br);
+  ctx.lineTo(x + bl, y + height);
+  if (bl) ctx.arcTo(x, y + height, x, y + height - bl, bl);
+  ctx.lineTo(x, y + tl);
+  if (tl) ctx.arcTo(x, y, x + tl, y, tl);
+  ctx.closePath();
+}
+
+type CanvasStrokeEdge = 'top' | 'right' | 'bottom' | 'left';
+
+function canvasStrokeSides(value: Jsonish | undefined): Set<CanvasStrokeEdge> | 'all' {
+  const raw = stringOf(value, 'all').toLowerCase().trim();
+  if (!raw || raw === 'all') return 'all';
+  const out = new Set<CanvasStrokeEdge>();
+  for (const part of raw.split(',').map((item) => item.trim()).filter(Boolean)) {
+    if (part === 'top' || part === 'right' || part === 'bottom' || part === 'left') {
+      out.add(part);
+    } else if (part === 'top-left') {
+      out.add('top'); out.add('left');
+    } else if (part === 'top-right') {
+      out.add('top'); out.add('right');
+    } else if (part === 'bottom-right') {
+      out.add('bottom'); out.add('right');
+    } else if (part === 'bottom-left') {
+      out.add('bottom'); out.add('left');
     }
   }
+  return out.size ? out : 'all';
+}
 
-  const colors = Array.isArray(config.colors) ? config.colors : [];
-  if (colors.length === 0) {
-    gradient.addColorStop(0, '#111827');
-    gradient.addColorStop(1, '#334155');
-    return gradient;
+function drawPartialStrokePath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radiusValue: Jsonish | undefined,
+  roundedCorners: Jsonish | undefined,
+  sides: Set<CanvasStrokeEdge>,
+) {
+  const radius = typeof radiusValue === 'number' && Number.isFinite(radiusValue)
+    ? Math.min(Math.max(0, radiusValue), width / 2, height / 2)
+    : 0;
+  const { tl, tr, br, bl } = canvasCornerRadii(
+    roundedCorners,
+    radius,
+    width,
+    height,
+  );
+  const order: CanvasStrokeEdge[] = ['top', 'right', 'bottom', 'left'];
+  const has = (edge: CanvasStrokeEdge) => sides.has(edge);
+  if (order.every(has)) {
+    drawCanvasPath(ctx, x, y, width, height, radiusValue, roundedCorners);
+    return;
   }
 
-  for (const stop of colors) {
-    if (!isRecord(stop)) continue;
-    gradient.addColorStop(
-      Math.min(1, Math.max(0, numberOf(stop.stop, 0))),
-      stringOf(stop.color, '#ffffff'),
-    );
+  ctx.beginPath();
+  const starts: number[] = [];
+  for (let index = 0; index < 4; index += 1) {
+    if (has(order[index]!) && !has(order[(index + 3) % 4]!)) starts.push(index);
+  }
+  for (const start of starts) {
+    const run: CanvasStrokeEdge[] = [];
+    let index = start;
+    while (has(order[index]!)) {
+      run.push(order[index]!);
+      index = (index + 1) % 4;
+      if (index === start || run.length >= 4) break;
+    }
+    if (!run.length) continue;
+
+    switch (run[0]) {
+      case 'top': ctx.moveTo(x + tl, y); break;
+      case 'right': ctx.moveTo(x + width, y + tr); break;
+      case 'bottom': ctx.moveTo(x + width - br, y + height); break;
+      case 'left': ctx.moveTo(x, y + height - bl); break;
+    }
+
+    for (let runIndex = 0; runIndex < run.length; runIndex += 1) {
+      const edge = run[runIndex]!;
+      const next = run[runIndex + 1];
+      if (edge === 'top') {
+        ctx.lineTo(x + width - tr, y);
+        if (next === 'right') {
+          if (tr) ctx.arcTo(x + width, y, x + width, y + tr, tr);
+          else ctx.lineTo(x + width, y);
+        }
+      } else if (edge === 'right') {
+        ctx.lineTo(x + width, y + height - br);
+        if (next === 'bottom') {
+          if (br) ctx.arcTo(x + width, y + height, x + width - br, y + height, br);
+          else ctx.lineTo(x + width, y + height);
+        }
+      } else if (edge === 'bottom') {
+        ctx.lineTo(x + bl, y + height);
+        if (next === 'left') {
+          if (bl) ctx.arcTo(x, y + height, x, y + height - bl, bl);
+          else ctx.lineTo(x, y + height);
+        }
+      } else {
+        ctx.lineTo(x, y + tl);
+        if (next === 'top') {
+          if (tl) ctx.arcTo(x, y, x + tl, y, tl);
+          else ctx.lineTo(x, y);
+        }
+      }
+    }
+  }
+}
+
+function applyCanvasZoomPreview(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  zoom: RecordValue | null,
+) {
+  if (!zoom) return;
+  const scale = numberOf(zoom.scale, 1);
+  if (!Number.isFinite(scale) || scale === 1) return;
+  const centerX = numberOf(zoom.centerX, width / 2);
+  const centerY = numberOf(zoom.centerY, height / 2);
+  ctx.translate(centerX, centerY);
+  ctx.scale(scale, scale);
+  ctx.translate(-centerX, -centerY);
+}
+
+function applyCanvasRotationPreview(
+  ctx: CanvasRenderingContext2D,
+  rotation: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  if (!rotation) return;
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  ctx.translate(centerX, centerY);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.translate(-centerX, -centerY);
+}
+
+function darkerHex(color: string, factor: number) {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const value = Number.parseInt(color.slice(1), 16);
+  const part = (shift: number) =>
+    Math.max(0, Math.floor(((value >> shift) & 255) * (1 - factor)));
+  return '#' + ((part(16) << 16) | (part(8) << 8) | part(0))
+    .toString(16)
+    .padStart(6, '0');
+}
+
+function lighterHex(color: string, factor: number) {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const value = Number.parseInt(color.slice(1), 16);
+  const part = (shift: number) => {
+    const channel = (value >> shift) & 255;
+    return Math.min(255, Math.floor(channel + (255 - channel) * factor));
+  };
+  return '#' + ((part(16) << 16) | (part(8) << 8) | part(0))
+    .toString(16)
+    .padStart(6, '0');
+}
+
+function configureStrokeDash(
+  ctx: CanvasRenderingContext2D,
+  style: string,
+  width: number,
+) {
+  if (style === 'dashed') {
+    ctx.setLineDash([width * 3, width * 2]);
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+  } else if (style === 'dotted') {
+    ctx.setLineDash([Math.max(1, width * 0.08), width * 1.8]);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  } else {
+    ctx.setLineDash([]);
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+  }
+}
+
+function applyCanvasShadowPreview(
+  ctx: CanvasRenderingContext2D,
+  shadow: RecordValue,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(shadow.opacity, 0.4)));
+  const blur = Math.max(0, numberOf(shadow.blur, 20));
+  if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
+  const offsetX = numberOf(shadow.offsetX, 0);
+  const offsetY = numberOf(shadow.offsetY, 0);
+  drawCanvasPath(
+    ctx,
+    x + offsetX,
+    y + offsetY,
+    width,
+    height,
+    shadow.borderRadius,
+    shadow.roundedCorners ?? shadow.borderPosition ?? 'all',
+  );
+  ctx.fillStyle = isRecord(shadow.gradient)
+    ? createGradient(ctx, shadow.gradient, width, height)
+    : stringOf(shadow.color, 'rgba(0,0,0,1)');
+  ctx.fill();
+  ctx.restore();
+}
+
+function applyCanvasStrokePreview(
+  ctx: CanvasRenderingContext2D,
+  stroke: RecordValue,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fallbackRadius: Jsonish | undefined,
+  fallbackCorners: Jsonish | undefined,
+) {
+  const lineWidth = Math.max(0, numberOf(stroke.width, 2));
+  if (!lineWidth) return;
+  const position = numberOf(stroke.position, 0);
+  const rect = {
+    x: x - position,
+    y: y - position,
+    width: width + position * 2,
+    height: height + position * 2,
+  };
+  const radius = stroke.borderRadius ?? fallbackRadius ?? 0;
+  const roundedCorners = stroke.roundedCorners ?? fallbackCorners ?? 'all';
+  const sides = canvasStrokeSides(stroke.borderPosition);
+  const build = (delta = 0) => {
+    const target = {
+      x: rect.x - delta,
+      y: rect.y - delta,
+      width: rect.width + delta * 2,
+      height: rect.height + delta * 2,
+    };
+    if (sides === 'all' || radius === 'circular') {
+      drawCanvasPath(
+        ctx,
+        target.x,
+        target.y,
+        target.width,
+        target.height,
+        radius,
+        roundedCorners,
+      );
+    } else {
+      drawPartialStrokePath(
+        ctx,
+        target.x,
+        target.y,
+        target.width,
+        target.height,
+        radius,
+        roundedCorners,
+        sides,
+      );
+    }
+  };
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(stroke.opacity, 1)));
+  const blur = Math.max(0, numberOf(stroke.blur, 0));
+  if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
+
+  const gradient = isRecord(stroke.gradient)
+    ? createGradient(ctx, stroke.gradient, rect.width, rect.height)
+    : null;
+  const color = stringOf(stroke.color, '#000000');
+  const style = stringOf(stroke.style, 'solid');
+  configureStrokeDash(ctx, style, lineWidth);
+
+  const strokeOnce = (
+    paint: string | CanvasGradient | CanvasPattern,
+    widthValue: number,
+    delta = 0,
+  ) => {
+    build(delta);
+    ctx.lineWidth = Math.max(0.5, widthValue);
+    ctx.strokeStyle = paint;
+    ctx.stroke();
+  };
+
+  if (style === 'groove' || style === 'ridge') {
+    const first = gradient ?? (style === 'groove'
+      ? darkerHex(color, 0.32)
+      : lighterHex(color, 0.32));
+    const second = gradient ?? (style === 'groove'
+      ? lighterHex(color, 0.32)
+      : darkerHex(color, 0.32));
+    strokeOnce(first, lineWidth * 0.58, lineWidth * 0.18);
+    strokeOnce(second, lineWidth * 0.58, -lineWidth * 0.18);
+  } else if (style === 'double') {
+    const paint = gradient ?? color;
+    strokeOnce(paint, Math.max(1, lineWidth / 3), lineWidth / 3);
+    strokeOnce(paint, Math.max(1, lineWidth / 3), -lineWidth / 3);
+  } else {
+    strokeOnce(gradient ?? color, lineWidth);
   }
 
-  return gradient;
+  ctx.restore();
 }
 
 function drawRoundedRect(
@@ -472,14 +798,7 @@ function drawRoundedRect(
   height: number,
   radius: number,
 ) {
-  const r = Math.min(Math.max(0, radius), width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
+  drawCanvasPath(ctx, x, y, width, height, radius, 'all');
 }
 
 async function applyBackground(
@@ -490,135 +809,231 @@ async function applyBackground(
   studioAssetsById: ReadonlyMap<string, WebVirtualAsset>,
   warnings: string[],
 ) {
+  const x = numberOf(config.x, 0);
+  const y = numberOf(config.y, 0);
+  const rotation = numberOf(config.rotation, 0);
+  const opacity = Math.min(1, Math.max(0, numberOf(config.opacity, 1)));
+  const borderRadius = config.borderRadius ?? 0;
+  const borderPosition = config.borderPosition ?? 'all';
   const customBg = isRecord(config.customBg) ? config.customBg : null;
   const hasGradient = isRecord(config.gradientBg);
   const transparent = boolOf(config.transparentBase, false);
 
-  // Apexify's primary background is one of customBg / gradientBg / colorBg.
-  // Do not paint a fallback color underneath a custom background because that
-  // changes contain/opacity behavior compared with the real renderer.
-  if (customBg) {
-    const source = stringOf(customBg.source, '');
-    if (source) {
-      const bitmap = await previewBitmapFromSource(
-        source,
-        studioAssetsById,
-        warnings,
-        'customBg',
-      );
-      if (bitmap) {
-        try {
-          ctx.save();
-          ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(customBg.opacity, 1)));
-          const blur = Math.max(0, numberOf(config.blur, 0));
-          if (blur > 0) ctx.filter = `blur(${blur}px)`;
-          drawBitmapFitted(
-            ctx,
-            bitmap,
-            width,
-            height,
-            stringOf(customBg.fit, 'fill'),
-            stringOf(customBg.align, 'center'),
-          );
-          ctx.restore();
-        } finally {
-          bitmap.close();
-        }
-      }
-    }
-  } else if (hasGradient) {
-    ctx.fillStyle = createGradient(ctx, config.gradientBg as RecordValue, width, height);
-    ctx.fillRect(0, 0, width, height);
-  } else if (!transparent) {
-    ctx.fillStyle = stringOf(config.colorBg, '#000000');
-    ctx.fillRect(0, 0, width, height);
-  }
+  ctx.save();
+  try {
+    ctx.globalAlpha = opacity;
+    applyCanvasRotationPreview(ctx, rotation, x, y, width, height);
+    drawCanvasPath(
+      ctx,
+      x,
+      y,
+      width,
+      height,
+      borderRadius,
+      borderPosition,
+    );
+    ctx.clip();
+    applyCanvasZoomPreview(
+      ctx,
+      width,
+      height,
+      isRecord(config.zoom) ? config.zoom : null,
+    );
+    ctx.translate(x, y);
 
-  const layers = Array.isArray(config.bgLayers) ? config.bgLayers : [];
-  for (const layer of layers) {
-    if (!isRecord(layer)) continue;
-
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(layer.opacity, 1)));
-    const blend = stringOf(layer.blendMode, 'source-over');
+    const blendMode = stringOf(config.blendMode, 'source-over');
     try {
-      ctx.globalCompositeOperation = blend as GlobalCompositeOperation;
+      ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
     } catch {
       ctx.globalCompositeOperation = 'source-over';
     }
 
-    const type = stringOf(layer.type, '');
-    if (type === 'color') {
-      ctx.fillStyle = stringOf(layer.value, 'transparent');
-      ctx.fillRect(0, 0, width, height);
-    } else if (type === 'gradient' && isRecord(layer.value)) {
-      ctx.fillStyle = createGradient(ctx, layer.value, width, height);
-      ctx.fillRect(0, 0, width, height);
-    } else if (type === 'image') {
-      const source = stringOf(layer.source, '');
-      const bitmap = source
-        ? await previewBitmapFromSource(source, studioAssetsById, warnings, 'bgLayers image')
-        : null;
-      if (bitmap) {
-        try {
-          drawBitmapFitted(
-            ctx,
-            bitmap,
-            width,
-            height,
-            stringOf(layer.fit, 'fill'),
-            stringOf(layer.align, 'center'),
-          );
-        } finally {
-          bitmap.close();
-        }
-      }
-    } else if (type === 'pattern') {
-      const source = stringOf(layer.source, '');
-      const bitmap = source
-        ? await previewBitmapFromSource(source, studioAssetsById, warnings, 'bgLayers pattern')
-        : null;
-      if (bitmap) {
-        try {
-          const repeat = stringOf(layer.repeat, 'repeat') as
-            | 'repeat'
-            | 'repeat-x'
-            | 'repeat-y'
-            | 'no-repeat';
-          const pattern = ctx.createPattern(bitmap, repeat);
-          if (pattern) {
-            ctx.fillStyle = pattern;
-            ctx.fillRect(0, 0, width, height);
+    const blur = Math.max(0, numberOf(config.blur, 0));
+
+    if (customBg) {
+      const source = stringOf(customBg.source, '');
+      if (source) {
+        const bitmap = await previewBitmapFromSource(
+          source,
+          studioAssetsById,
+          warnings,
+          'customBg',
+        );
+        if (bitmap) {
+          try {
+            ctx.save();
+            ctx.globalAlpha *= Math.min(
+              1,
+              Math.max(0, numberOf(customBg.opacity, 1)),
+            );
+            if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
+            drawBitmapFitted(
+              ctx,
+              bitmap,
+              width,
+              height,
+              stringOf(customBg.fit, 'fill'),
+              stringOf(customBg.align, 'center'),
+            );
+            ctx.restore();
+          } finally {
+            bitmap.close();
           }
-        } finally {
-          bitmap.close();
         }
       }
-    } else if (type === 'presetPattern' && isRecord(layer.pattern)) {
-      drawPattern(ctx, layer.pattern, width, height);
-    } else if (type === 'noise') {
-      const intensity = Math.min(0.12, Math.max(0, numberOf(layer.intensity, 0.03)));
+    } else if (hasGradient) {
+      ctx.save();
+      if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
+      ctx.fillStyle = createGradient(
+        ctx,
+        config.gradientBg as RecordValue,
+        width,
+        height,
+      );
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    } else if (!transparent) {
+      ctx.save();
+      if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
+      ctx.fillStyle = stringOf(config.colorBg, '#000000');
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+
+    const layers = Array.isArray(config.bgLayers) ? config.bgLayers : [];
+    for (const layer of layers) {
+      if (!isRecord(layer)) continue;
+
+      ctx.save();
+      const blend = stringOf(layer.blendMode, 'source-over');
+      try {
+        ctx.globalCompositeOperation = blend as GlobalCompositeOperation;
+      } catch {
+        ctx.globalCompositeOperation = 'source-over';
+      }
+
+      const type = stringOf(layer.type, '');
+      if (type === 'color') {
+        ctx.globalAlpha *= Math.min(
+          1,
+          Math.max(0, numberOf(layer.opacity, 1)),
+        );
+        ctx.fillStyle = stringOf(layer.value, 'transparent');
+        ctx.fillRect(0, 0, width, height);
+      } else if (type === 'gradient' && isRecord(layer.value)) {
+        ctx.globalAlpha *= Math.min(
+          1,
+          Math.max(0, numberOf(layer.opacity, 1)),
+        );
+        ctx.fillStyle = createGradient(ctx, layer.value, width, height);
+        ctx.fillRect(0, 0, width, height);
+      } else if (type === 'image') {
+        const source = stringOf(layer.source, '');
+        const bitmap = source
+          ? await previewBitmapFromSource(
+              source,
+              studioAssetsById,
+              warnings,
+              'bgLayers image',
+            )
+          : null;
+        if (bitmap) {
+          try {
+            ctx.globalAlpha *= Math.min(
+              1,
+              Math.max(0, numberOf(layer.opacity, 1)),
+            );
+            drawBitmapFitted(
+              ctx,
+              bitmap,
+              width,
+              height,
+              stringOf(layer.fit, 'fill'),
+              stringOf(layer.align, 'center'),
+            );
+          } finally {
+            bitmap.close();
+          }
+        }
+      } else if (type === 'pattern') {
+        const source = stringOf(layer.source, '');
+        const bitmap = source
+          ? await previewBitmapFromSource(
+              source,
+              studioAssetsById,
+              warnings,
+              'bgLayers pattern',
+            )
+          : null;
+        if (bitmap) {
+          try {
+            ctx.globalAlpha *= Math.min(
+              1,
+              Math.max(0, numberOf(layer.opacity, 1)),
+            );
+            const repeat = stringOf(layer.repeat, 'repeat') as
+              | 'repeat'
+              | 'repeat-x'
+              | 'repeat-y'
+              | 'no-repeat';
+            const pattern = ctx.createPattern(bitmap, repeat);
+            if (pattern) {
+              ctx.fillStyle = pattern;
+              ctx.fillRect(0, 0, width, height);
+            }
+          } finally {
+            bitmap.close();
+          }
+        }
+      } else if (type === 'presetPattern' && isRecord(layer.pattern)) {
+        ctx.globalAlpha *= Math.min(
+          1,
+          Math.max(0, numberOf(layer.opacity, 1)),
+        );
+        drawPattern(ctx, layer.pattern, width, height);
+      } else if (type === 'noise') {
+        const intensity = Math.min(
+          1,
+          Math.max(0, numberOf(layer.intensity, 0.08)),
+        );
+        if (intensity > 0) drawNoise(ctx, width, height, intensity);
+      }
+      ctx.restore();
+    }
+
+    if (isRecord(config.patternBg)) {
+      ctx.save();
+      const pattern = config.patternBg;
+      const blend = stringOf(pattern.blendMode, 'overlay');
+      try {
+        ctx.globalCompositeOperation = blend as GlobalCompositeOperation;
+      } catch {
+        ctx.globalCompositeOperation = 'overlay';
+      }
+      drawPattern(ctx, pattern, width, height);
+      ctx.restore();
+    }
+
+    if (isRecord(config.noiseBg)) {
+      const intensity = Math.min(
+        1,
+        Math.max(0, numberOf(config.noiseBg.intensity, 0)),
+      );
       if (intensity > 0) drawNoise(ctx, width, height, intensity);
     }
+  } finally {
     ctx.restore();
   }
 
-  if (isRecord(config.patternBg)) {
-    ctx.save();
-    const pattern = config.patternBg;
-    const blend = stringOf(pattern.blendMode, 'source-over');
-    try {
-      ctx.globalCompositeOperation = blend as GlobalCompositeOperation;
-    } catch {
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    drawPattern(ctx, pattern, width, height);
-    ctx.restore();
-  }
-
-  if (isRecord(config.noiseBg)) {
-    const intensity = Math.min(0.12, Math.max(0, numberOf(config.noiseBg.intensity, 0)));
-    if (intensity > 0) drawNoise(ctx, width, height, intensity);
+  if (isRecord(config.shadow)) {
+    applyCanvasShadowPreview(
+      ctx,
+      config.shadow,
+      x,
+      y,
+      width,
+      height,
+    );
   }
 
   const stroke = isRecord(config.canvasStroke)
@@ -627,22 +1042,18 @@ async function applyBackground(
       ? config.stroke
       : null;
   if (stroke) {
-    const lineWidth = Math.max(0, numberOf(stroke.width, 1));
-    if (lineWidth > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(stroke.opacity, 1)));
-      ctx.lineWidth = lineWidth;
-      ctx.strokeStyle = isRecord(stroke.gradient)
-        ? createGradient(ctx, stroke.gradient, width, height)
-        : stringOf(stroke.color, '#ffffff');
-      const radius = numberOf(stroke.borderRadius, numberOf(config.borderRadius, 0));
-      drawRoundedRect(ctx, lineWidth / 2, lineWidth / 2, width - lineWidth, height - lineWidth, radius);
-      ctx.stroke();
-      ctx.restore();
-    }
+    applyCanvasStrokePreview(
+      ctx,
+      stroke,
+      x,
+      y,
+      width,
+      height,
+      borderRadius,
+      borderPosition,
+    );
   }
 }
-
 function drawPattern(
   ctx: CanvasRenderingContext2D,
   pattern: RecordValue,
@@ -656,7 +1067,32 @@ function drawPattern(
   const size = Math.max(1, numberOf(pattern.size, 6));
   const lineWidth = Math.max(0.5, Math.min(4, size * 0.16));
   const rotation = (numberOf(pattern.rotation, 0) * Math.PI) / 180;
-  const margin = Math.ceil(Math.hypot(width, height) * 0.55);
+  const scale = Math.max(0.01, numberOf(pattern.scale, 1));
+  const offsetX = numberOf(pattern.offsetX, 0);
+  const offsetY = numberOf(pattern.offsetY, 0);
+  const rawGradient = isRecord(pattern.gradient) ? pattern.gradient : null;
+  const gradientPaint = rawGradient
+    ? createGradient(
+        ctx,
+        {
+          ...rawGradient,
+          ...(rawGradient.type === 'linear' &&
+          rawGradient.rotate === undefined &&
+          typeof rawGradient.angle === 'number'
+            ? { rotate: rawGradient.angle }
+            : {}),
+          ...(rawGradient.type === 'conic' &&
+          rawGradient.startAngle === undefined &&
+          typeof rawGradient.angle === 'number'
+            ? { startAngle: rawGradient.angle }
+            : {}),
+        },
+        width,
+        height,
+      )
+    : null;
+  const primaryPaint = gradientPaint ?? color;
+  const margin = Math.ceil(Math.hypot(width, height) * 0.8);
   const left = -margin;
   const top = -margin;
   const right = width + margin;
@@ -667,7 +1103,10 @@ function drawPattern(
   const densityFloor = Math.sqrt((spanWidth * spanHeight) / MAX_PATTERN_MARKS);
   const bounded2dStep = (step: number) => Math.max(step, densityFloor);
 
-  const strokePolygon = (points: Array<[number, number]>, strokeColor = color) => {
+  const strokePolygon = (
+    points: Array<[number, number]>,
+    strokeColor: string | CanvasGradient | CanvasPattern = primaryPaint,
+  ) => {
     if (!points.length) return;
     ctx.beginPath();
     ctx.moveTo(points[0][0], points[0][1]);
@@ -693,14 +1132,16 @@ function drawPattern(
   ctx.save();
   ctx.globalAlpha *= Math.min(1, Math.max(0, numberOf(pattern.opacity, 1)));
   ctx.lineWidth = lineWidth;
-  if (rotation) {
+  ctx.translate(offsetX, offsetY);
+  if (scale !== 1 || rotation) {
     ctx.translate(width / 2, height / 2);
-    ctx.rotate(rotation);
+    if (rotation) ctx.rotate(rotation);
+    if (scale !== 1) ctx.scale(scale, scale);
     ctx.translate(-width / 2, -height / 2);
   }
 
   if (type === 'dots' || type === 'polka') {
-    ctx.fillStyle = color;
+    ctx.fillStyle = primaryPaint;
     const step = bounded2dStep(Math.max(size + spacing, size * 1.6));
     for (let y = top; y <= bottom; y += step) {
       for (let x = left; x <= right; x += step) {
@@ -711,7 +1152,7 @@ function drawPattern(
       }
     }
   } else if (type === 'stripes' || type === 'diagonal') {
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = primaryPaint;
     const step = Math.max(5, size + spacing);
     const diagonal = type === 'diagonal' ? height + margin * 2 : 0;
     for (let x = left - diagonal; x <= right + diagonal; x += step) {
@@ -796,14 +1237,14 @@ function drawPattern(
     for (let y = top; y <= bottom; y += step) {
       for (let x = left; x <= right; x += step) {
         starPath(x, y, size, size * 0.45);
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = primaryPaint;
         ctx.stroke();
       }
     }
   } else {
     const step = Math.max(6, size + spacing);
     for (let x = left; x <= right; x += step) {
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = primaryPaint;
       ctx.beginPath();
       ctx.moveTo(x, top);
       ctx.lineTo(x, bottom);
@@ -820,24 +1261,29 @@ function drawPattern(
 
   ctx.restore();
 }
-
-function drawNoise(ctx: CanvasRenderingContext2D, width: number, height: number, intensity: number) {
-  ctx.save();
-  ctx.fillStyle = `rgba(255,255,255,${intensity})`;
+function drawNoise(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  intensity: number,
+) {
+  const alpha = Math.round(255 * Math.min(1, Math.max(0, intensity)));
+  if (alpha <= 0) return;
+  const image = ctx.createImageData(width, height);
   let seed = 173;
   const next = () => {
     seed = (seed * 9301 + 49297) % 233280;
     return seed / 233280;
   };
-  const count = Math.min(5000, Math.round((width * height) / 180));
-  for (let i = 0; i < count; i += 1) {
-    const x = Math.floor(next() * width);
-    const y = Math.floor(next() * height);
-    ctx.fillRect(x, y, 1, 1);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const value = Math.floor(next() * 256);
+    image.data[index] = value;
+    image.data[index + 1] = value;
+    image.data[index + 2] = value;
+    image.data[index + 3] = alpha;
   }
-  ctx.restore();
+  ctx.putImageData(image, 0, 0);
 }
-
 function applyShadow(ctx: CanvasRenderingContext2D, value: Jsonish | undefined) {
   if (!isRecord(value)) return;
   ctx.shadowColor = stringOf(value.color, 'rgba(0,0,0,0)');
