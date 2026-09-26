@@ -1269,20 +1269,29 @@ function drawNoise(
 ) {
   const alpha = Math.round(255 * Math.min(1, Math.max(0, intensity)));
   if (alpha <= 0) return;
-  const image = ctx.createImageData(width, height);
+
+  // Build noise offscreen, then composite it normally so CanvasConfig
+  // clipping, transforms, opacity and blend modes still apply.
+  const noiseCanvas = document.createElement('canvas');
+  noiseCanvas.width = width;
+  noiseCanvas.height = height;
+  const noiseCtx = noiseCanvas.getContext('2d');
+  if (!noiseCtx) return;
+  const image = noiseCtx.createImageData(width, height);
   let seed = 173;
-  const next = () => {
+  const nextRandom = () => {
     seed = (seed * 9301 + 49297) % 233280;
     return seed / 233280;
   };
   for (let index = 0; index < image.data.length; index += 4) {
-    const value = Math.floor(next() * 256);
+    const value = Math.floor(nextRandom() * 256);
     image.data[index] = value;
     image.data[index + 1] = value;
     image.data[index + 2] = value;
     image.data[index + 3] = alpha;
   }
-  ctx.putImageData(image, 0, 0);
+  noiseCtx.putImageData(image, 0, 0);
+  ctx.drawImage(noiseCanvas, 0, 0);
 }
 function applyShadow(ctx: CanvasRenderingContext2D, value: Jsonish | undefined) {
   if (!isRecord(value)) return;
