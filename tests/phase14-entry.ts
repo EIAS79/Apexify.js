@@ -1,3 +1,4 @@
+export { ApexPainter } from "../lib-next/index";
 export { AssetManager } from "../lib-next/assets/asset-manager";
 export { PluginHost } from "../lib-next/plugins/plugin-host";
 export { registerTextFontFromPath } from "../lib-next/text/text-layout";
