@@ -671,9 +671,10 @@ function applyCanvasShadowPreview(
   y: number,
   width: number,
   height: number,
+  fallbackRadius: Jsonish | undefined,
+  fallbackCorners: Jsonish | undefined,
 ) {
   ctx.save();
-  ctx.globalCompositeOperation = 'destination-over';
   ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(shadow.opacity, 0.4)));
   const blur = Math.max(0, numberOf(shadow.blur, 20));
   if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
@@ -685,8 +686,8 @@ function applyCanvasShadowPreview(
     y + offsetY,
     width,
     height,
-    shadow.borderRadius,
-    shadow.roundedCorners ?? shadow.borderPosition ?? 'all',
+    shadow.borderRadius ?? fallbackRadius,
+    shadow.roundedCorners ?? shadow.borderPosition ?? fallbackCorners ?? 'all',
   );
   ctx.fillStyle = isRecord(shadow.gradient)
     ? phase7Gradient(ctx, shadow.gradient, {
@@ -852,6 +853,28 @@ async function applyBackground(
   const customBg = isRecord(config.customBg) ? config.customBg : null;
   const hasGradient = isRecord(config.gradientBg);
   const transparent = boolOf(config.transparentBase, false);
+
+  // Paint shadow before the background and before installing the background
+  // clip. It remains free to move outside the background path via offsetX/Y,
+  // while the background itself always paints above the shadow.
+  if (isRecord(config.shadow)) {
+    ctx.save();
+    try {
+      applyCanvasRotationPreview(ctx, rotation, x, y, width, height);
+      applyCanvasShadowPreview(
+        ctx,
+        config.shadow,
+        x,
+        y,
+        width,
+        height,
+        borderRadius,
+        borderPosition,
+      );
+    } finally {
+      ctx.restore();
+    }
+  }
 
   ctx.save();
   try {
@@ -1057,17 +1080,6 @@ async function applyBackground(
     }
   } finally {
     ctx.restore();
-  }
-
-  if (isRecord(config.shadow)) {
-    applyCanvasShadowPreview(
-      ctx,
-      config.shadow,
-      x,
-      y,
-      width,
-      height,
-    );
   }
 
   const stroke = isRecord(config.canvasStroke)

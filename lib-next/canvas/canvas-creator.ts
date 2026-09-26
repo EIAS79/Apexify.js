@@ -144,6 +144,19 @@ export class CanvasCreator {
       return;
     }
 
+    // Paint the canvas shadow first and outside the background clip. This is
+    // true painter order: lower content -> shadow -> background. Offsets remain
+    // free to extend beyond the background path in either direction.
+    if (shadow) {
+      ctx.save();
+      try {
+        applyRotation(ctx, rotation, x, y, width, height);
+        applyShadow(ctx, shadow, x, y, width, height, borderRadius, borderPosition);
+      } finally {
+        ctx.restore();
+      }
+    }
+
     ctx.save();
     try {
       ctx.globalAlpha = opacity;
@@ -202,15 +215,6 @@ export class CanvasCreator {
       ctx.restore();
     }
 
-    if (shadow) {
-      ctx.save();
-      try {
-        buildPath(ctx, x, y, width, height, borderRadius, borderPosition);
-        applyShadow(ctx, shadow, x, y, width, height);
-      } finally {
-        ctx.restore();
-      }
-    }
     if (stroke) {
       ctx.save();
       try {

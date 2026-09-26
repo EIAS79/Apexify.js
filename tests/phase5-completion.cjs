@@ -208,6 +208,39 @@ async function main() {
   })).buffer);
   near(pixel(raw, 0, 0), [127, 0, 128, 255], 2, 'background layer order');
 
+  // Canvas shadows are a real underlay, not a destination-wide backfill. They
+  // paint above lower content, below their own background, and are not clipped
+  // by the background path, so negative/positive offsets remain usable.
+  const negativeShadowTarget = createCanvas(12, 12);
+  const negativeShadowCtx = negativeShadowTarget.getContext('2d');
+  negativeShadowCtx.fillStyle = '#ffffff';
+  negativeShadowCtx.fillRect(0, 0, 12, 12);
+  await creator.paintCanvasOntoExisting(negativeShadowTarget, {
+    width: 12,
+    height: 12,
+    x: 2,
+    y: 2,
+    colorBg: '#ff0000',
+    shadow: { color: '#0000ff', opacity: 1, blur: 0, offsetX: -2, offsetY: -2 },
+  });
+  near([...negativeShadowCtx.getImageData(1, 1, 1, 1).data], [0, 0, 255, 255], 2, 'negative shadow offset outside background path');
+  near([...negativeShadowCtx.getImageData(3, 3, 1, 1).data], [255, 0, 0, 255], 2, 'background must paint above shadow');
+
+  const positiveShadowTarget = createCanvas(12, 12);
+  const positiveShadowCtx = positiveShadowTarget.getContext('2d');
+  positiveShadowCtx.fillStyle = '#ffffff';
+  positiveShadowCtx.fillRect(0, 0, 12, 12);
+  await creator.paintCanvasOntoExisting(positiveShadowTarget, {
+    width: 12,
+    height: 12,
+    x: -2,
+    y: -2,
+    colorBg: '#ff0000',
+    shadow: { color: '#0000ff', opacity: 1, blur: 0, offsetX: 2, offsetY: 2 },
+  });
+  near([...positiveShadowCtx.getImageData(11, 11, 1, 1).data], [0, 0, 255, 255], 2, 'positive shadow offset outside background path');
+  near([...positiveShadowCtx.getImageData(1, 1, 1, 1).data], [255, 0, 0, 255], 2, 'shifted background must still cover shadow');
+
   // Filtering a custom background must not filter pixels already present on the target.
   const transparentRight = makeSplitCanvas(4, 2, true);
   const transparentRightUri = dataUri(transparentRight.toBuffer('image/png'));
