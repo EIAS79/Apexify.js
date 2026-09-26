@@ -673,6 +673,7 @@ function applyCanvasShadowPreview(
   height: number,
 ) {
   ctx.save();
+  ctx.globalCompositeOperation = 'destination-over';
   ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(shadow.opacity, 0.4)));
   const blur = Math.max(0, numberOf(shadow.blur, 20));
   if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
@@ -747,10 +748,33 @@ function applyCanvasStrokePreview(
     }
   };
 
+  const blur = Math.max(0, numberOf(stroke.blur, 0));
+  if (blur > 0) {
+    const layer = document.createElement('canvas');
+    layer.width = ctx.canvas.width;
+    layer.height = ctx.canvas.height;
+    const layerCtx = layer.getContext('2d');
+    if (layerCtx) {
+      applyCanvasStrokePreview(
+        layerCtx,
+        { ...stroke, blur: 0 },
+        x,
+        y,
+        width,
+        height,
+        fallbackRadius,
+        fallbackCorners,
+      );
+      ctx.save();
+      ctx.filter = 'blur(' + blur + 'px)';
+      ctx.drawImage(layer, 0, 0);
+      ctx.restore();
+    }
+    return;
+  }
+
   ctx.save();
   ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(stroke.opacity, 1)));
-  const blur = Math.max(0, numberOf(stroke.blur, 0));
-  if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
 
   const gradient = isRecord(stroke.gradient)
     ? createGradient(ctx, stroke.gradient, rect.width, rect.height)
