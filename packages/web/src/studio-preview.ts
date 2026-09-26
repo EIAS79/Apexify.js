@@ -701,6 +701,120 @@ function applyCanvasShadowPreview(
   ctx.restore();
 }
 
+type CanvasShadowPreviewBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+function canvasShadowPreviewBounds(
+  config: RecordValue,
+  shadow: RecordValue,
+  width: number,
+  height: number,
+): CanvasShadowPreviewBounds {
+  const x = numberOf(config.x, 0);
+  const y = numberOf(config.y, 0);
+  const offsetX = numberOf(shadow.offsetX, 0);
+  const offsetY = numberOf(shadow.offsetY, 0);
+  const rotation = (numberOf(config.rotation, 0) * Math.PI) / 180;
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const corners = [
+    [x + offsetX, y + offsetY],
+    [x + offsetX + width, y + offsetY],
+    [x + offsetX + width, y + offsetY + height],
+    [x + offsetX, y + offsetY + height],
+  ] as const;
+
+  if (!rotation) {
+    return {
+      minX: corners[0][0],
+      minY: corners[0][1],
+      maxX: corners[2][0],
+      maxY: corners[2][1],
+    };
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  for (const [px, py] of corners) {
+    const dx = px - cx;
+    const dy = py - cy;
+    const rx = cx + dx * cos - dy * sin;
+    const ry = cy + dx * sin + dy * cos;
+    minX = Math.min(minX, rx);
+    minY = Math.min(minY, ry);
+    maxX = Math.max(maxX, rx);
+    maxY = Math.max(maxY, ry);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function composeCanvasShadowOverflowPreview(
+  source: HTMLCanvasElement,
+  config: RecordValue,
+  width: number,
+  height: number,
+): HTMLCanvasElement {
+  const shadow = isRecord(config.shadow) ? config.shadow : null;
+  if (!shadow || numberOf(shadow.opacity, 0.4) <= 0) return source;
+
+  const blur = Math.max(0, numberOf(shadow.blur, 20));
+  // Canvas blur kernels have implementation-defined tails. Three blur radii is
+  // a conservative visible bound that prevents the Studio wrapper from cutting
+  // the shadow while keeping the preview allocation finite and predictable.
+  const blurExtent = Math.ceil(blur * 3);
+  const bounds = canvasShadowPreviewBounds(config, shadow, width, height);
+  const left = Math.ceil(Math.max(0, blurExtent - bounds.minX));
+  const top = Math.ceil(Math.max(0, blurExtent - bounds.minY));
+  const right = Math.ceil(Math.max(0, bounds.maxX + blurExtent - width));
+  const bottom = Math.ceil(Math.max(0, bounds.maxY + blurExtent - height));
+  const outputWidth = width + left + right;
+  const outputHeight = height + top + bottom;
+
+  if (
+    outputWidth > 4096 ||
+    outputHeight > 4096 ||
+    outputWidth * outputHeight > 12_000_000
+  ) {
+    throw new Error(
+      'Apexify Web shadow overflow exceeds the 4096×4096 / 12 million pixel preview limit.',
+    );
+  }
+
+  const output = document.createElement('canvas');
+  output.width = outputWidth;
+  output.height = outputHeight;
+  const out = output.getContext('2d', { alpha: true });
+  if (!out) throw new Error('Canvas 2D is unavailable while composing shadow overflow.');
+
+  const x = numberOf(config.x, 0);
+  const y = numberOf(config.y, 0);
+  const rotation = numberOf(config.rotation, 0);
+  out.save();
+  out.translate(left, top);
+  applyCanvasRotationPreview(out, rotation, x, y, width, height);
+  applyCanvasShadowPreview(
+    out,
+    shadow,
+    x,
+    y,
+    width,
+    height,
+    config.borderRadius ?? 0,
+    config.borderPosition ?? 'all',
+  );
+  out.restore();
+  out.drawImage(source, left, top);
+  return output;
+}
+
 function applyCanvasStrokePreview(
   ctx: CanvasRenderingContext2D,
   stroke: RecordValue,
@@ -853,28 +967,6 @@ async function applyBackground(
   const customBg = isRecord(config.customBg) ? config.customBg : null;
   const hasGradient = isRecord(config.gradientBg);
   const transparent = boolOf(config.transparentBase, false);
-
-  // Paint shadow before the background and before installing the background
-  // clip. It remains free to move outside the background path via offsetX/Y,
-  // while the background itself always paints above the shadow.
-  if (isRecord(config.shadow)) {
-    ctx.save();
-    try {
-      applyCanvasRotationPreview(ctx, rotation, x, y, width, height);
-      applyCanvasShadowPreview(
-        ctx,
-        config.shadow,
-        x,
-        y,
-        width,
-        height,
-        borderRadius,
-        borderPosition,
-      );
-    } finally {
-      ctx.restore();
-    }
-  }
 
   ctx.save();
   try {
@@ -3797,12 +3889,19 @@ export async function renderApexifyWebPreview(
       ctx.restore();
     }
 
-    return {
-      ok: true,
-      dataUrl: canvas.toDataURL('image/png'),
-      mime: 'image/png',
+    const outputCanvas = composeCanvasShadowOverflowPreview(
+      canvas,
+      canvasConfig,
       width,
       height,
+    );
+
+    return {
+      ok: true,
+      dataUrl: outputCanvas.toDataURL('image/png'),
+      mime: 'image/png',
+      width: outputCanvas.width,
+      height: outputCanvas.height,
       elapsedMs: Math.round(performance.now() - started),
       supportedApis,
       warnings: [...new Set(warnings)],
