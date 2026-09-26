@@ -47,6 +47,7 @@ export function applyShadow(
   const r = { x: rect.x + offsetX, y: rect.y + offsetY, w: rect.w, h: rect.h };
 
   ctx.save();
+  ctx.globalCompositeOperation = "destination-over";
   ctx.globalAlpha = opacity;
   if (blur > 0) ctx.filter = `blur(${blur}px)`;
 
