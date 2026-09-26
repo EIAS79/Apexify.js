@@ -31,6 +31,37 @@ async function main() {
   api.resetApexifyRuntimeConfig();
   api.clearDecodedImageCache();
 
+  // Root background shadows are a lower painter layer, not a clipped overlay.
+  // A caller can move the shadow freely with offsets when the parent surface has room.
+  {
+    const canvas = createCanvas(80, 60);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(20, 15, 20, 20);
+
+    api.applyShadow(
+      ctx,
+      { color: '#ff0000', opacity: 1, offsetX: 25, offsetY: 0, blur: 0 },
+      20,
+      15,
+      20,
+      20,
+      0,
+      'all'
+    );
+
+    assert.deepEqual(
+      [...ctx.getImageData(25, 20, 1, 1).data],
+      [255, 255, 255, 255],
+      'shadow must stay behind opaque background pixels'
+    );
+    assert.deepEqual(
+      [...ctx.getImageData(50, 20, 1, 1).data],
+      [255, 0, 0, 255],
+      'offset shadow must remain visible outside the background bounds when the parent has room'
+    );
+  }
+
   // Direct byte and data-URL sources are local inputs and must use
   // maxImageSourceBytes, not the smaller remote transport cap.
   const localPng = await sharp({
@@ -116,7 +147,7 @@ async function main() {
     await fs.rm(tmp, { recursive: true, force: true });
   }
 
-  console.log('phase5-review-regressions: all four review findings plus local data-URL limits are covered and fixed.');
+  console.log('phase5-review-regressions: review findings, shadow layering/offset overflow, and local data-URL limits are covered and fixed.');
 }
 
 main().catch((error) => {

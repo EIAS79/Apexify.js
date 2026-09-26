@@ -1,6 +1,7 @@
 export {
   renderApexifyWebPreview,
   type WebStudioPreviewResult,
+  type WebStudioPreviewBounds,
   type WebVirtualAsset,
 } from './studio-preview';
 

@@ -6,6 +6,7 @@ export {
   getDecodedImageCacheStats,
 } from "../lib-next/image/image-properties";
 export { createGradientFill } from "../lib-next/render/gradient-fill";
+export { applyShadow } from "../lib-next/render/shadow-renderer";
 export { applyContextImageFilters } from "../lib-next/render/context-image-filters";
 export { applyImageFilters } from "../lib-next/image/image-filters";
 export { applyFilmGrain } from "../lib-next/image/image-effects";

@@ -8,6 +8,17 @@ export type WebVirtualAsset = {
   metadata?: { width?: number; height?: number; duration?: number };
 };
 
+export type WebStudioPreviewBounds = Readonly<{
+  /** X position of the rendered preview bitmap relative to the logical canvas. */
+  x: number;
+  /** Y position of the rendered preview bitmap relative to the logical canvas. */
+  y: number;
+  /** Physical preview bitmap width, including visual overflow such as root shadow blur. */
+  width: number;
+  /** Physical preview bitmap height, including visual overflow such as root shadow blur. */
+  height: number;
+}>;
+
 function studioAssetIdFromReference(value: string): string | null {
   const match = /^studio:\/\/asset\/([A-Za-z0-9._-]+)$/i.exec(value.trim());
   return match?.[1] ?? null;
@@ -21,8 +32,12 @@ export type WebStudioPreviewResult =
       ok: true;
       dataUrl: string;
       mime: 'image/png';
+      /** Logical Apexify canvas width. Visual overflow does not change this value. */
       width: number;
+      /** Logical Apexify canvas height. Visual overflow does not change this value. */
       height: number;
+      /** Placement of dataUrl relative to the logical canvas, including shadow overflow. */
+      renderBounds: WebStudioPreviewBounds;
       elapsedMs: number;
       supportedApis: string[];
       warnings: string[];
@@ -756,14 +771,22 @@ function canvasShadowPreviewBounds(
   return { minX, minY, maxX, maxY };
 }
 
+type CanvasShadowOverflowComposite = {
+  canvas: HTMLCanvasElement;
+  offsetX: number;
+  offsetY: number;
+};
+
 function composeCanvasShadowOverflowPreview(
   source: HTMLCanvasElement,
   config: RecordValue,
   width: number,
   height: number,
-): HTMLCanvasElement {
+): CanvasShadowOverflowComposite {
   const shadow = isRecord(config.shadow) ? config.shadow : null;
-  if (!shadow || numberOf(shadow.opacity, 0.4) <= 0) return source;
+  if (!shadow || numberOf(shadow.opacity, 0.4) <= 0) {
+    return { canvas: source, offsetX: 0, offsetY: 0 };
+  }
 
   const blur = Math.max(0, numberOf(shadow.blur, 20));
   // Canvas blur kernels have implementation-defined tails. Three blur radii is
@@ -812,7 +835,7 @@ function composeCanvasShadowOverflowPreview(
   );
   out.restore();
   out.drawImage(source, left, top);
-  return output;
+  return { canvas: output, offsetX: left, offsetY: top };
 }
 
 function applyCanvasStrokePreview(
@@ -3704,6 +3727,7 @@ export async function renderApexifyWebPreview(
           mime: 'image/png',
           width: chartOnly.width,
           height: chartOnly.height,
+          renderBounds: { x: 0, y: 0, width: chartOnly.width, height: chartOnly.height },
           elapsedMs: Math.round(performance.now() - started),
           supportedApis,
           warnings: [...new Set(warnings)],
@@ -3889,7 +3913,7 @@ export async function renderApexifyWebPreview(
       ctx.restore();
     }
 
-    const outputCanvas = composeCanvasShadowOverflowPreview(
+    const output = composeCanvasShadowOverflowPreview(
       canvas,
       canvasConfig,
       width,
@@ -3898,10 +3922,16 @@ export async function renderApexifyWebPreview(
 
     return {
       ok: true,
-      dataUrl: outputCanvas.toDataURL('image/png'),
+      dataUrl: output.canvas.toDataURL('image/png'),
       mime: 'image/png',
-      width: outputCanvas.width,
-      height: outputCanvas.height,
+      width,
+      height,
+      renderBounds: {
+        x: -output.offsetX,
+        y: -output.offsetY,
+        width: output.canvas.width,
+        height: output.canvas.height,
+      },
       elapsedMs: Math.round(performance.now() - started),
       supportedApis,
       warnings: [...new Set(warnings)],
