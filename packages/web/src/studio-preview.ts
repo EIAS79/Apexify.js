@@ -689,7 +689,12 @@ function applyCanvasShadowPreview(
     shadow.roundedCorners ?? shadow.borderPosition ?? 'all',
   );
   ctx.fillStyle = isRecord(shadow.gradient)
-    ? createGradient(ctx, shadow.gradient, width, height)
+    ? phase7Gradient(ctx, shadow.gradient, {
+        x: x + offsetX,
+        y: y + offsetY,
+        w: width,
+        h: height,
+      })
     : stringOf(shadow.color, 'rgba(0,0,0,1)');
   ctx.fill();
   ctx.restore();
@@ -777,7 +782,12 @@ function applyCanvasStrokePreview(
   ctx.globalAlpha = Math.min(1, Math.max(0, numberOf(stroke.opacity, 1)));
 
   const gradient = isRecord(stroke.gradient)
-    ? createGradient(ctx, stroke.gradient, rect.width, rect.height)
+    ? phase7Gradient(ctx, stroke.gradient, {
+        x: rect.x,
+        y: rect.y,
+        w: rect.width,
+        h: rect.height,
+      })
     : null;
   const color = stringOf(stroke.color, '#000000');
   const style = stringOf(stroke.style, 'solid');
