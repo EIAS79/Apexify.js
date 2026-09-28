@@ -175,6 +175,30 @@ export class ApexPainter {
     this.chartCreate = new ChartCreate(this.chartCreator);
     this.gifCreate = new GifCreate(this.gifCreator);
     this.videoCreate = new VideoCreate(this.video);
+    this.canvasCreator.setExtractVideoFrame(
+      async (
+        videoSource,
+        frameNumber,
+        timeSeconds,
+        outputFormat = "jpg",
+        quality = 2
+      ) => {
+        if (timeSeconds !== undefined) {
+          return this.videoCreate.extractFrameAtTime(
+            videoSource,
+            timeSeconds,
+            outputFormat,
+            quality
+          );
+        }
+        return this.videoCreate.extractFrameByNumber(
+          videoSource,
+          Math.max(1, Math.round(frameNumber ?? 1)),
+          outputFormat,
+          quality
+        );
+      }
+    );
     this.audioCreate = new AudioCreate();
     this.templateCreate = new TemplateCreate(this);
     this.outputSaveCreate = new OutputSaveCreate(
