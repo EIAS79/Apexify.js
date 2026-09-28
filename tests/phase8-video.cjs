@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { createCanvas } = require('@napi-rs/canvas');
+const sharp = require('sharp');
 const api = require('../node_modules/.cache/apexify-phase8/phase8-entry.cjs');
 
 function ffmpeg(args) {
@@ -255,11 +256,13 @@ async function main() {
     assert.ok(Buffer.isBuffer(frame) && frame.length > 100, 'single frame extraction must return image bytes');
 
     const canvasVideoFrame = await painter.createCanvas({
-      width: 160,
-      height: 90,
       videoBg: {
         source: sourceA,
         frame: 10,
+        inherit: true,
+        fit: 'contain',
+        align: 'bottom-right',
+        filters: [{ type: 'grayscale' }],
         format: 'png',
         quality: 2,
         opacity: 1,
@@ -269,6 +272,44 @@ async function main() {
       Buffer.isBuffer(canvasVideoFrame.buffer) && canvasVideoFrame.buffer.length > 100,
       'createCanvas videoBg must render the selected frame'
     );
+    assert.equal(canvasVideoFrame.canvas.width, 160, 'videoBg inherit must adopt frame width');
+    assert.equal(canvasVideoFrame.canvas.height, 90, 'videoBg inherit must adopt frame height');
+    const inheritedRaw = await sharp(canvasVideoFrame.buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    assert.equal(inheritedRaw.info.width, 160);
+    assert.equal(inheritedRaw.info.height, 90);
+    for (let i = 0; i < inheritedRaw.data.length; i += 4 * 997) {
+      const r = inheritedRaw.data[i];
+      const g = inheritedRaw.data[i + 1];
+      const b = inheritedRaw.data[i + 2];
+      assert.ok(Math.abs(r - g) <= 1 && Math.abs(g - b) <= 1, 'videoBg filters must use the image background pipeline');
+    }
+
+    const alignedVideoFrame = await painter.createCanvas({
+      width: 160,
+      height: 90,
+      videoBg: {
+        source: sourceB,
+        time: 0.2,
+        fit: 'contain',
+        align: 'right',
+        format: 'png',
+        quality: 2,
+      },
+    });
+    const alignedRaw = await sharp(alignedVideoFrame.buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alignedIndex = (45 * alignedRaw.info.width) * 4;
+    assert.equal(alignedRaw.data[alignedIndex + 3], 0, 'videoBg contain/right must preserve transparent left letterbox');
+
+    await assert.rejects(
+      painter.createCanvas({
+        width: 160,
+        height: 90,
+        videoBg: { source: sourceA, frame: 1, time: 0 },
+      }),
+      /frame or time/,
+      'videoBg must reject simultaneous frame and time selectors'
+    );
+
     const directFrame10 = await painter.video.extractFrameByNumber(sourceA, 10, 'png', 2);
     assert.ok(Buffer.isBuffer(directFrame10) && directFrame10.length > 100, 'frame 10 must extract directly');
     const multi = await painter.video.extractMultipleFrames(sourceA, [0.2, 0.8], 'jpg', 2);

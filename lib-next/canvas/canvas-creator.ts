@@ -1,11 +1,11 @@
 import { createCanvas, type SKRSContext2D, type Canvas } from "@napi-rs/canvas";
 import { loadImageCached } from "../image/image-properties";
-import type { CanvasConfig, CanvasResults } from "../types";
+import type { CanvasConfig, CanvasImageBackgroundOptions, CanvasResults } from "../types";
 import { getCanvasContext } from "../core/errors";
 import {
   drawBackgroundGradient,
   drawBackgroundColor,
-  customBackground,
+  drawImageBackground,
   applyCanvasZoom,
   applyNoise,
   drawBackgroundLayers,
@@ -17,7 +17,6 @@ import { applyStroke } from "../render/stroke-renderer";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { applyContextImageFilters } from "../render/context-image-filters";
 import { assertCanvasResourceLimits } from "../runtime/limits";
-import { emitDiagnostic } from "../runtime/diagnostics";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 
 export type { CanvasResults };
@@ -47,41 +46,61 @@ export class CanvasCreator {
     this.extractVideoFrame = method;
   }
 
-  private async resolveCanvasDimensions(canvas: CanvasConfig): Promise<void> {
-    if (canvas.customBg?.inherit) {
-      try {
-        const img = await loadImageCached(canvas.customBg.source);
-        validateInheritedCanvasDimensions(img.width, img.height);
-        canvas.width = img.width;
-        canvas.height = img.height;
-      } catch (error) {
-        if (error instanceof ApexifyError) throw error;
-        throw new ApexifyDecodeError("createCanvas: failed to inspect inherited background dimensions.", { cause: error });
-      }
+  private async resolveVideoBackgroundFrame(canvas: CanvasConfig): Promise<Buffer | undefined> {
+    const video = canvas.videoBg;
+    if (!video) return undefined;
+    if (!this.extractVideoFrame) {
+      throw new ApexifyInputError(
+        "createCanvas: videoBg requires an ApexPainter video frame extractor."
+      );
     }
 
-    if (canvas.videoBg && this.extractVideoFrame) {
-      try {
-        const frameBuffer = await this.extractVideoFrame(
-          canvas.videoBg.source,
-          canvas.videoBg.frame ?? 1,
-          canvas.videoBg.time,
-          canvas.videoBg.format ?? "jpg",
-          canvas.videoBg.quality ?? 2
+    try {
+      const frameBuffer = await this.extractVideoFrame(
+        video.source,
+        video.frame,
+        video.time,
+        video.format ?? "jpg",
+        video.quality ?? 2
+      );
+      if (!frameBuffer?.length) {
+        throw new ApexifyDecodeError(
+          "createCanvas: video frame extraction returned no image data."
         );
-        if (frameBuffer?.length) {
-          const img = await loadImageCached(frameBuffer);
-          if (canvas.width === undefined) canvas.width = img.width;
-          if (canvas.height === undefined) canvas.height = img.height;
-        }
-      } catch (error) {
-        if (error instanceof ApexifyError) throw error;
-        emitDiagnostic({
-          level: "warn",
-          code: "CANVAS_VIDEO_SIZE_FALLBACK",
-          message: "Video frame sizing failed; canvas defaults will be used.",
-        });
       }
+      return frameBuffer;
+    } catch (error) {
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError(
+        "createCanvas: video background extraction failed.",
+        { cause: error }
+      );
+    }
+  }
+
+  private async resolveCanvasDimensions(
+    canvas: CanvasConfig,
+    videoFrame?: Buffer
+  ): Promise<void> {
+    const inheritedSource =
+      canvas.customBg?.inherit
+        ? canvas.customBg.source
+        : canvas.videoBg?.inherit
+          ? videoFrame
+          : undefined;
+    if (inheritedSource === undefined) return;
+
+    try {
+      const img = await loadImageCached(inheritedSource);
+      validateInheritedCanvasDimensions(img.width, img.height);
+      canvas.width = img.width;
+      canvas.height = img.height;
+    } catch (error) {
+      if (error instanceof ApexifyError) throw error;
+      throw new ApexifyDecodeError(
+        "createCanvas: failed to inspect inherited background dimensions.",
+        { cause: error }
+      );
     }
   }
 
@@ -95,11 +114,39 @@ export class CanvasCreator {
     await Promise.all([...new Set(sources)].map((source) => loadImageCached(source)));
   }
 
-  private async decodeVideoFrame(frameBuffer: Buffer) {
-    return loadImageCached(frameBuffer);
+  private async paintImageBackground(
+    ctx: SKRSContext2D,
+    source: string | Buffer,
+    options: CanvasImageBackgroundOptions,
+    width: number,
+    height: number,
+    canvasOpacity: number,
+    blur: number
+  ): Promise<void> {
+    const imageOpacity = options.opacity ?? 1;
+    if (options.filters?.length) {
+      const tempCanvas = createCanvas(width, height);
+      const tempCtx = tempCanvas.getContext("2d") as SKRSContext2D;
+      await drawImageBackground(tempCtx, source, options, width, height, blur);
+      await applyContextImageFilters(tempCtx, options.filters, width, height);
+      ctx.globalAlpha = canvasOpacity * imageOpacity;
+      ctx.drawImage(tempCanvas, 0, 0);
+      ctx.globalAlpha = canvasOpacity;
+      return;
+    }
+
+    ctx.globalAlpha = canvasOpacity * imageOpacity;
+    await drawImageBackground(ctx, source, options, width, height, blur);
+    ctx.globalAlpha = canvasOpacity;
   }
 
-  private async paintConfiguredCanvasSurface(cv: Canvas, canvas: CanvasConfig, width: number, height: number): Promise<void> {
+  private async paintConfiguredCanvasSurface(
+    cv: Canvas,
+    canvas: CanvasConfig,
+    width: number,
+    height: number,
+    videoFrame?: Buffer
+  ): Promise<void> {
     const ctx = getCanvasContext(cv);
     const {
       x = 0,
@@ -170,39 +217,31 @@ export class CanvasCreator {
       ctx.translate(x, y);
       if (typeof blendMode === "string") ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
 
-      if (videoBg && this.extractVideoFrame) {
-        try {
-          const frameBuffer = await this.extractVideoFrame(
-            videoBg.source,
-            videoBg.frame ?? 0,
-            videoBg.time,
-            videoBg.format ?? "jpg",
-            videoBg.quality ?? 2
+      if (videoBg) {
+        if (!videoFrame?.length) {
+          throw new ApexifyDecodeError(
+            "createCanvas: resolved video background frame is unavailable."
           );
-          if (!frameBuffer?.length) throw new ApexifyDecodeError("createCanvas: video frame extraction returned no image data.");
-          const videoImg = await this.decodeVideoFrame(frameBuffer);
-          ctx.globalAlpha = opacity * (videoBg.opacity ?? 1);
-          ctx.drawImage(videoImg, 0, 0, width, height);
-          ctx.globalAlpha = opacity;
-        } catch (error) {
-          if (error instanceof ApexifyError) throw error;
-          throw new ApexifyDecodeError("createCanvas: video background extraction failed.", { cause: error });
         }
+        await this.paintImageBackground(
+          ctx,
+          videoFrame,
+          videoBg,
+          width,
+          height,
+          opacity,
+          blur ?? 0
+        );
       } else if (customBg) {
-        const customBgOpacity = customBg.opacity ?? 1;
-        if (customBg.filters?.length) {
-          const tempCanvas = createCanvas(width, height);
-          const tempCtx = tempCanvas.getContext("2d") as SKRSContext2D;
-          await customBackground(tempCtx, { ...canvas, x: 0, y: 0, opacity: 1, blur });
-          await applyContextImageFilters(tempCtx, customBg.filters, width, height);
-          ctx.globalAlpha = opacity * customBgOpacity;
-          ctx.drawImage(tempCanvas, 0, 0);
-          ctx.globalAlpha = opacity;
-        } else {
-          ctx.globalAlpha = opacity * customBgOpacity;
-          await customBackground(ctx, { ...canvas, blur });
-          ctx.globalAlpha = opacity;
-        }
+        await this.paintImageBackground(
+          ctx,
+          customBg.source,
+          customBg,
+          width,
+          height,
+          opacity,
+          blur ?? 0
+        );
       } else if (gradientBg) {
         await drawBackgroundGradient(ctx, { ...canvas, blur });
       } else if (canvas.colorBg !== undefined) {
@@ -231,20 +270,22 @@ export class CanvasCreator {
 
   async composeCanvasForScene(canvas: CanvasConfig): Promise<{ cv: Canvas; width: number; height: number }> {
     validateCanvasConfig(canvas);
-    await this.resolveCanvasDimensions(canvas);
+    const videoFrame = await this.resolveVideoBackgroundFrame(canvas);
+    await this.resolveCanvasDimensions(canvas, videoFrame);
     const width = canvas.width ?? 500;
     const height = canvas.height ?? 500;
     assertCanvasResourceLimits(width, height);
     await this.preflightCanvasImageSources(canvas);
     const cv = createCanvas(width, height);
-    await this.paintConfiguredCanvasSurface(cv, canvas, width, height);
+    await this.paintConfiguredCanvasSurface(cv, canvas, width, height, videoFrame);
     return { cv, width, height };
   }
 
   async paintCanvasOntoExisting(targetCv: Canvas, canvas: CanvasConfig): Promise<void> {
     validateCanvasConfig(canvas);
     const work: CanvasConfig = { ...canvas };
-    await this.resolveCanvasDimensions(work);
+    const videoFrame = await this.resolveVideoBackgroundFrame(work);
+    await this.resolveCanvasDimensions(work, videoFrame);
     const width = work.width ?? 500;
     const height = work.height ?? 500;
     assertCanvasResourceLimits(width, height);
@@ -252,7 +293,7 @@ export class CanvasCreator {
     if (targetCv.width !== width || targetCv.height !== height) {
       throw new ApexifyInputError(`paintCanvasOntoExisting: target is ${targetCv.width}×${targetCv.height} but config resolves to ${width}×${height}.`);
     }
-    await this.paintConfiguredCanvasSurface(targetCv, work, width, height);
+    await this.paintConfiguredCanvasSurface(targetCv, work, width, height, videoFrame);
   }
 
   async createCanvas(canvas: CanvasConfig): Promise<CanvasResults> {

@@ -21,6 +21,29 @@ const COMPOSITE_MODES = [
   "hue","saturation","color","luminosity",
 ] as const;
 
+function assertOptionalBoolean(value: unknown, name: string): void {
+  if (value !== undefined && typeof value !== "boolean") {
+    throw new ApexifyInputError(`${name} must be boolean.`);
+  }
+}
+
+function validateImageBackgroundOptions(
+  background: {
+    inherit?: boolean;
+    fit?: unknown;
+    align?: unknown;
+    filters?: unknown;
+    opacity?: number;
+  },
+  name: string
+): void {
+  assertOptionalBoolean(background.inherit, `${name}.inherit`);
+  assertOptionalEnum(background.fit, `${name}.fit`, FIT);
+  assertOptionalEnum(background.align, `${name}.align`, ALIGN);
+  assertOpacity(background.opacity, `${name}.opacity`);
+  validateFilters(background.filters, `${name}.filters`);
+}
+
 export function validatePatternOptions(pattern: PatternOptions, name = "pattern"): void {
   assertRecord(pattern, name);
   assertEnum(pattern.type, `${name}.type`, PATTERN_TYPES);
@@ -108,20 +131,23 @@ export function validateCanvasConfig(canvas: CanvasConfig): void {
   if (canvas.customBg !== undefined) {
     assertRecord(canvas.customBg, "canvas.customBg");
     assertNonEmptyString(canvas.customBg.source, "canvas.customBg.source", 16_384);
-    assertOptionalEnum(canvas.customBg.fit, "canvas.customBg.fit", FIT);
-    assertOptionalEnum(canvas.customBg.align, "canvas.customBg.align", ALIGN);
-    assertOpacity(canvas.customBg.opacity, "canvas.customBg.opacity");
-    validateFilters(canvas.customBg.filters, "canvas.customBg.filters");
+    validateImageBackgroundOptions(canvas.customBg, "canvas.customBg");
   }
   if (canvas.videoBg !== undefined) {
     assertRecord(canvas.videoBg, "canvas.videoBg");
     if (!(typeof canvas.videoBg.source === "string" && canvas.videoBg.source.trim()) && !Buffer.isBuffer(canvas.videoBg.source)) {
       throw new ApexifyInputError("canvas.videoBg.source must be a non-empty string or Buffer.");
     }
-    assertOptionalFiniteNumber(canvas.videoBg.frame, "canvas.videoBg.frame", { min: 0, integer: true });
+    if (canvas.videoBg.frame !== undefined && canvas.videoBg.time !== undefined) {
+      throw new ApexifyInputError("canvas.videoBg must specify frame or time, not both.");
+    }
+    assertOptionalFiniteNumber(canvas.videoBg.frame, "canvas.videoBg.frame", { min: 1, integer: true });
     assertOptionalFiniteNumber(canvas.videoBg.time, "canvas.videoBg.time", { min: 0 });
-    assertOpacity(canvas.videoBg.opacity, "canvas.videoBg.opacity");
-    assertOptionalFiniteNumber(canvas.videoBg.quality, "canvas.videoBg.quality", { min: 1, max: 100, integer: true });
+    assertOptionalEnum(canvas.videoBg.format, "canvas.videoBg.format", ["jpg", "png"] as const);
+    assertOptionalFiniteNumber(canvas.videoBg.quality, "canvas.videoBg.quality", { min: 1, max: 31, integer: true });
+    assertOptionalBoolean(canvas.videoBg.loop, "canvas.videoBg.loop");
+    assertOptionalBoolean(canvas.videoBg.autoplay, "canvas.videoBg.autoplay");
+    validateImageBackgroundOptions(canvas.videoBg, "canvas.videoBg");
   }
   assertGradient(canvas.gradientBg, "canvas.gradientBg");
   if (canvas.patternBg !== undefined) {
@@ -140,7 +166,7 @@ export function validateCanvasConfig(canvas: CanvasConfig): void {
 }
 
 export function validateInheritedCanvasDimensions(width: number, height: number): void {
-  assertDimensions(width, height, "canvas.customBg.inherited");
+  assertDimensions(width, height, "canvas.background.inherited");
 }
 
 export function validateBackgroundLayerCount(count: number): void {

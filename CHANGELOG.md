@@ -5,6 +5,15 @@ All notable changes to Apexify.js will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Canvas video backgrounds
+
+- Extended `CanvasConfig.videoBg` with still-image background parity: `inherit`, `fit`, `align`, `filters`, and `opacity`.
+- Video background frames are now extracted exactly once per canvas render and then routed through the same raster placement/filter pipeline as `customBg`.
+- `videoBg.frame` is explicitly 1-based, `frame` and `time` are mutually exclusive, and frame quality now matches the FFmpeg-backed 1–31 contract.
+- `loop` and `autoplay` remain type-compatible but are deprecated because `videoBg` represents one extracted still frame rather than video playback.
+
 ## [6.0.0] - 2026-09-19
 
 ### Phase 11 — package and API cleanup

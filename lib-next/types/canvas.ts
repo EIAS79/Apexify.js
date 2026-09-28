@@ -1,5 +1,5 @@
 import type { gradient } from "./gradient";
-import type { borderPosition, StrokeOptions, ShadowOptions } from "./common";
+import type { AlignMode, FitMode, borderPosition, StrokeOptions, ShadowOptions } from "./common";
 import type { ImageFilter } from "./image";
 import type { PatternOptions } from "./pattern";
 
@@ -7,16 +7,49 @@ import type { PatternOptions } from "./pattern";
 export type BackgroundPatternRepeat = "repeat" | "repeat-x" | "repeat-y" | "no-repeat";
 
 /** Alignment for {@link BackgroundLayer} image `contain` / `cover` (same as `customBg.align`). */
-export type BackgroundImageAlign =
-  | "center"
-  | "top"
-  | "bottom"
-  | "left"
-  | "right"
-  | "top-left"
-  | "top-right"
-  | "bottom-left"
-  | "bottom-right";
+export type BackgroundImageAlign = AlignMode;
+
+/**
+ * Placement/effect contract shared by still-image canvas backgrounds.
+ *
+ * `videoBg` uses these options after its selected video frame has been
+ * extracted to a raster image, keeping its public video selection API distinct
+ * while sharing the same image rendering semantics as `customBg`.
+ */
+export interface CanvasImageBackgroundOptions {
+  /** Adopt the source image dimensions as the canvas dimensions. */
+  inherit?: boolean;
+  /** Resize policy when `inherit` is false. */
+  fit?: FitMode;
+  /** Placement used by `contain` / `cover` when `inherit` is false. */
+  align?: AlignMode;
+  /** Image filters applied to this background only. */
+  filters?: ImageFilter[];
+  /** Background-image opacity, multiplied by the canvas-level opacity. */
+  opacity?: number;
+}
+
+export interface CanvasCustomBackground extends CanvasImageBackgroundOptions {
+  source: string;
+}
+
+export interface CanvasVideoBackground extends CanvasImageBackgroundOptions {
+  source: string | Buffer;
+  /**
+   * 1-based frame number. Mutually exclusive with `time`.
+   * Defaults to frame 1 when neither selector is provided.
+   */
+  frame?: number;
+  /** Timestamp in seconds. Mutually exclusive with `frame`. */
+  time?: number;
+  format?: "jpg" | "png";
+  /** FFmpeg image quality value from 1 (best) through 31. */
+  quality?: number;
+  /** @deprecated A canvas video background is one extracted still frame; looping has no effect. */
+  loop?: boolean;
+  /** @deprecated A canvas video background is one extracted still frame; autoplay has no effect. */
+  autoplay?: boolean;
+}
 
 export type BackgroundLayer =
   | { type: "color"; value: string; opacity?: number; blendMode?: GlobalCompositeOperation }
@@ -50,33 +83,8 @@ export interface CanvasConfig {
   x?: number;
   y?: number;
 
-  customBg?: {
-    source: string;
-    inherit?: boolean;
-    fit?: "fill" | "contain" | "cover";
-    align?:
-      | "center"
-      | "top"
-      | "bottom"
-      | "left"
-      | "right"
-      | "top-left"
-      | "top-right"
-      | "bottom-left"
-      | "bottom-right";
-    filters?: ImageFilter[];
-    opacity?: number;
-  };
-  videoBg?: {
-    source: string | Buffer;
-    frame?: number;
-    time?: number;
-    loop?: boolean;
-    autoplay?: boolean;
-    opacity?: number;
-    format?: "jpg" | "png";
-    quality?: number;
-  };
+  customBg?: CanvasCustomBackground;
+  videoBg?: CanvasVideoBackground;
 
   colorBg?: string;
   gradientBg?: gradient;

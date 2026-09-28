@@ -197,6 +197,73 @@ async function main() {
   })).buffer);
   near(pixel(raw, 0, 0), [0, 255, 255, 255], 3, 'custom background filter');
 
+  // videoBg is a video selector followed by the exact same still-image background
+  // pipeline as customBg. Extraction happens once per canvas render.
+  const videoCreator = new api.CanvasCreator();
+  let videoExtractionCalls = 0;
+  videoCreator.setExtractVideoFrame(async (_source, frame, time, format, quality) => {
+    videoExtractionCalls += 1;
+    assert.equal(frame, 3);
+    assert.equal(time, undefined);
+    assert.equal(format, 'png');
+    assert.equal(quality, 2);
+    return splitPng;
+  });
+  const inheritedVideo = await videoCreator.createCanvas({
+    videoBg: {
+      source: 'fixture.mp4',
+      frame: 3,
+      inherit: true,
+      format: 'png',
+      quality: 2,
+      filters: [{ type: 'invert' }],
+    },
+  });
+  assert.equal(videoExtractionCalls, 1, 'videoBg must extract its still frame once');
+  raw = await rgba(inheritedVideo.buffer);
+  assert.equal(raw.info.width, 4, 'videoBg inherit width');
+  assert.equal(raw.info.height, 2, 'videoBg inherit height');
+  near(pixel(raw, 0, 0), [0, 255, 255, 255], 3, 'videoBg filter parity with customBg');
+
+  videoCreator.setExtractVideoFrame(async () => {
+    videoExtractionCalls += 1;
+    return splitPng;
+  });
+  raw = await rgba((await videoCreator.createCanvas({
+    width: 8,
+    height: 8,
+    videoBg: {
+      source: 'fixture.mp4',
+      frame: 1,
+      fit: 'contain',
+      align: 'bottom-right',
+      opacity: 0.5,
+    },
+  })).buffer);
+  assert.equal(videoExtractionCalls, 2, 'second videoBg render must add exactly one extraction');
+  assert.equal(pixel(raw, 0, 0)[3], 0, 'videoBg contain/alignment leaves transparent top letterbox');
+  const videoBottom = pixel(raw, 0, 6);
+  assert.ok(videoBottom[3] >= 126 && videoBottom[3] <= 129, `videoBg opacity parity failed: ${videoBottom}`);
+
+  await expectError(
+    () => videoCreator.createCanvas({
+      width: 4,
+      height: 2,
+      videoBg: { source: 'fixture.mp4', frame: 1, time: 0 },
+    }),
+    (error) => error.code === 'APEXIFY_INPUT' && /frame or time/.test(error.message),
+    'videoBg frame/time exclusivity'
+  );
+  await expectError(
+    () => videoCreator.createCanvas({
+      width: 4,
+      height: 2,
+      videoBg: { source: 'fixture.mp4', frame: 1, quality: 32 },
+    }),
+    (error) => error.code === 'APEXIFY_INPUT' && /quality/.test(error.message),
+    'videoBg FFmpeg quality range'
+  );
+
   raw = await rgba((await creator.createCanvas({
     width: 2,
     height: 2,

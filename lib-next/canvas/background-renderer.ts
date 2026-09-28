@@ -1,7 +1,7 @@
 import { emitDiagnostic } from "../runtime/diagnostics";
 import { createCanvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { Image } from "@napi-rs/canvas";
-import type { CanvasConfig, gradient } from "../types";
+import type { CanvasConfig, CanvasImageBackgroundOptions, gradient } from "../types";
 import { EnhancedPatternRenderer } from "./pattern-renderer";
 import { loadImageCached } from "../image/image-properties";
 import { createGradientFill } from "../render/gradient-fill";
@@ -44,33 +44,55 @@ export async function drawBackgroundColor(
   ctx.filter = "none";
 }
 
-/** Draw one custom background. Source resolution/decoding is delegated to the authoritative image pipeline. */
-export async function customBackground(
+/**
+ * Draw a decoded-image-compatible source using the canonical canvas background
+ * placement contract. Both `customBg` and extracted `videoBg` frames route
+ * through this helper so fit/alignment/inherit semantics cannot drift.
+ */
+export async function drawImageBackground(
   ctx: SKRSContext2D,
-  canvas: CanvasConfig
+  source: string | Buffer,
+  options: CanvasImageBackgroundOptions,
+  width: number,
+  height: number,
+  blur = 0
 ): Promise<void> {
-  const cfg = canvas.customBg;
-  if (!cfg) return;
-
   try {
-    const img = await loadImageCached(cfg.source);
-    const width = canvas.width ?? img.width;
-    const height = canvas.height ?? img.height;
+    const img = await loadImageCached(source);
 
-    if ((canvas.blur ?? 0) > 0) ctx.filter = `blur(${canvas.blur}px)`;
+    if (blur > 0) ctx.filter = `blur(${blur}px)`;
 
-    if (cfg.inherit) {
+    if (options.inherit) {
       ctx.drawImage(img, 0, 0);
     } else {
-      drawImageFitted(ctx, img, width, height, cfg.fit ?? "fill", cfg.align ?? "center");
+      drawImageFitted(
+        ctx,
+        img,
+        width,
+        height,
+        options.fit ?? "fill",
+        options.align ?? "center"
+      );
     }
 
     ctx.filter = "none";
   } catch (error) {
     ctx.filter = "none";
     if (error instanceof ApexifyError) throw error;
-    throw new ApexifyDecodeError("customBackground: image source could not be rendered.", { cause: error });
+    throw new ApexifyDecodeError("Image background source could not be rendered.", { cause: error });
   }
+}
+
+/** Draw one custom background through the shared still-image background pipeline. */
+export async function customBackground(
+  ctx: SKRSContext2D,
+  canvas: CanvasConfig
+): Promise<void> {
+  const cfg = canvas.customBg;
+  if (!cfg) return;
+  const width = canvas.width ?? 500;
+  const height = canvas.height ?? 500;
+  await drawImageBackground(ctx, cfg.source, cfg, width, height, canvas.blur ?? 0);
 }
 
 function alignInto(
