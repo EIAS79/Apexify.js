@@ -277,6 +277,23 @@ async function main() {
     'videoBg FFmpeg quality range'
   );
 
+  const extractionCountBeforeConflict = videoExtractionCalls;
+  await expectError(
+    () => videoCreator.createCanvas({
+      width: 4,
+      height: 2,
+      colorBg: '#000000',
+      videoBg: { source: 'fixture.mp4', frame: 1 },
+    }),
+    (error) => error.code === 'APEXIFY_INPUT' && /one primary background/.test(error.message),
+    'primary background exclusivity before video extraction'
+  );
+  assert.equal(
+    videoExtractionCalls,
+    extractionCountBeforeConflict,
+    'invalid primary-background combinations must fail before FFmpeg extraction'
+  );
+
   raw = await rgba((await creator.createCanvas({
     width: 2,
     height: 2,

@@ -116,6 +116,20 @@ export function validateCanvasConfig(canvas: CanvasConfig): void {
   assertOptionalFiniteNumber(canvas.x, "canvas.x");
   assertOptionalFiniteNumber(canvas.y, "canvas.y");
   assertOpacity(canvas.opacity, "canvas.opacity");
+  assertOptionalBoolean(canvas.transparentBase, "canvas.transparentBase");
+
+  const primaryBackgrounds = [
+    canvas.colorBg !== undefined ? "colorBg" : undefined,
+    canvas.gradientBg !== undefined ? "gradientBg" : undefined,
+    canvas.customBg !== undefined ? "customBg" : undefined,
+    canvas.videoBg !== undefined ? "videoBg" : undefined,
+    canvas.transparentBase === true ? "transparentBase" : undefined,
+  ].filter((value): value is string => value !== undefined);
+  if (primaryBackgrounds.length > 1) {
+    throw new ApexifyInputError(
+      `canvas may use only one primary background; received ${primaryBackgrounds.join(", ")}.`
+    );
+  }
   assertOptionalEnum(canvas.blendMode, "canvas.blendMode", COMPOSITE_MODES);
   assertOptionalFiniteNumber(canvas.blur, "canvas.blur", { min: 0 });
   assertOptionalFiniteNumber(canvas.rotation, "canvas.rotation");
