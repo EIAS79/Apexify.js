@@ -253,6 +253,24 @@ async function main() {
 
     const frame = await painter.video.extractFrameAtTime(sourceA, 0.5, 'png', 2);
     assert.ok(Buffer.isBuffer(frame) && frame.length > 100, 'single frame extraction must return image bytes');
+
+    const canvasVideoFrame = await painter.createCanvas({
+      width: 160,
+      height: 90,
+      videoBg: {
+        source: sourceA,
+        frame: 10,
+        format: 'png',
+        quality: 2,
+        opacity: 1,
+      },
+    });
+    assert.ok(
+      Buffer.isBuffer(canvasVideoFrame.buffer) && canvasVideoFrame.buffer.length > 100,
+      'createCanvas videoBg must render the selected frame'
+    );
+    const directFrame10 = await painter.video.extractFrameByNumber(sourceA, 10, 'png', 2);
+    assert.ok(Buffer.isBuffer(directFrame10) && directFrame10.length > 100, 'frame 10 must extract directly');
     const multi = await painter.video.extractMultipleFrames(sourceA, [0.2, 0.8], 'jpg', 2);
     assert.equal(multi.length, 2);
     assert.ok(multi.every((item) => Buffer.isBuffer(item) && item.length > 100));

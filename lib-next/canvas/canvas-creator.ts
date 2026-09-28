@@ -64,7 +64,7 @@ export class CanvasCreator {
       try {
         const frameBuffer = await this.extractVideoFrame(
           canvas.videoBg.source,
-          canvas.videoBg.frame ?? 0,
+          canvas.videoBg.frame ?? 1,
           canvas.videoBg.time,
           canvas.videoBg.format ?? "jpg",
           canvas.videoBg.quality ?? 2
@@ -124,9 +124,12 @@ export class CanvasCreator {
       canvas.colorBg !== undefined ? "colorBg" : undefined,
       gradientBg !== undefined ? "gradientBg" : undefined,
       customBg !== undefined ? "customBg" : undefined,
+      videoBg !== undefined ? "videoBg" : undefined,
     ].filter((value): value is string => value !== undefined);
     if (baseBackgrounds.length > 1) {
-      throw new ApexifyInputError(`createCanvas: only one of colorBg, gradientBg, or customBg may be used; received ${baseBackgrounds.join(", ")}.`);
+      throw new ApexifyInputError(
+        `createCanvas: only one primary background may be used; received ${baseBackgrounds.join(", ")}.`
+      );
     }
 
     // The overwhelmingly common canvas path is a full-surface opaque solid background.
