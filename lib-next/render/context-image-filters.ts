@@ -83,7 +83,14 @@ export async function applyContextImageFilters(
       }
     }
 
-    const { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    // Filters such as grayscale can legitimately change Sharp's working
+    // colourspace/channel count. The Canvas2D compositor contract is always
+    // RGBA, so normalize back to sRGB + alpha before exporting raw pixels.
+    const { data, info } = await image
+      .toColourspace("srgb")
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
     if (info.width !== width || info.height !== height || info.channels !== 4) {
       throw new ApexifyDecodeError(`Filter stack changed raster geometry unexpectedly to ${info.width}×${info.height}×${info.channels}.`);
     }

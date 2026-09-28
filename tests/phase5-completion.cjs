@@ -197,6 +197,19 @@ async function main() {
   })).buffer);
   near(pixel(raw, 0, 0), [0, 255, 255, 255], 3, 'custom background filter');
 
+  raw = await rgba((await creator.createCanvas({
+    width: 4,
+    height: 2,
+    customBg: { source: splitUri, fit: 'fill', filters: [{ type: 'grayscale' }] },
+  })).buffer);
+  const grayscalePixel = pixel(raw, 0, 0);
+  assert.ok(
+    Math.abs(grayscalePixel[0] - grayscalePixel[1]) <= 1 &&
+      Math.abs(grayscalePixel[1] - grayscalePixel[2]) <= 1 &&
+      grayscalePixel[3] === 255,
+    `grayscale custom background must normalize back to RGBA: ${grayscalePixel}`
+  );
+
   // videoBg is a video selector followed by the exact same still-image background
   // pipeline as customBg. Extraction happens once per canvas render.
   const videoCreator = new api.CanvasCreator();
