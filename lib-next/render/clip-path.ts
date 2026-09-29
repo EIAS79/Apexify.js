@@ -163,8 +163,15 @@ export function buildPath(
   ctx.beginPath();
 
   if (radius === "circular") {
-    const r = Math.min(w, h) / 2;
-    ctx.arc(x + w / 2, y + h / 2, r, 0, Math.PI * 2);
+    // "circular" follows the element bounds: a square resolves to a circle,
+    // while a non-square rect resolves to the corresponding full-size ellipse.
+    // Build the ellipse with a transformed unit circle so this stays compatible
+    // with every supported @napi-rs/canvas context.
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.scale(w / 2, h / 2);
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.restore();
     ctx.closePath();
     return;
   }

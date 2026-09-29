@@ -152,8 +152,11 @@ export function buildPathbg(
   ctx.beginPath();
 
   if (borderRadius === "circular") {
-    const r = Math.min(width, height) / 2;
-    ctx.arc(x + width / 2, y + height / 2, r, 0, 2 * Math.PI);
+    ctx.save();
+    ctx.translate(x + width / 2, y + height / 2);
+    ctx.scale(width / 2, height / 2);
+    ctx.arc(0, 0, 1, 0, 2 * Math.PI);
+    ctx.restore();
   } else if (typeof borderRadius === "number" && borderRadius > 0) {
     const br = Math.min(borderRadius, width / 2, height / 2);
     const selected = new Set(borderPosition.toLowerCase().split(",").map((s) => s.trim()));

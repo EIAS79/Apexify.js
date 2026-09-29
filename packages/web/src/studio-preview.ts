@@ -470,8 +470,11 @@ function drawCanvasPath(
 ) {
   ctx.beginPath();
   if (radiusValue === 'circular') {
-    const radius = Math.min(width, height) / 2;
-    ctx.arc(x + width / 2, y + height / 2, radius, 0, Math.PI * 2);
+    ctx.save();
+    ctx.translate(x + width / 2, y + height / 2);
+    ctx.scale(width / 2, height / 2);
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.restore();
     ctx.closePath();
     return;
   }
