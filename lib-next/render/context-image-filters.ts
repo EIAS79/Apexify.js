@@ -78,7 +78,6 @@ export async function applyContextImageFilters(
             image = await applyPixelate(
               image,
               width,
-              height,
               filter.size!,
               startX,
               startY,
@@ -282,7 +281,6 @@ function clampByte(value: number): number {
 async function applyPixelate(
   image: Sharp,
   width: number,
-  height: number,
   size: number,
   startX: number,
   startY: number,
