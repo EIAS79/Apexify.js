@@ -970,13 +970,14 @@ async function applyBackground(
               Math.max(0, numberOf(customBg.opacity, 1)),
             );
             if (blur > 0) ctx.filter = 'blur(' + blur + 'px)';
-            drawBitmapFitted(
+            drawBitmapFittedWithFilters(
               ctx,
               bitmap,
               width,
               height,
               stringOf(customBg.fit, 'fill'),
               stringOf(customBg.align, 'center'),
+              customBg.filters,
             );
             ctx.restore();
           } finally {
@@ -1996,6 +1997,392 @@ function drawBitmapFitted(
   ctx.drawImage(bitmap, 0, 0, width, height);
 }
 
+const PREVIEW_IMAGE_FILTER_TYPES = new Set([
+  'gaussianBlur','motionBlur','radialBlur','sharpen','noise','grain',
+  'edgeDetection','emboss','invert','grayscale','sepia','pixelate',
+  'brightness','contrast','saturation','hueShift','posterize',
+]);
+
+function previewFilterNumber(
+  filter: RecordValue,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+  integer = false,
+): number {
+  const raw = filter[key];
+  if (raw === undefined || raw === null) return fallback;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < min || raw > max) {
+    throw new Error(
+      'Image filter ' + stringOf(filter.type, 'unknown') + '.' + key +
+      ' must be between ' + min + ' and ' + max + '.',
+    );
+  }
+  if (integer && !Number.isInteger(raw)) {
+    throw new Error(
+      'Image filter ' + stringOf(filter.type, 'unknown') + '.' + key +
+      ' must be an integer.',
+    );
+  }
+  return raw;
+}
+
+function clonePreviewCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const copy = document.createElement('canvas');
+  copy.width = source.width;
+  copy.height = source.height;
+  const copyCtx = copy.getContext('2d', { alpha: true });
+  if (!copyCtx) throw new Error('Canvas 2D is unavailable while applying image filters.');
+  copyCtx.drawImage(source, 0, 0);
+  return copy;
+}
+
+function applyCssPreviewFilter(
+  ctx: CanvasRenderingContext2D,
+  cssFilter: string,
+): void {
+  const copy = clonePreviewCanvas(ctx.canvas);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.filter = cssFilter;
+  ctx.drawImage(copy, 0, 0);
+  ctx.filter = 'none';
+  ctx.restore();
+}
+
+function applyPreviewPixelTransform(
+  ctx: CanvasRenderingContext2D,
+  transform: (data: Uint8ClampedArray, width: number, height: number) => void,
+): void {
+  const image = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  transform(image.data, image.width, image.height);
+  ctx.putImageData(image, 0, 0);
+}
+
+function clampPreviewByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function applyPreviewNoise(
+  ctx: CanvasRenderingContext2D,
+  intensity: number,
+  monochrome: boolean,
+): void {
+  applyPreviewPixelTransform(ctx, (data) => {
+    let state = monochrome ? 0x6d2b79f5 : 0x9e3779b9;
+    const random = () => {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return (state >>> 0) / 0xffffffff;
+    };
+    const amplitude = (monochrome ? 100 : 255) * intensity;
+    for (let index = 0; index < data.length; index += 4) {
+      if (monochrome) {
+        const delta = (random() - 0.5) * amplitude;
+        data[index] = clampPreviewByte(data[index]! + delta);
+        data[index + 1] = clampPreviewByte(data[index + 1]! + delta);
+        data[index + 2] = clampPreviewByte(data[index + 2]! + delta);
+      } else {
+        data[index] = clampPreviewByte(data[index]! + (random() - 0.5) * amplitude);
+        data[index + 1] = clampPreviewByte(data[index + 1]! + (random() - 0.5) * amplitude);
+        data[index + 2] = clampPreviewByte(data[index + 2]! + (random() - 0.5) * amplitude);
+      }
+    }
+  });
+}
+
+function applyPreviewConvolution(
+  ctx: CanvasRenderingContext2D,
+  kernel: readonly number[],
+  divisor = 1,
+  offset = 0,
+  grayscale = false,
+): void {
+  const image = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const source = new Uint8ClampedArray(image.data);
+  const side = Math.round(Math.sqrt(kernel.length));
+  const half = Math.floor(side / 2);
+  const width = image.width;
+  const height = image.height;
+  const safeDivisor = divisor || 1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const target = (y * width + x) * 4;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (let ky = 0; ky < side; ky += 1) {
+        for (let kx = 0; kx < side; kx += 1) {
+          const px = Math.max(0, Math.min(width - 1, x + kx - half));
+          const py = Math.max(0, Math.min(height - 1, y + ky - half));
+          const sourceIndex = (py * width + px) * 4;
+          const weight = kernel[ky * side + kx] ?? 0;
+          r += source[sourceIndex]! * weight;
+          g += source[sourceIndex + 1]! * weight;
+          b += source[sourceIndex + 2]! * weight;
+        }
+      }
+      r = r / safeDivisor + offset;
+      g = g / safeDivisor + offset;
+      b = b / safeDivisor + offset;
+      if (grayscale) {
+        const gray = clampPreviewByte(r * 0.299 + g * 0.587 + b * 0.114);
+        image.data[target] = gray;
+        image.data[target + 1] = gray;
+        image.data[target + 2] = gray;
+      } else {
+        image.data[target] = clampPreviewByte(r);
+        image.data[target + 1] = clampPreviewByte(g);
+        image.data[target + 2] = clampPreviewByte(b);
+      }
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
+function applyPreviewMotionBlur(
+  ctx: CanvasRenderingContext2D,
+  intensity: number,
+  angle: number,
+): void {
+  if (intensity <= 0) return;
+  const copy = clonePreviewCanvas(ctx.canvas);
+  const radians = ((((angle % 360) + 360) % 360) * Math.PI) / 180;
+  const samples = Math.max(3, Math.min(31, Math.round(intensity)));
+  const half = (samples - 1) / 2;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.globalCompositeOperation = 'source-over';
+  for (let index = 0; index < samples; index += 1) {
+    const distance = index - half;
+    ctx.globalAlpha = 1 / samples;
+    ctx.drawImage(
+      copy,
+      Math.cos(radians) * distance,
+      Math.sin(radians) * distance,
+    );
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function applyPreviewRadialBlur(
+  ctx: CanvasRenderingContext2D,
+  intensity: number,
+  centerX: number,
+  centerY: number,
+): void {
+  if (intensity <= 0) return;
+  const source = clonePreviewCanvas(ctx.canvas);
+  const steps = Math.max(2, Math.min(16, Math.ceil(intensity / 3)));
+  const maxExpansion = intensity / 100;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  for (let index = 0; index < steps; index += 1) {
+    const progress = steps === 1 ? 0 : index / (steps - 1);
+    const scale = 1 + maxExpansion * progress;
+    ctx.save();
+    ctx.globalAlpha = index === 0 ? 1 : 1 / (index + 1);
+    ctx.translate(centerX, centerY);
+    ctx.scale(scale, scale);
+    ctx.drawImage(source, -centerX, -centerY);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function applyPreviewPixelate(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+): void {
+  if (size <= 1) return;
+  const source = clonePreviewCanvas(ctx.canvas);
+  const smallWidth = Math.max(1, Math.ceil(ctx.canvas.width / size));
+  const smallHeight = Math.max(1, Math.ceil(ctx.canvas.height / size));
+  const small = document.createElement('canvas');
+  small.width = smallWidth;
+  small.height = smallHeight;
+  const smallCtx = small.getContext('2d', { alpha: true });
+  if (!smallCtx) throw new Error('Canvas 2D is unavailable while pixelating image.');
+  smallCtx.imageSmoothingEnabled = false;
+  smallCtx.drawImage(source, 0, 0, smallWidth, smallHeight);
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(small, 0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.restore();
+}
+
+function applyPreviewPosterize(
+  ctx: CanvasRenderingContext2D,
+  levels: number,
+): void {
+  const step = 255 / (levels - 1);
+  applyPreviewPixelTransform(ctx, (data) => {
+    for (let index = 0; index < data.length; index += 4) {
+      data[index] = clampPreviewByte(Math.round(data[index]! / step) * step);
+      data[index + 1] = clampPreviewByte(Math.round(data[index + 1]! / step) * step);
+      data[index + 2] = clampPreviewByte(Math.round(data[index + 2]! / step) * step);
+    }
+  });
+}
+
+function applyPreviewImageFilters(
+  ctx: CanvasRenderingContext2D,
+  rawFilters: Jsonish,
+  width: number,
+  height: number,
+): void {
+  if (!Array.isArray(rawFilters) || rawFilters.length === 0) return;
+
+  for (const rawFilter of rawFilters) {
+    if (!isRecord(rawFilter)) throw new Error('Image filters must be objects.');
+    const type = stringOf(rawFilter.type, '');
+    if (!PREVIEW_IMAGE_FILTER_TYPES.has(type)) {
+      throw new Error('Unsupported image filter type: ' + (type || '(empty)') + '.');
+    }
+
+    switch (type) {
+      case 'gaussianBlur': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 100);
+        if (intensity > 0) applyCssPreviewFilter(ctx, 'blur(' + intensity + 'px)');
+        break;
+      }
+      case 'motionBlur': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 101);
+        const angle = previewFilterNumber(rawFilter, 'angle', 0, -3600, 3600);
+        applyPreviewMotionBlur(ctx, intensity, angle);
+        break;
+      }
+      case 'radialBlur': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 50);
+        const centerX = previewFilterNumber(rawFilter, 'centerX', width / 2, 0, width);
+        const centerY = previewFilterNumber(rawFilter, 'centerY', height / 2, 0, height);
+        applyPreviewRadialBlur(ctx, intensity, centerX, centerY);
+        break;
+      }
+      case 'sharpen': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 10);
+        if (intensity > 0) {
+          const amount = intensity;
+          applyPreviewConvolution(
+            ctx,
+            [0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0],
+          );
+        }
+        break;
+      }
+      case 'noise': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 1);
+        if (intensity > 0) applyPreviewNoise(ctx, intensity, false);
+        break;
+      }
+      case 'grain': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 1);
+        if (intensity > 0) applyPreviewNoise(ctx, intensity, true);
+        break;
+      }
+      case 'edgeDetection': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 10);
+        if (intensity > 0) {
+          applyPreviewConvolution(
+            ctx,
+            [-intensity, -intensity, -intensity, -intensity, 8 * intensity, -intensity, -intensity, -intensity, -intensity],
+            1,
+            0,
+            true,
+          );
+        }
+        break;
+      }
+      case 'emboss': {
+        const intensity = previewFilterNumber(rawFilter, 'intensity', 0, 0, 10);
+        if (intensity > 0) {
+          applyPreviewConvolution(
+            ctx,
+            [-2 * intensity, -intensity, 0, -intensity, 1, intensity, 0, intensity, 2 * intensity],
+            1,
+            128,
+          );
+        }
+        break;
+      }
+      case 'invert':
+        applyCssPreviewFilter(ctx, 'invert(1)');
+        break;
+      case 'grayscale':
+        applyCssPreviewFilter(ctx, 'grayscale(1)');
+        break;
+      case 'sepia':
+        applyCssPreviewFilter(ctx, 'sepia(1)');
+        break;
+      case 'pixelate': {
+        const size = previewFilterNumber(rawFilter, 'size', 1, 1, Math.max(width, height), true);
+        applyPreviewPixelate(ctx, size);
+        break;
+      }
+      case 'brightness': {
+        const value = previewFilterNumber(rawFilter, 'value', 0, -100, 100);
+        if (value !== 0) applyCssPreviewFilter(ctx, 'brightness(' + Math.max(0, 1 + value / 100) + ')');
+        break;
+      }
+      case 'contrast': {
+        const value = previewFilterNumber(rawFilter, 'value', 0, -100, 100);
+        if (value !== 0) applyCssPreviewFilter(ctx, 'contrast(' + Math.max(0, 1 + value / 100) + ')');
+        break;
+      }
+      case 'saturation': {
+        const value = previewFilterNumber(rawFilter, 'value', 0, -100, 100);
+        if (value !== 0) applyCssPreviewFilter(ctx, 'saturate(' + Math.max(0, 1 + value / 100) + ')');
+        break;
+      }
+      case 'hueShift': {
+        const value = previewFilterNumber(rawFilter, 'value', 0, -3600, 3600);
+        if (value !== 0) applyCssPreviewFilter(ctx, 'hue-rotate(' + value + 'deg)');
+        break;
+      }
+      case 'posterize': {
+        const levels = previewFilterNumber(rawFilter, 'levels', 4, 2, 256, true);
+        applyPreviewPosterize(ctx, levels);
+        break;
+      }
+    }
+  }
+}
+
+function drawBitmapFittedWithFilters(
+  ctx: CanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  width: number,
+  height: number,
+  fit: string,
+  align: string,
+  filters: Jsonish,
+) {
+  if (!Array.isArray(filters) || filters.length === 0) {
+    drawBitmapFitted(ctx, bitmap, width, height, fit, align);
+    return;
+  }
+  const filtered = document.createElement('canvas');
+  filtered.width = Math.max(1, Math.round(width));
+  filtered.height = Math.max(1, Math.round(height));
+  const filteredCtx = filtered.getContext('2d', { alpha: true });
+  if (!filteredCtx) throw new Error('Canvas 2D is unavailable while preparing filtered image.');
+  drawBitmapFitted(filteredCtx, bitmap, width, height, fit, align);
+  applyPreviewImageFilters(filteredCtx, filters, filtered.width, filtered.height);
+  ctx.drawImage(filtered, 0, 0, width, height);
+}
+
 async function previewBitmapFromSource(
   source: string,
   studioAssetsById: ReadonlyMap<string, WebVirtualAsset>,
@@ -2111,18 +2498,15 @@ async function drawStudioAssetImageLayer(
       ctx.clip();
     }
 
-    if (fit === 'contain' || fit === 'cover') {
-      const scale =
-        fit === 'cover'
-          ? Math.max(width / intrinsicWidth, height / intrinsicHeight)
-          : Math.min(width / intrinsicWidth, height / intrinsicHeight);
-      const drawWidth = intrinsicWidth * scale;
-      const drawHeight = intrinsicHeight * scale;
-      const offset = alignedImageOffset(align, width, height, drawWidth, drawHeight);
-      ctx.drawImage(bitmap, offset.x, offset.y, drawWidth, drawHeight);
-    } else {
-      ctx.drawImage(bitmap, 0, 0, width, height);
-    }
+    drawBitmapFittedWithFilters(
+      ctx,
+      bitmap,
+      width,
+      height,
+      fit,
+      align,
+      item.filters,
+    );
 
     const strokeWidth = numberOf(stroke.width, 0);
     if (strokeWidth > 0) {
@@ -2169,12 +2553,7 @@ async function drawRemoteImageLayer(ctx:CanvasRenderingContext2D,item:RecordValu
       ctx.shadowColor='rgba(0,0,0,0)'; ctx.shadowBlur=0; ctx.shadowOffsetX=0; ctx.shadowOffsetY=0;
     }
     if(radius>0){drawRoundedRect(ctx,0,0,width,height,radius);ctx.clip();}
-    if(fit==='contain'||fit==='cover'){
-      const scale=fit==='cover'?Math.max(width/intrinsicWidth,height/intrinsicHeight):Math.min(width/intrinsicWidth,height/intrinsicHeight);
-      const drawWidth=intrinsicWidth*scale, drawHeight=intrinsicHeight*scale;
-      const offset=alignedImageOffset(align,width,height,drawWidth,drawHeight);
-      ctx.drawImage(bitmap,offset.x,offset.y,drawWidth,drawHeight);
-    }else ctx.drawImage(bitmap,0,0,width,height);
+    drawBitmapFittedWithFilters(ctx,bitmap,width,height,fit,align,item.filters);
     const strokeWidth=numberOf(stroke.width,0);
     if(strokeWidth>0){ctx.lineWidth=strokeWidth;ctx.strokeStyle=stringOf(stroke.color,'#ffffff');drawRoundedRect(ctx,strokeWidth/2,strokeWidth/2,width-strokeWidth,height-strokeWidth,radius);ctx.stroke();}
     ctx.restore();
