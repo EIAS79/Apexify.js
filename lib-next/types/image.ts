@@ -40,6 +40,12 @@ export interface ImageFilter {
   value?: number;
   levels?: number;
   size?: number;
+
+  /** Optional pixelate region. Omit for the whole filtered surface. */
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
 }
 
 export type ShapeType =

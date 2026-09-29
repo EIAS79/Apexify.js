@@ -2202,24 +2202,43 @@ function applyPreviewRadialBlur(
 function applyPreviewPixelate(
   ctx: CanvasRenderingContext2D,
   size: number,
+  startX: number,
+  startY: number,
+  regionWidth: number,
+  regionHeight: number,
 ): void {
   if (size <= 1) return;
-  const source = clonePreviewCanvas(ctx.canvas);
-  const smallWidth = Math.max(1, Math.ceil(ctx.canvas.width / size));
-  const smallHeight = Math.max(1, Math.ceil(ctx.canvas.height / size));
+  const region = document.createElement('canvas');
+  region.width = regionWidth;
+  region.height = regionHeight;
+  const regionCtx = region.getContext('2d', { alpha: true });
+  if (!regionCtx) throw new Error('Canvas 2D is unavailable while pixelating image.');
+  regionCtx.drawImage(
+    ctx.canvas,
+    startX,
+    startY,
+    regionWidth,
+    regionHeight,
+    0,
+    0,
+    regionWidth,
+    regionHeight,
+  );
+
+  const smallWidth = Math.max(1, Math.ceil(regionWidth / size));
+  const smallHeight = Math.max(1, Math.ceil(regionHeight / size));
   const small = document.createElement('canvas');
   small.width = smallWidth;
   small.height = smallHeight;
   const smallCtx = small.getContext('2d', { alpha: true });
   if (!smallCtx) throw new Error('Canvas 2D is unavailable while pixelating image.');
   smallCtx.imageSmoothingEnabled = false;
-  smallCtx.drawImage(source, 0, 0, smallWidth, smallHeight);
+  smallCtx.drawImage(region, 0, 0, smallWidth, smallHeight);
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(small, 0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.drawImage(small, startX, startY, regionWidth, regionHeight);
   ctx.restore();
 }
 
@@ -2328,7 +2347,14 @@ function applyPreviewImageFilters(
         break;
       case 'pixelate': {
         const size = previewFilterNumber(rawFilter, 'size', 1, 1, Math.max(width, height), true);
-        applyPreviewPixelate(ctx, size);
+        const startX = previewFilterNumber(rawFilter, 'x', 0, 0, Math.max(0, width - 1), true);
+        const startY = previewFilterNumber(rawFilter, 'y', 0, 0, Math.max(0, height - 1), true);
+        const regionWidth = previewFilterNumber(rawFilter, 'width', width - startX, 1, width, true);
+        const regionHeight = previewFilterNumber(rawFilter, 'height', height - startY, 1, height, true);
+        if (startX + regionWidth > width || startY + regionHeight > height) {
+          throw new Error('Image filter pixelate region exceeds the filtered surface bounds.');
+        }
+        applyPreviewPixelate(ctx, size, startX, startY, regionWidth, regionHeight);
         break;
       }
       case 'brightness': {

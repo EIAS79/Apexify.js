@@ -18,6 +18,10 @@ export async function applyContextImageFilters(
 
   try {
     const imageData = ctx.getImageData(0, 0, width, height);
+    const sourceAlpha = new Uint8Array(width * height);
+    for (let index = 0; index < sourceAlpha.length; index += 1) {
+      sourceAlpha[index] = imageData.data[index * 4 + 3]!;
+    }
     let image = sharp(Buffer.from(imageData.data), { raw: { width, height, channels: 4 } }).ensureAlpha();
 
     for (const filter of filters) {
@@ -63,16 +67,32 @@ export async function applyContextImageFilters(
           image = image.negate({ alpha: false });
           break;
         case "posterize":
-          image = await applyRawTransform(image, posterizeTransform(filter.levels ?? 4));
+          image = await applyRawTransform(image, posterizeTransform(filter.levels ?? 4), sourceAlpha);
           break;
         case "pixelate":
-          if ((filter.size ?? 1) > 1) image = await applyPixelate(image, width, height, filter.size!);
+          if ((filter.size ?? 1) > 1) {
+            const startX = filter.x ?? 0;
+            const startY = filter.y ?? 0;
+            const regionWidth = filter.width ?? width - startX;
+            const regionHeight = filter.height ?? height - startY;
+            image = await applyPixelate(
+              image,
+              width,
+              height,
+              filter.size!,
+              startX,
+              startY,
+              regionWidth,
+              regionHeight,
+              sourceAlpha,
+            );
+          }
           break;
         case "noise":
-          if ((filter.intensity ?? 0) > 0) image = await applyRawTransform(image, noiseTransform(filter.intensity!, false));
+          if ((filter.intensity ?? 0) > 0) image = await applyRawTransform(image, noiseTransform(filter.intensity!, false), sourceAlpha);
           break;
         case "grain":
-          if ((filter.intensity ?? 0) > 0) image = await applyRawTransform(image, noiseTransform(filter.intensity!, true));
+          if ((filter.intensity ?? 0) > 0) image = await applyRawTransform(image, noiseTransform(filter.intensity!, true), sourceAlpha);
           break;
         case "edgeDetection":
           if ((filter.intensity ?? 0) > 0) image = image.convolve(createSobelKernel(filter.intensity!)).grayscale();
@@ -83,19 +103,17 @@ export async function applyContextImageFilters(
       }
     }
 
-    // Filters such as grayscale can legitimately change Sharp's working
-    // colourspace/channel count. The Canvas2D compositor contract is always
-    // RGBA, so normalize back to sRGB + alpha before exporting raw pixels.
-    const { data, info } = await image
-      .toColourspace("srgb")
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    if (info.width !== width || info.height !== height || info.channels !== 4) {
-      throw new ApexifyDecodeError(`Filter stack changed raster geometry unexpectedly to ${info.width}×${info.height}×${info.channels}.`);
+    // Sharp may legitimately collapse grayscale/edge output to one or two
+    // channels. Canvas2D always consumes RGBA, so normalize channel count
+    // explicitly instead of treating a colourspace change as geometry failure.
+    const normalized = await sharpToRgbaRaw(image, sourceAlpha);
+    if (normalized.width !== width || normalized.height !== height) {
+      throw new ApexifyDecodeError(
+        `Filter stack changed raster geometry unexpectedly to ${normalized.width}×${normalized.height}.`,
+      );
     }
     const output = ctx.createImageData(width, height);
-    output.data.set(data);
+    output.data.set(normalized.data);
     ctx.putImageData(output, 0, 0);
     ctx.filter = "none";
   } catch (error) {
@@ -143,20 +161,82 @@ function validateFilter(filter: ImageFilter, name: string, width: number, height
       finite(filter.levels, "levels", 2, 256);
       if (filter.levels !== undefined && !Number.isInteger(filter.levels)) throw new ApexifyInputError(`${name}.levels must be an integer.`);
       break;
-    case "pixelate":
+    case "pixelate": {
       finite(filter.size, "size", 1, Math.max(width, height));
-      if (filter.size !== undefined && !Number.isInteger(filter.size)) throw new ApexifyInputError(`${name}.size must be an integer.`);
+      finite(filter.x, "x", 0, Math.max(0, width - 1));
+      finite(filter.y, "y", 0, Math.max(0, height - 1));
+      finite(filter.width, "width", 1, width);
+      finite(filter.height, "height", 1, height);
+      for (const [field, value] of [
+        ["size", filter.size],
+        ["x", filter.x],
+        ["y", filter.y],
+        ["width", filter.width],
+        ["height", filter.height],
+      ] as const) {
+        if (value !== undefined && !Number.isInteger(value)) {
+          throw new ApexifyInputError(`${name}.${field} must be an integer.`);
+        }
+      }
+      const startX = filter.x ?? 0;
+      const startY = filter.y ?? 0;
+      const regionWidth = filter.width ?? width - startX;
+      const regionHeight = filter.height ?? height - startY;
+      if (startX + regionWidth > width || startY + regionHeight > height) {
+        throw new ApexifyInputError(`${name} pixelate region exceeds filter surface bounds.`);
+      }
       break;
+    }
   }
+}
+
+async function sharpToRgbaRaw(
+  image: Sharp,
+  fallbackAlpha?: Uint8Array,
+): Promise<{ data: Buffer; width: number; height: number }> {
+  const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+  const pixels = info.width * info.height;
+  if (info.channels === 4) return { data, width: info.width, height: info.height };
+
+  if (info.channels < 1 || info.channels > 4) {
+    throw new ApexifyDecodeError(
+      `Unsupported Sharp channel count after image filtering: ${info.channels}.`,
+    );
+  }
+
+  const rgba = Buffer.allocUnsafe(pixels * 4);
+  for (let index = 0; index < pixels; index += 1) {
+    const source = index * info.channels;
+    const target = index * 4;
+    if (info.channels === 1 || info.channels === 2) {
+      const gray = data[source]!;
+      rgba[target] = gray;
+      rgba[target + 1] = gray;
+      rgba[target + 2] = gray;
+      rgba[target + 3] =
+        info.channels === 2
+          ? data[source + 1]!
+          : fallbackAlpha?.[index] ?? 255;
+    } else {
+      rgba[target] = data[source]!;
+      rgba[target + 1] = data[source + 1]!;
+      rgba[target + 2] = data[source + 2]!;
+      rgba[target + 3] = fallbackAlpha?.[index] ?? 255;
+    }
+  }
+  return { data: rgba, width: info.width, height: info.height };
 }
 
 async function applyRawTransform(
   image: Sharp,
-  transform: (data: Buffer, width: number, height: number) => void
+  transform: (data: Buffer, width: number, height: number) => void,
+  fallbackAlpha?: Uint8Array,
 ): Promise<Sharp> {
-  const { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  transform(data, info.width, info.height);
-  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } });
+  const normalized = await sharpToRgbaRaw(image, fallbackAlpha);
+  transform(normalized.data, normalized.width, normalized.height);
+  return sharp(normalized.data, {
+    raw: { width: normalized.width, height: normalized.height, channels: 4 },
+  });
 }
 
 function posterizeTransform(levels: number) {
@@ -199,12 +279,53 @@ function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-async function applyPixelate(image: Sharp, width: number, height: number, size: number): Promise<Sharp> {
-  const smallWidth = Math.max(1, Math.ceil(width / size));
-  const smallHeight = Math.max(1, Math.ceil(height / size));
-  return image
-    .resize(smallWidth, smallHeight, { fit: "fill", kernel: sharp.kernel.nearest })
-    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest });
+async function applyPixelate(
+  image: Sharp,
+  width: number,
+  height: number,
+  size: number,
+  startX: number,
+  startY: number,
+  regionWidth: number,
+  regionHeight: number,
+  fallbackAlpha?: Uint8Array,
+): Promise<Sharp> {
+  return applyRawTransform(
+    image,
+    (data) => {
+      for (let y = startY; y < startY + regionHeight; y += size) {
+        for (let x = startX; x < startX + regionWidth; x += size) {
+          const blockWidth = Math.min(size, startX + regionWidth - x);
+          const blockHeight = Math.min(size, startY + regionHeight - y);
+          let red = 0;
+          let green = 0;
+          let blue = 0;
+          let count = 0;
+          for (let dy = 0; dy < blockHeight; dy += 1) {
+            for (let dx = 0; dx < blockWidth; dx += 1) {
+              const index = ((y + dy) * width + (x + dx)) * 4;
+              red += data[index]!;
+              green += data[index + 1]!;
+              blue += data[index + 2]!;
+              count += 1;
+            }
+          }
+          const r = Math.round(red / count);
+          const g = Math.round(green / count);
+          const b = Math.round(blue / count);
+          for (let dy = 0; dy < blockHeight; dy += 1) {
+            for (let dx = 0; dx < blockWidth; dx += 1) {
+              const index = ((y + dy) * width + (x + dx)) * 4;
+              data[index] = r;
+              data[index + 1] = g;
+              data[index + 2] = b;
+            }
+          }
+        }
+      }
+    },
+    fallbackAlpha,
+  );
 }
 
 async function applyRadialBlur(
@@ -215,7 +336,8 @@ async function applyRadialBlur(
   centerX: number,
   centerY: number
 ): Promise<Sharp> {
-  const { data } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const normalized = await sharpToRgbaRaw(image);
+  const data = normalized.data;
   const source = createCanvas(width, height);
   const sourceCtx = source.getContext("2d") as SKRSContext2D;
   const sourceData = sourceCtx.createImageData(width, height);

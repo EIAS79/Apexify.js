@@ -197,6 +197,55 @@ async function main() {
   }
 
   {
+    const grayscale = canvasFromPixels(16, 16, sourcePixels);
+    await api.applyContextImageFilters(grayscale.ctx, [{ type: 'grayscale' }], 16, 16);
+    const grayPixels = grayscale.ctx.getImageData(0, 0, 16, 16).data;
+    assert.equal(grayPixels.length, 16 * 16 * 4, 'grayscale must return RGBA raster geometry');
+    assert.equal(grayPixels[0], grayPixels[1]);
+    assert.equal(grayPixels[1], grayPixels[2]);
+
+    const edges = canvasFromPixels(16, 16, sourcePixels);
+    await api.applyContextImageFilters(edges.ctx, [{ type: 'edgeDetection', intensity: 1 }], 16, 16);
+    const edgePixels = edges.ctx.getImageData(0, 0, 16, 16).data;
+    assert.equal(edgePixels.length, 16 * 16 * 4, 'edge detection must return RGBA raster geometry');
+  }
+
+  {
+    const region = canvasFromPixels(16, 16, sourcePixels);
+    const before = raster(region.ctx);
+    await api.applyContextImageFilters(
+      region.ctx,
+      [{ type: 'pixelate', size: 4, x: 8, y: 8, width: 4, height: 4 }],
+      16,
+      16,
+    );
+    const after = raster(region.ctx);
+    const outsideIndex = (7 * 16 + 7) * 4;
+    assert.deepEqual(
+      after.slice(outsideIndex, outsideIndex + 4),
+      before.slice(outsideIndex, outsideIndex + 4),
+      'pixelate region must not modify pixels outside its bounds',
+    );
+    const insideIndex = (8 * 16 + 8) * 4;
+    assert.notDeepEqual(
+      after.slice(insideIndex, insideIndex + 3),
+      before.slice(insideIndex, insideIndex + 3),
+      'pixelate region must change pixels inside its bounds',
+    );
+
+    await expectError(
+      () => api.applyContextImageFilters(
+        region.ctx,
+        [{ type: 'pixelate', size: 4, x: 14, y: 14, width: 4, height: 4 }],
+        16,
+        16,
+      ),
+      (error) => error.code === 'APEXIFY_INPUT' && /region exceeds/i.test(error.message),
+      'pixelate region bounds',
+    );
+  }
+
+  {
     const a = canvasFromPixels(16, 16, sourcePixels);
     const b = canvasFromPixels(16, 16, sourcePixels);
     api.applyImageFilters(a.ctx, [{ type: 'noise', intensity: 0.5 }], 16, 16);

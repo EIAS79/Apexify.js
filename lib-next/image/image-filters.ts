@@ -55,7 +55,14 @@ export function applyImageFilters(
         applySepia(ctx);
         break;
       case 'pixelate':
-        applyPixelate(ctx, filter.size ?? 10);
+        applyPixelate(
+          ctx,
+          filter.size ?? 10,
+          filter.x ?? 0,
+          filter.y ?? 0,
+          filter.width ?? ctx.canvas.width - (filter.x ?? 0),
+          filter.height ?? ctx.canvas.height - (filter.y ?? 0),
+        );
         break;
       case 'brightness':
         applyBrightness(ctx, filter.value ?? 0);
@@ -299,45 +306,60 @@ function applySepia(ctx: SKRSContext2D): void {
   ctx.filter = 'none';
 }
 
-function applyPixelate(ctx: SKRSContext2D, size: number): void {
-  if (size > 1) {
-    const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const data = imageData.data;
-    const width = ctx.canvas.width;
-    const height = ctx.canvas.height;
+function applyPixelate(
+  ctx: SKRSContext2D,
+  size: number,
+  startX: number,
+  startY: number,
+  regionWidth: number,
+  regionHeight: number,
+): void {
+  if (size <= 1) return;
+  if (
+    !Number.isInteger(size) ||
+    !Number.isInteger(startX) ||
+    !Number.isInteger(startY) ||
+    !Number.isInteger(regionWidth) ||
+    !Number.isInteger(regionHeight) ||
+    size < 1 ||
+    startX < 0 ||
+    startY < 0 ||
+    regionWidth < 1 ||
+    regionHeight < 1 ||
+    startX + regionWidth > ctx.canvas.width ||
+    startY + regionHeight > ctx.canvas.height
+  ) {
+    throw new RangeError('Pixelate region must be integer coordinates inside the canvas.');
+  }
 
-    for (let y = 0; y < height; y += size) {
-      for (let x = 0; x < width; x += size) {
-
-        let r = 0, g = 0, b = 0, count = 0;
-
-        for (let dy = 0; dy < size && y + dy < height; dy++) {
-          for (let dx = 0; dx < size && x + dx < width; dx++) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            r += data[idx];
-            g += data[idx + 1];
-            b += data[idx + 2];
-            count++;
-          }
+  const imageData = ctx.getImageData(startX, startY, regionWidth, regionHeight);
+  const data = imageData.data;
+  for (let y = 0; y < regionHeight; y += size) {
+    for (let x = 0; x < regionWidth; x += size) {
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let dy = 0; dy < size && y + dy < regionHeight; dy += 1) {
+        for (let dx = 0; dx < size && x + dx < regionWidth; dx += 1) {
+          const index = ((y + dy) * regionWidth + x + dx) * 4;
+          r += data[index]!;
+          g += data[index + 1]!;
+          b += data[index + 2]!;
+          count += 1;
         }
-
-        r = Math.round(r / count);
-        g = Math.round(g / count);
-        b = Math.round(b / count);
-
-        for (let dy = 0; dy < size && y + dy < height; dy++) {
-          for (let dx = 0; dx < size && x + dx < width; dx++) {
-            const idx = ((y + dy) * width + (x + dx)) * 4;
-            data[idx] = r;
-            data[idx + 1] = g;
-            data[idx + 2] = b;
-          }
+      }
+      r = Math.round(r / count);
+      g = Math.round(g / count);
+      b = Math.round(b / count);
+      for (let dy = 0; dy < size && y + dy < regionHeight; dy += 1) {
+        for (let dx = 0; dx < size && x + dx < regionWidth; dx += 1) {
+          const index = ((y + dy) * regionWidth + x + dx) * 4;
+          data[index] = r;
+          data[index + 1] = g;
+          data[index + 2] = b;
         }
       }
     }
-
-    ctx.putImageData(imageData, 0, 0);
   }
+  ctx.putImageData(imageData, startX, startY);
 }
 
 function applyBrightness(ctx: SKRSContext2D, value: number): void {
