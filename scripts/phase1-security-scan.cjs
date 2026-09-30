@@ -56,7 +56,7 @@ for (const file of ROOTS.flatMap((root) => walk(root))) {
   }
 }
 
-for (const file of ['README.md', 'HOTFIX-5.4.5.md', 'CHANGELOG.md', 'package.json', '.env.example']) {
+for (const file of ['README.md', 'CHANGELOG.md', 'package.json', '.env.example']) {
   if (!fs.existsSync(file)) continue;
   const text = fs.readFileSync(file, 'utf8');
   const secretLike = /(?:clientSecret|accessToken|refreshToken)[^\n]{0,40}["'=:]\s*["']?[A-Za-z0-9_-]{24,}/i;

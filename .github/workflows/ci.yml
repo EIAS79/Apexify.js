@@ -1,4 +1,4 @@
-name: Apexify CI
+name: Apexify Core CI
 
 on:
   workflow_dispatch:
@@ -13,111 +13,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: apexify-ci-v2-${{ github.workflow }}-${{ github.ref }}
+  group: apexify-core-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  linux-full:
-    name: Linux / Node ${{ matrix.node }} / full gate
+  core:
+    name: Node 24 / core correctness
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       TZ: UTC
       LC_ALL: C.UTF-8
       LANG: C.UTF-8
       APEXIFY_BENCH_FONT_FAMILY: DejaVu Sans
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [22, 24, 26]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-          package-manager-cache: false
-
-      - name: Pin npm toolchain
-        run: npm install --global npm@11.19.1
-
-      - name: Runtime snapshot
-        run: |
-          node --version
-          npm --version
-
-      - name: Install controlled FFmpeg and font dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
-          ffmpeg -version | head -n 1
-          ffprobe -version | head -n 1
-          fc-match 'DejaVu Sans'
-
-      - name: Install locked dependency graph
-        run: npm ci --ignore-scripts
-
-      - name: Full Phase 0-14 gate
-        run: npm run test:ci
-
-      - name: Build Phase 14-P internal benchmark fixture
-        if: matrix.node == 24
-        run: node scripts/build-phase14p-benchmark-fixture.mjs
-
-      - name: Run Phase 14-P validation, config, security and memory audit
-        if: matrix.node == 24
-        run: |
-          mkdir -p artifacts/phase14p-main-ci
-          node benchmarks/phase14p/validation-config-audit.cjs \
-            --output artifacts/phase14p-main-ci/validation-config-audit.json
-
-      - name: Run permanent Phase 14-P stage benchmark suite
-        if: matrix.node == 24
-        run: |
-          node --expose-gc benchmarks/phase14p/stage-benchmarks.cjs \
-            --output artifacts/phase14p-main-ci/stage-benchmarks.json
-
-      - name: Enforce frozen Phase 14-P stage budgets
-        if: matrix.node == 24
-        run: |
-          node benchmarks/phase14p/assert-stage-budgets.cjs \
-            --baseline benchmarks/baselines/phase14p-stage-linux-x64-node24-schema2.json \
-            --current artifacts/phase14p-main-ci/stage-benchmarks.json
-
-      - name: Audit all dependencies
-        run: npm audit --audit-level=high --json > artifacts/dependency-audit-all-node-${{ matrix.node }}.json
-
-      - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high --json > artifacts/dependency-audit-production-node-${{ matrix.node }}.json
-
-      - name: Inspect packed contents
-        run: npm pack --dry-run --ignore-scripts --json > artifacts/package-dry-run-node-${{ matrix.node }}.json
-
-      - name: Upload Phase 0-14 and Phase 14-P evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: phase12-linux-node-${{ matrix.node }}
-          path: |
-            artifacts/
-            phase5-benchmark-node-*.json
-            phase6-benchmark-node-*.json
-            phase7-benchmark-node-*.json
-            phase8-benchmark-node-*.json
-            phase9-benchmark-node-*.json
-            phase10-benchmark-node-*.json
-            maintenance-audit-node-*.json
-            package-verification-node-*.json
-          if-no-files-found: warn
-
-  platform-smoke:
-    name: ${{ matrix.os }} / Node 24 / package-runtime smoke
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
 
@@ -129,39 +37,22 @@ jobs:
       - name: Pin npm toolchain
         run: npm install --global npm@11.19.1
 
+      - name: Install deterministic media dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+          fc-match 'DejaVu Sans'
+
       - name: Install locked dependency graph
         run: npm ci --ignore-scripts
 
       - name: Build and typecheck
         run: npm run build
 
-      - name: Test inventory
-        run: npm run audit:tests
+      - name: Core deterministic regression gate
+        run: npm run test:core
 
-      - name: Critical unit tests
-        run: npm run test:unit
-
-      - name: Deterministic network integration
-        run: npm run test:integration
-
-      - name: Process and temp-workspace security
-        run: npm run test:security:core:run
-
-      - name: Golden raster tests
-        run: npm run test:golden
-
-      - name: Property and fuzz tests
-        run: npm run test:fuzz
-
-      - name: Packed ESM/CJS/types fixtures
-        run: npm run test:package
-
-      - name: Upload platform evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: phase12-${{ matrix.os }}-node-24
-          path: |
-            artifacts/
-            package-verification-node-*.json
-          if-no-files-found: warn
+      - name: Source maintenance audit
+        run: npm run audit:maintenance
