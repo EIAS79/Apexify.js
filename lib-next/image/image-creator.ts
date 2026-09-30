@@ -1,4 +1,4 @@
-import { createCanvas, type Canvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import type {
   ImageDistortionOptions,
   ImageProperties,
@@ -24,12 +24,6 @@ import { applyStroke } from "../render/stroke-renderer";
 import { createGradientFill } from "../render/gradient-fill";
 import { applyClipPath } from "./image-mask";
 import { processImageRaster } from "./image-raster-pipeline";
-import {
-  applyVignette,
-  applyLensFlare,
-  applyChromaticAberration,
-  applyFilmGrain,
-} from "./image-effects";
 import { applyContextImageFilters } from "../render/context-image-filters";
 
 /**
