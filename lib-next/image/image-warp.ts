@@ -1,4 +1,4 @@
-import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Canvas, type SKRSContext2D } from "@napi-rs/canvas";
 import type {
   ImageDistortionOptions,
   ImageEdgeMode,
@@ -14,7 +14,7 @@ type Point = { x: number; y: number };
 type Pixel = [number, number, number, number];
 
 export interface DistortedRasterResult {
-  canvas: ReturnType<typeof createCanvas>;
+  canvas: Canvas;
   x: number;
   y: number;
   width: number;

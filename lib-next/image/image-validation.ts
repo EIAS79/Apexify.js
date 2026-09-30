@@ -129,7 +129,7 @@ function validateDistortion(
     }
   } else if (distortion.points !== undefined && distortion.type !== "perspective") {
     throw new ApexifyInputError(`${name}.points is only supported by perspective and warp.`);
-  } else if (distortion.controlPoints !== undefined && distortion.type !== "warp") {
+  } else if (distortion.controlPoints !== undefined) {
     throw new ApexifyInputError(`${name}.controlPoints is only supported by type "warp".`);
   }
 }

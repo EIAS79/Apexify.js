@@ -1,4 +1,4 @@
-import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type Canvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import type {
   ImageDistortionOptions,
   ImageProperties,
@@ -546,7 +546,7 @@ export class ImageCreator {
       radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
     }));
 
-    let preFilteredCanvas: ReturnType<typeof createCanvas> | undefined;
+    let preFilteredCanvas: Canvas | undefined;
     let preFilteredCtx: SKRSContext2D | undefined;
     if (adjustedFilters?.length && filterOrder === 'pre') {
       const rasterWidth = Math.max(1, Math.round(dw));
