@@ -766,7 +766,6 @@ export class ImageCreator {
   }
 
   async createImage(
-  async createImage(
     images: ImageProperties | ImageProperties[],
     canvasBuffer: CanvasResults | Buffer,
     options?: CreateImageOptions
