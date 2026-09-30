@@ -646,6 +646,23 @@ export class ImageCreator {
       x: image.x - groupX,
       y: image.y - groupY,
       rotation: 0,
+      shape: image.shape
+        ? {
+            ...image.shape,
+            points: image.shape.points?.map((point) => ({
+              x: point.x - groupX,
+              y: point.y - groupY,
+            })),
+            centerX:
+              image.shape.centerX === undefined
+                ? undefined
+                : image.shape.centerX - groupX,
+            centerY:
+              image.shape.centerY === undefined
+                ? undefined
+                : image.shape.centerY - groupY,
+          }
+        : undefined,
       clipPath: image.clipPath?.map((point) => ({
         x: point.x - groupX,
         y: point.y - groupY,

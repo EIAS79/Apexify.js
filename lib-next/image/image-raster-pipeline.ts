@@ -36,7 +36,10 @@ function scaleFilters(
   if (!filters?.length) return undefined;
   return filters.map((filter) => ({
     ...filter,
-    intensity: filter.intensity === undefined ? undefined : filter.intensity * multiplier,
+    intensity:
+      filter.intensity === undefined
+        ? multiplier
+        : filter.intensity * multiplier,
     value: filter.value === undefined ? undefined : filter.value * multiplier,
     radius: filter.radius === undefined ? undefined : filter.radius * multiplier,
   }));
