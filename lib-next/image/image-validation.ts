@@ -23,6 +23,16 @@ function validatePoint(point: unknown, name: string): void {
   assertFiniteNumber(point.y, `${name}.y`);
 }
 
+function validateMask(
+  mask: ImageProperties["mask"] | GroupTransformOptions["mask"] | undefined,
+  name: string
+): void {
+  if (mask === undefined) return;
+  assertRecord(mask, name);
+  assertSource(mask.source, `${name}.source`);
+  assertOptionalEnum(mask.mode, `${name}.mode`, ["alpha", "luminance", "inverse"] as const);
+}
+
 function validateFilterList(filters: unknown, name: string): void {
   if (filters === undefined) return;
   assertCollection(filters, name, { limit: "maxFiltersPerOperation" });
@@ -142,39 +152,37 @@ function validateMeshWarp(
   assertRecord(meshWarp, name);
   assertOptionalFiniteNumber(meshWarp.gridX, `${name}.gridX`, { min: 1, integer: true });
   assertOptionalFiniteNumber(meshWarp.gridY, `${name}.gridY`, { min: 1, integer: true });
-  assertOptionalEnum(
-    meshWarp.interpolation,
-    `${name}.interpolation`,
-    ["nearest", "bilinear", "bicubic"] as const
-  );
-  assertOptionalEnum(
-    meshWarp.edgeMode,
-    `${name}.edgeMode`,
-    ["transparent", "clamp", "wrap", "mirror"] as const
-  );
-  if (meshWarp.gridX !== undefined && meshWarp.gridY !== undefined) {
-    assertWithinLimit("maxCollectionItems", meshWarp.gridX * meshWarp.gridY);
-  }
-  if (meshWarp.controlPoints !== undefined) {
-    assertCollection(meshWarp.controlPoints, `${name}.controlPoints`, {
-      min: 1,
-      limit: "maxCollectionItems",
-    });
-    let total = 0;
-    meshWarp.controlPoints.forEach((row, y) => {
-      assertCollection(row, `${name}.controlPoints[${y}]`, {
-        min: 1,
-        limit: "maxCollectionItems",
-      });
-      total += row.length;
-      row.forEach((point, x) =>
-        validatePoint(point, `${name}.controlPoints[${y}][${x}]`)
-      );
-    });
-    assertWithinLimit("maxCollectionItems", total);
+  assertOptionalEnum(meshWarp.interpolation, `${name}.interpolation`, ["nearest", "bilinear", "bicubic"] as const);
+  assertOptionalEnum(meshWarp.edgeMode, `${name}.edgeMode`, ["transparent", "clamp", "wrap", "mirror"] as const);
+
+  if (!meshWarp.controlPoints) throw new ApexifyInputError(`${name}.controlPoints is required.`);
+  assertCollection(meshWarp.controlPoints, `${name}.controlPoints`, { min: 1, limit: "maxCollectionItems" });
+  const rows = meshWarp.controlPoints.length;
+  const columns = meshWarp.controlPoints[0]?.length ?? 0;
+  if (columns === 0) throw new ApexifyInputError(`${name}.controlPoints rows cannot be empty.`);
+
+  let total = 0;
+  meshWarp.controlPoints.forEach((row, y) => {
+    assertCollection(row, `${name}.controlPoints[${y}]`, { min: 1, limit: "maxCollectionItems" });
+    if (row.length !== columns) throw new ApexifyInputError(`${name}.controlPoints must be a rectangular grid.`);
+    total += row.length;
+    row.forEach((point, x) => validatePoint(point, `${name}.controlPoints[${y}][${x}]`));
+  });
+  assertWithinLimit("maxCollectionItems", total);
+
+  const gridX = meshWarp.gridX ?? Math.max(1, columns - 1);
+  const gridY = meshWarp.gridY ?? Math.max(1, rows - 1);
+  assertWithinLimit("maxCollectionItems", gridX * gridY);
+  const modern = rows === gridY + 1 && columns === gridX + 1;
+  const legacy = rows === gridY && columns === gridX;
+  if (!modern && !legacy) {
+    throw new ApexifyInputError(
+      `${name}.controlPoints must be ${gridY + 1}×${gridX + 1} vertices (or legacy ${gridY}×${gridX} anchors).`
+    );
   }
 }
 
+function validateShape(
 function validateShape(ip: ImageProperties, name: string): void {
   const shapeSource = typeof ip.source === "string" && (SHAPES as readonly string[]).includes(ip.source);
   if (!shapeSource && ip.shape === undefined) return;
@@ -205,15 +213,13 @@ export function validateGroupTransform(group: GroupTransformOptions | undefined)
   assertOptionalFiniteNumber(group.scaleY, "createImage.options.groupTransform.scaleY", { min: 0, exclusiveMin: true });
   assertOptionalFiniteNumber(group.blur, "createImage.options.groupTransform.blur", { min: 0 });
   validateFilterList(group.filters, "createImage.options.groupTransform.filters");
+  assertOptionalFiniteNumber(group.filterIntensity, "createImage.options.groupTransform.filterIntensity", { min: 0 });
+  assertOptionalEnum(group.filterOrder, "createImage.options.groupTransform.filterOrder", ["pre", "post"] as const);
+  validateMask(group.mask, "createImage.options.groupTransform.mask");
   validateDistortion(group.distortion, "createImage.options.groupTransform.distortion");
   validateMeshWarp(group.meshWarp, "createImage.options.groupTransform.meshWarp");
-  if (group.distortion && group.meshWarp) {
-    throw new ApexifyInputError(
-      "createImage.options.groupTransform cannot combine distortion and meshWarp in the same nonlinear stage."
-    );
-  }
   if (group.clipPath !== undefined) {
-    assertCollection(group.clipPath, "createImage.options.groupTransform.clipPath", { min: 1, limit: "maxCollectionItems" });
+    assertCollection(group.clipPath, "createImage.options.groupTransform.clipPath", { min: 3, limit: "maxCollectionItems" });
     group.clipPath.forEach((p, i) => validatePoint(p, `createImage.options.groupTransform.clipPath[${i}]`));
   }
 }
@@ -268,23 +274,14 @@ export function validateImageProperties(ip: ImageProperties, index?: number): vo
   if (ip.borderRadius !== undefined && ip.borderRadius !== "circular") assertFiniteNumber(ip.borderRadius, `${name}.borderRadius`, { min: 0 });
   validateFilterList(ip.filters, `${name}.filters`);
   assertOptionalFiniteNumber(ip.filterIntensity, `${name}.filterIntensity`, { min: 0 });
-
-  if (ip.mask !== undefined) {
-    assertRecord(ip.mask, `${name}.mask`);
-    assertSource(ip.mask.source, `${name}.mask.source`);
-    assertOptionalEnum(ip.mask.mode, `${name}.mask.mode`, ["alpha", "luminance", "inverse"] as const);
-  }
+  assertOptionalEnum(ip.filterOrder, `${name}.filterOrder`, ["pre", "post"] as const);
+  validateMask(ip.mask, `${name}.mask`);
   if (ip.clipPath !== undefined) {
-    assertCollection(ip.clipPath, `${name}.clipPath`, { min: 1, limit: "maxCollectionItems" });
+    assertCollection(ip.clipPath, `${name}.clipPath`, { min: 3, limit: "maxCollectionItems" });
     ip.clipPath.forEach((p, i) => validatePoint(p, `${name}.clipPath[${i}]`));
   }
   validateDistortion(ip.distortion, `${name}.distortion`);
   validateMeshWarp(ip.meshWarp, `${name}.meshWarp`);
-  if (ip.distortion && ip.meshWarp) {
-    throw new ApexifyInputError(
-      `${name} cannot combine distortion and meshWarp in the same nonlinear stage.`
-    );
-  }
   if (ip.effects !== undefined) assertFiniteNumericLeaves(ip.effects, `${name}.effects`);
   validateShape(ip, name);
   if (ip.stroke !== undefined) assertFiniteNumericLeaves(ip.stroke, `${name}.stroke`);

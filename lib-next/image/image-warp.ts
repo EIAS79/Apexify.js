@@ -3,6 +3,7 @@ import type {
   ImageDistortionOptions,
   ImageEdgeMode,
   ImageInterpolationMode,
+  ImageMeshWarpOptions,
   ImageWarpControlPoint,
   ImageWarpFalloff,
 } from "../types";
@@ -596,4 +597,130 @@ export function createDistortedRaster(
     width: bounds.width,
     height: bounds.height,
   };
+}
+
+
+function normalizeMeshVertices(
+  mesh: ImageMeshWarpOptions,
+  width: number,
+  height: number
+): { gridX: number; gridY: number; vertices: Point[][] } {
+  const points = mesh.controlPoints;
+  if (!points?.length || !points[0]?.length) {
+    throw new ApexifyInputError("meshWarp.controlPoints must define a non-empty mesh.");
+  }
+  const rows = points.length;
+  const columns = points[0].length;
+  for (let row = 1; row < rows; row += 1) {
+    if (points[row].length !== columns) {
+      throw new ApexifyInputError("meshWarp.controlPoints must be a rectangular grid.");
+    }
+  }
+
+  const gridX = mesh.gridX ?? Math.max(1, columns - 1);
+  const gridY = mesh.gridY ?? Math.max(1, rows - 1);
+
+  if (rows === gridY + 1 && columns === gridX + 1) {
+    return { gridX, gridY, vertices: points.map((row) => row.map((point) => ({ ...point }))) };
+  }
+
+  if (rows === gridY && columns === gridX) {
+    const cellWidth = width / gridX;
+    const cellHeight = height / gridY;
+    const vertices: Point[][] = Array.from({ length: gridY + 1 }, (_, y) =>
+      Array.from({ length: gridX + 1 }, (_, x) => ({ x: x * cellWidth, y: y * cellHeight }))
+    );
+    for (let y = 0; y < gridY; y += 1) {
+      for (let x = 0; x < gridX; x += 1) vertices[y][x] = { ...points[y][x] };
+    }
+    return { gridX, gridY, vertices };
+  }
+
+  throw new ApexifyInputError(
+    `meshWarp.controlPoints must be ${gridY + 1}×${gridX + 1} vertices (or legacy ${gridY}×${gridX} anchors).`
+  );
+}
+
+function meshBounds(vertices: Point[][], originX: number, originY: number): Bounds {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const row of vertices) {
+    for (const point of row) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+  return integerBounds(originX + minX, originY + minY, originX + maxX, originY + maxY);
+}
+
+/**
+ * Inverse-map a raster through a destination mesh. Every destination pixel is
+ * sampled once, interpolation/edgeMode are honored, and mesh bounds may expand.
+ */
+export function createMeshWarpedRaster(
+  sourceCtx: SKRSContext2D,
+  width: number,
+  height: number,
+  mesh: ImageMeshWarpOptions,
+  originX: number,
+  originY: number
+): DistortedRasterResult {
+  const sourceWidth = Math.max(1, Math.round(width));
+  const sourceHeight = Math.max(1, Math.round(height));
+  assertCanvasResourceLimits(sourceWidth, sourceHeight);
+
+  const { gridX, gridY, vertices } = normalizeMeshVertices(mesh, sourceWidth, sourceHeight);
+  const bounds = meshBounds(vertices, originX, originY);
+  const source = sourceCtx.getImageData(0, 0, sourceWidth, sourceHeight).data;
+  const outputCanvas = createCanvas(bounds.width, bounds.height);
+  const outputCtx = getCanvasContext(outputCanvas);
+  const output = outputCtx.createImageData(bounds.width, bounds.height);
+  const interpolation = mesh.interpolation ?? "bilinear";
+  const edgeMode = mesh.edgeMode ?? "transparent";
+  const cellWidth = sourceWidth / gridX;
+  const cellHeight = sourceHeight / gridY;
+
+  for (let cellY = 0; cellY < gridY; cellY += 1) {
+    for (let cellX = 0; cellX < gridX; cellX += 1) {
+      const quad = [
+        vertices[cellY][cellX],
+        vertices[cellY][cellX + 1],
+        vertices[cellY + 1][cellX + 1],
+        vertices[cellY + 1][cellX],
+      ];
+      const minX = Math.floor(Math.min(...quad.map((p) => p.x)));
+      const minY = Math.floor(Math.min(...quad.map((p) => p.y)));
+      const maxX = Math.ceil(Math.max(...quad.map((p) => p.x)));
+      const maxY = Math.ceil(Math.max(...quad.map((p) => p.y)));
+      const sourceLeft = cellX * cellWidth;
+      const sourceTop = cellY * cellHeight;
+      const sourceRight = Math.min(sourceWidth - 1, (cellX + 1) * cellWidth - 1);
+      const sourceBottom = Math.min(sourceHeight - 1, (cellY + 1) * cellHeight - 1);
+
+      for (let localY = minY; localY < maxY; localY += 1) {
+        for (let localX = minX; localX < maxX; localX += 1) {
+          const uv = inverseBilinear({ x: localX + 0.5, y: localY + 0.5 }, quad);
+          if (!uv) continue;
+          const rgba = sample(
+            source, sourceWidth, sourceHeight,
+            sourceLeft + (sourceRight - sourceLeft) * uv.x,
+            sourceTop + (sourceBottom - sourceTop) * uv.y,
+            interpolation, edgeMode
+          );
+          const outputX = Math.floor(originX + localX - bounds.x);
+          const outputY = Math.floor(originY + localY - bounds.y);
+          if (outputX < 0 || outputY < 0 || outputX >= bounds.width || outputY >= bounds.height) continue;
+          const index = (outputY * bounds.width + outputX) * 4;
+          output.data[index] = rgba[0];
+          output.data[index + 1] = rgba[1];
+          output.data[index + 2] = rgba[2];
+          output.data[index + 3] = rgba[3];
+        }
+      }
+    }
+  }
+
+  outputCtx.putImageData(output, 0, 0);
+  return { canvas: outputCanvas, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
 }

@@ -108,10 +108,19 @@ export interface ImageDistortionOptions {
 }
 
 export interface ImageMeshWarpOptions {
+  /** Number of horizontal mesh cells. Inferred from controlPoints when omitted. */
   gridX?: number;
+  /** Number of vertical mesh cells. Inferred from controlPoints when omitted. */
   gridY?: number;
+  /**
+   * Destination mesh vertices in layer-local coordinates.
+   * Preferred layout: (gridY + 1) rows × (gridX + 1) columns.
+   * Legacy gridY × gridX cell-anchor layouts remain accepted and are normalized.
+   */
   controlPoints?: Array<Array<{ x: number; y: number }>>;
+  /** Sampling quality for mesh rasterization. Defaults to bilinear. */
   interpolation?: ImageInterpolationMode;
+  /** Sampling behavior outside source bounds. Defaults to transparent. */
   edgeMode?: ImageEdgeMode;
 }
 
