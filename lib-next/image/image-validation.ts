@@ -207,6 +207,11 @@ export function validateGroupTransform(group: GroupTransformOptions | undefined)
   validateFilterList(group.filters, "createImage.options.groupTransform.filters");
   validateDistortion(group.distortion, "createImage.options.groupTransform.distortion");
   validateMeshWarp(group.meshWarp, "createImage.options.groupTransform.meshWarp");
+  if (group.distortion && group.meshWarp) {
+    throw new ApexifyInputError(
+      "createImage.options.groupTransform cannot combine distortion and meshWarp in the same nonlinear stage."
+    );
+  }
   if (group.clipPath !== undefined) {
     assertCollection(group.clipPath, "createImage.options.groupTransform.clipPath", { min: 1, limit: "maxCollectionItems" });
     group.clipPath.forEach((p, i) => validatePoint(p, `createImage.options.groupTransform.clipPath[${i}]`));
@@ -275,6 +280,11 @@ export function validateImageProperties(ip: ImageProperties, index?: number): vo
   }
   validateDistortion(ip.distortion, `${name}.distortion`);
   validateMeshWarp(ip.meshWarp, `${name}.meshWarp`);
+  if (ip.distortion && ip.meshWarp) {
+    throw new ApexifyInputError(
+      `${name} cannot combine distortion and meshWarp in the same nonlinear stage.`
+    );
+  }
   if (ip.effects !== undefined) assertFiniteNumericLeaves(ip.effects, `${name}.effects`);
   validateShape(ip, name);
   if (ip.stroke !== undefined) assertFiniteNumericLeaves(ip.stroke, `${name}.stroke`);

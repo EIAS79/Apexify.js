@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `nearest`, `bilinear`, and alpha-safe `bicubic` sampling plus `transparent`, `clamp`, `wrap`, and `mirror` edge modes.
 - Distortion output can extend beyond the original layer rectangle unless the caller explicitly clips it, and pre/post filter stages now compose with distortion rather than being skipped by the old early-return path.
 - Added strict validation for warp geometry, interpolation/edge modes, control handles, centers/radii, twirl angles, wave amplitude/wavelength/phase and malformed perspective quads.
+- Grouped-image distortion is now real: Apexify isolates the group in an offscreen raster, applies pre-filters → distortion → post-filters/effects, then composites the transformed result without warping pixels from the underlying canvas.
 
 ### Canvas video backgrounds
 

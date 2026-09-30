@@ -412,6 +412,38 @@ async function main() {
       /exactly 4 destination corners/,
       'perspective must require a full corner pin'
     );
+
+    const painter = new api.ApexPainter();
+    const groupedBase = await painter.createCanvas({
+      width: 20,
+      height: 12,
+      transparentBase: true,
+    });
+    const redSource = dataUri(source.toBuffer('image/png'));
+    const groupedWarped = await painter.createImage(
+      [
+        { source: redSource, x: 2, y: 2, width: 4, height: 4 },
+        { source: redSource, x: 6, y: 2, width: 4, height: 4 },
+      ],
+      groupedBase,
+      {
+        isGrouped: true,
+        groupTransform: {
+          distortion: {
+            type: 'wave',
+            amplitudeX: 3,
+            wavelengthY: 4,
+            interpolation: 'bilinear',
+          },
+        },
+      }
+    );
+    const groupedRaw = await rgba(groupedWarped);
+    let groupedAlphaPixels = 0;
+    for (let i = 3; i < groupedRaw.data.length; i += 4) {
+      if (groupedRaw.data[i] > 0) groupedAlphaPixels += 1;
+    }
+    assert.ok(groupedAlphaPixels > 0, 'group distortion must render the isolated group raster');
   }
 
   // Canvas shadows are a real underlay, not a destination-wide backfill. They

@@ -1,5 +1,16 @@
 import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
-import type { ImageProperties, ShapeType, ShapeProperties, CreateImageOptions, StrokeOptions, ShadowOptions, BoxBackground, ImageFilter, gradient } from "../types";
+import type {
+  ImageDistortionOptions,
+  ImageProperties,
+  ShapeType,
+  ShapeProperties,
+  CreateImageOptions,
+  StrokeOptions,
+  ShadowOptions,
+  BoxBackground,
+  ImageFilter,
+  gradient,
+} from "../types";
 import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { getErrorMessage, getCanvasContext } from "../core/errors";
@@ -663,6 +674,54 @@ export class ImageCreator {
     ctx.restore();
   }
 
+  private offsetDistortion(
+    distortion: ImageDistortionOptions | undefined,
+    offsetX: number,
+    offsetY: number
+  ): ImageDistortionOptions | undefined {
+    if (!distortion) return undefined;
+    return {
+      ...distortion,
+      centerX:
+        distortion.centerX === undefined ? undefined : distortion.centerX + offsetX,
+      centerY:
+        distortion.centerY === undefined ? undefined : distortion.centerY + offsetY,
+      points: distortion.points?.map((point) => ({
+        x: point.x + offsetX,
+        y: point.y + offsetY,
+      })),
+      controlPoints: distortion.controlPoints?.map((handle) => ({
+        ...handle,
+        from: {
+          x: handle.from.x + offsetX,
+          y: handle.from.y + offsetY,
+        },
+        to: {
+          x: handle.to.x + offsetX,
+          y: handle.to.y + offsetY,
+        },
+      })),
+    };
+  }
+
+  private groupLocalImage(
+    image: ImageProperties,
+    groupX: number,
+    groupY: number
+  ): ImageProperties {
+    return {
+      ...image,
+      x: image.x - groupX,
+      y: image.y - groupY,
+      rotation: 0,
+      clipPath: image.clipPath?.map((point) => ({
+        x: point.x - groupX,
+        y: point.y - groupY,
+      })),
+      distortion: this.offsetDistortion(image.distortion, -groupX, -groupY),
+    };
+  }
+
   async paintImageLayersOntoContext(
     ctx: SKRSContext2D,
     images: ImageProperties | ImageProperties[],
@@ -695,6 +754,175 @@ export class ImageCreator {
         };
         const pivotX = groupTransform.pivotX ?? (groupBox.x + groupBox.w / 2);
         const pivotY = groupTransform.pivotY ?? (groupBox.y + groupBox.h / 2);
+
+        if (groupTransform.distortion) {
+          const groupWidth = Math.max(1, Math.round(groupBox.w));
+          const groupHeight = Math.max(1, Math.round(groupBox.h));
+          const sourceCanvas = createCanvas(groupWidth, groupHeight);
+          const sourceCtx = getCanvasContext(sourceCanvas);
+
+          if (groupTransform.boxBackground) {
+            drawBoxBackground(
+              sourceCtx,
+              { x: 0, y: 0, w: groupWidth, h: groupHeight },
+              groupTransform.boxBackground,
+              groupTransform.borderRadius,
+              groupTransform.borderPosition
+            );
+          }
+
+          sourceCtx.save();
+          if (groupTransform.clipPath && groupTransform.clipPath.length >= 3) {
+            applyClipPath(
+              sourceCtx,
+              groupTransform.clipPath.map((point) => ({
+                x: point.x - groupBox.x,
+                y: point.y - groupBox.y,
+              }))
+            );
+          } else if (groupTransform.borderRadius) {
+            buildPath(
+              sourceCtx,
+              0,
+              0,
+              groupWidth,
+              groupHeight,
+              groupTransform.borderRadius,
+              groupTransform.borderPosition ?? 'all'
+            );
+            sourceCtx.clip();
+          }
+
+          for (const image of list) {
+            await this.drawImageBitmap(
+              sourceCtx,
+              this.groupLocalImage(image, groupBox.x, groupBox.y)
+            );
+          }
+          sourceCtx.restore();
+
+          const groupFilters = groupTransform.filters?.map((filter) => ({
+            ...filter,
+            intensity:
+              filter.intensity !== undefined
+                ? filter.intensity * (groupTransform.filterIntensity ?? 1)
+                : (filter.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
+            value:
+              filter.value !== undefined
+                ? filter.value * (groupTransform.filterIntensity ?? 1)
+                : filter.value,
+            radius:
+              filter.radius !== undefined
+                ? filter.radius * (groupTransform.filterIntensity ?? 1)
+                : filter.radius,
+          }));
+
+          if (groupFilters?.length && groupTransform.filterOrder === 'pre') {
+            await applyContextImageFilters(sourceCtx, groupFilters, groupWidth, groupHeight);
+          }
+
+          const localDistortion = this.offsetDistortion(
+            groupTransform.distortion,
+            -groupBox.x,
+            -groupBox.y
+          )!;
+          const warped = createDistortedRaster(
+            sourceCtx,
+            groupWidth,
+            groupHeight,
+            localDistortion,
+            0,
+            0
+          );
+          const warpedCtx = getCanvasContext(warped.canvas);
+
+          if (groupFilters?.length && groupTransform.filterOrder !== 'pre') {
+            await applyContextImageFilters(
+              warpedCtx,
+              groupFilters,
+              warped.width,
+              warped.height
+            );
+          }
+
+          if (groupTransform.effects?.vignette) {
+            applyVignette(
+              warpedCtx,
+              groupTransform.effects.vignette.intensity,
+              groupTransform.effects.vignette.size,
+              warped.width,
+              warped.height
+            );
+          }
+          if (groupTransform.effects?.lensFlare) {
+            applyLensFlare(
+              warpedCtx,
+              groupTransform.effects.lensFlare.x - warped.x,
+              groupTransform.effects.lensFlare.y - warped.y,
+              groupTransform.effects.lensFlare.intensity,
+              warped.width,
+              warped.height
+            );
+          }
+          if (groupTransform.effects?.chromaticAberration) {
+            applyChromaticAberration(
+              warpedCtx,
+              groupTransform.effects.chromaticAberration.intensity,
+              warped.width,
+              warped.height
+            );
+          }
+          if (groupTransform.effects?.filmGrain) {
+            applyFilmGrain(
+              warpedCtx,
+              groupTransform.effects.filmGrain.intensity,
+              warped.width,
+              warped.height
+            );
+          }
+
+          ctx.save();
+          if (groupTransform.blendMode) {
+            ctx.globalCompositeOperation = groupTransform.blendMode;
+          }
+          if (groupTransform.opacity !== undefined) {
+            ctx.globalAlpha = groupTransform.opacity;
+          }
+          if (groupTransform.blur && groupTransform.blur > 0) {
+            ctx.filter = `blur(${groupTransform.blur}px)`;
+          }
+
+          ctx.translate(pivotX, pivotY);
+          if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
+            ctx.rotate((groupTransform.rotation * Math.PI) / 180);
+          }
+          if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
+            ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
+          }
+          if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
+            ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
+          }
+          ctx.translate(-pivotX, -pivotY);
+
+          const warpedBox = {
+            x: groupBox.x + warped.x,
+            y: groupBox.y + warped.y,
+            w: warped.width,
+            h: warped.height,
+          };
+          if (groupTransform.shadow) {
+            applyShadow(ctx, warpedBox, groupTransform.shadow);
+          }
+          ctx.drawImage(warped.canvas, warpedBox.x, warpedBox.y);
+          ctx.filter = "none";
+          ctx.globalAlpha = 1;
+
+          if (groupTransform.stroke) {
+            applyStroke(ctx, warpedBox, groupTransform.stroke);
+          }
+          ctx.restore();
+          return;
+        }
 
         ctx.save();
 
