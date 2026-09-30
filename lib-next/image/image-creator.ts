@@ -612,7 +612,7 @@ export class ImageCreator {
     ctx.restore();
   }
 
-  private offsetDistortion(  private offsetDistortion(
+  private offsetDistortion(
     distortion: ImageDistortionOptions | undefined,
     offsetX: number,
     offsetY: number

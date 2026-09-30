@@ -182,7 +182,6 @@ function validateMeshWarp(
   }
 }
 
-function validateShape(
 function validateShape(ip: ImageProperties, name: string): void {
   const shapeSource = typeof ip.source === "string" && (SHAPES as readonly string[]).includes(ip.source);
   if (!shapeSource && ip.shape === undefined) return;
