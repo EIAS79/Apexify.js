@@ -48,6 +48,73 @@ export interface ImageFilter {
   height?: number;
 }
 
+export type ImageInterpolationMode = "nearest" | "bilinear" | "bicubic";
+export type ImageEdgeMode = "transparent" | "clamp" | "wrap" | "mirror";
+export type ImageWarpFalloff = "linear" | "smooth" | "gaussian";
+
+export interface ImageWarpControlPoint {
+  /** Undeformed point in canvas coordinates. */
+  from: { x: number; y: number };
+  /** Destination point in canvas coordinates. */
+  to: { x: number; y: number };
+  /** Influence radius in pixels. Defaults to 25% of the layer's largest side. */
+  radius?: number;
+  /** Per-handle displacement multiplier. */
+  strength?: number;
+  /** Influence curve around this handle. */
+  falloff?: ImageWarpFalloff;
+}
+
+export interface ImageDistortionOptions {
+  type: "perspective" | "warp" | "bulge" | "pinch" | "twirl" | "wave";
+
+  /**
+   * Destination quad in top-left, top-right, bottom-right, bottom-left order.
+   * Perspective uses a projective homography; warp uses a free bilinear quad.
+   */
+  points?: Array<{ x: number; y: number }>;
+
+  /**
+   * Local free-warp/liquify handles. Each handle drags pixels from `from` to
+   * `to` with radius/falloff control. Used by type:"warp".
+   */
+  controlPoints?: ImageWarpControlPoint[];
+
+  /** General strength multiplier. Negative values reverse radial/twirl effects. */
+  intensity?: number;
+  /** Effect center in canvas coordinates. Defaults to the image center. */
+  centerX?: number;
+  centerY?: number;
+  /** Effect radius in pixels. Defaults to half of the smaller layer dimension. */
+  radius?: number;
+
+  /** Twirl angle in degrees. If omitted, intensity × 180 degrees is used. */
+  angle?: number;
+
+  /** Wave displacement amplitudes in pixels. */
+  amplitudeX?: number;
+  amplitudeY?: number;
+  /** Wave lengths in pixels. Values must be > 0 when supplied. */
+  wavelengthX?: number;
+  wavelengthY?: number;
+  /** Wave phase in degrees. */
+  phaseX?: number;
+  phaseY?: number;
+
+  /** Raster resampling quality. Defaults to bilinear. */
+  interpolation?: ImageInterpolationMode;
+  /** Sampling behavior outside source bounds. Defaults to transparent. */
+  edgeMode?: ImageEdgeMode;
+}
+
+export interface ImageMeshWarpOptions {
+  gridX?: number;
+  gridY?: number;
+  controlPoints?: Array<Array<{ x: number; y: number }>>;
+  interpolation?: ImageInterpolationMode;
+  edgeMode?: ImageEdgeMode;
+}
+
 export type ShapeType =
   | "rectangle"
   | "square"
@@ -104,16 +171,8 @@ export interface ImageProperties {
   };
   clipPath?: Array<{ x: number; y: number }>;
 
-  distortion?: {
-    type: "perspective" | "warp" | "bulge" | "pinch";
-    points?: Array<{ x: number; y: number }>;
-    intensity?: number;
-  };
-  meshWarp?: {
-    gridX?: number;
-    gridY?: number;
-    controlPoints?: Array<Array<{ x: number; y: number }>>;
-  };
+  distortion?: ImageDistortionOptions;
+  meshWarp?: ImageMeshWarpOptions;
 
   effects?: {
     vignette?: { intensity: number; size: number };
@@ -154,16 +213,8 @@ export interface GroupTransformOptions {
   };
   clipPath?: Array<{ x: number; y: number }>;
 
-  distortion?: {
-    type: "perspective" | "warp" | "bulge" | "pinch";
-    points?: Array<{ x: number; y: number }>;
-    intensity?: number;
-  };
-  meshWarp?: {
-    gridX?: number;
-    gridY?: number;
-    controlPoints?: Array<Array<{ x: number; y: number }>>;
-  };
+  distortion?: ImageDistortionOptions;
+  meshWarp?: ImageMeshWarpOptions;
 
   effects?: {
     vignette?: { intensity: number; size: number };

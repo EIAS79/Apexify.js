@@ -1,4 +1,11 @@
-import type { CreateImageOptions, GroupTransformOptions, ImageProperties, ShapeType } from "../types";
+import type {
+  CreateImageOptions,
+  GroupTransformOptions,
+  ImageDistortionOptions,
+  ImageMeshWarpOptions,
+  ImageProperties,
+  ShapeType,
+} from "../types";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
 import {
@@ -22,6 +29,149 @@ function validateFilterList(filters: unknown, name: string): void {
   for (let i = 0; i < filters.length; i++) {
     assertRecord(filters[i], `${name}[${i}]`);
     assertFiniteNumericLeaves(filters[i], `${name}[${i}]`);
+  }
+}
+
+function validateDistortion(
+  distortion: ImageDistortionOptions | undefined,
+  name: string
+): void {
+  if (distortion === undefined) return;
+  assertRecord(distortion, name);
+  assertEnum(
+    distortion.type,
+    `${name}.type`,
+    ["perspective", "warp", "bulge", "pinch", "twirl", "wave"] as const
+  );
+  assertOptionalEnum(
+    distortion.interpolation,
+    `${name}.interpolation`,
+    ["nearest", "bilinear", "bicubic"] as const
+  );
+  assertOptionalEnum(
+    distortion.edgeMode,
+    `${name}.edgeMode`,
+    ["transparent", "clamp", "wrap", "mirror"] as const
+  );
+  assertOptionalFiniteNumber(distortion.intensity, `${name}.intensity`);
+  assertOptionalFiniteNumber(distortion.centerX, `${name}.centerX`);
+  assertOptionalFiniteNumber(distortion.centerY, `${name}.centerY`);
+  assertOptionalFiniteNumber(distortion.radius, `${name}.radius`, {
+    min: 0,
+    exclusiveMin: true,
+  });
+  assertOptionalFiniteNumber(distortion.angle, `${name}.angle`);
+  assertOptionalFiniteNumber(distortion.amplitudeX, `${name}.amplitudeX`);
+  assertOptionalFiniteNumber(distortion.amplitudeY, `${name}.amplitudeY`);
+  assertOptionalFiniteNumber(distortion.wavelengthX, `${name}.wavelengthX`, {
+    min: 0,
+    exclusiveMin: true,
+  });
+  assertOptionalFiniteNumber(distortion.wavelengthY, `${name}.wavelengthY`, {
+    min: 0,
+    exclusiveMin: true,
+  });
+  assertOptionalFiniteNumber(distortion.phaseX, `${name}.phaseX`);
+  assertOptionalFiniteNumber(distortion.phaseY, `${name}.phaseY`);
+
+  if (distortion.points !== undefined) {
+    assertCollection(distortion.points, `${name}.points`, {
+      min: 1,
+      limit: "maxCollectionItems",
+    });
+    distortion.points.forEach((point, index) =>
+      validatePoint(point, `${name}.points[${index}]`)
+    );
+  }
+
+  if (distortion.controlPoints !== undefined) {
+    assertCollection(distortion.controlPoints, `${name}.controlPoints`, {
+      min: 1,
+      limit: "maxCollectionItems",
+    });
+    distortion.controlPoints.forEach((handle, index) => {
+      const handleName = `${name}.controlPoints[${index}]`;
+      assertRecord(handle, handleName);
+      validatePoint(handle.from, `${handleName}.from`);
+      validatePoint(handle.to, `${handleName}.to`);
+      assertOptionalFiniteNumber(handle.radius, `${handleName}.radius`, {
+        min: 0,
+        exclusiveMin: true,
+      });
+      assertOptionalFiniteNumber(handle.strength, `${handleName}.strength`);
+      assertOptionalEnum(
+        handle.falloff,
+        `${handleName}.falloff`,
+        ["linear", "smooth", "gaussian"] as const
+      );
+    });
+  }
+
+  if (distortion.type === "perspective") {
+    if (distortion.points?.length !== 4) {
+      throw new ApexifyInputError(`${name}.points must contain exactly 4 destination corners for perspective.`);
+    }
+    if (distortion.controlPoints !== undefined) {
+      throw new ApexifyInputError(`${name}.controlPoints is only supported by type "warp".`);
+    }
+  }
+
+  if (distortion.type === "warp") {
+    const hasQuad = distortion.points !== undefined;
+    const hasHandles = distortion.controlPoints !== undefined;
+    if (hasQuad === hasHandles) {
+      throw new ApexifyInputError(
+        `${name} type "warp" requires either exactly 4 points or controlPoints, but not both.`
+      );
+    }
+    if (hasQuad && distortion.points?.length !== 4) {
+      throw new ApexifyInputError(`${name}.points must contain exactly 4 destination corners for quad warp.`);
+    }
+  } else if (distortion.points !== undefined && distortion.type !== "perspective") {
+    throw new ApexifyInputError(`${name}.points is only supported by perspective and warp.`);
+  } else if (distortion.controlPoints !== undefined && distortion.type !== "warp") {
+    throw new ApexifyInputError(`${name}.controlPoints is only supported by type "warp".`);
+  }
+}
+
+function validateMeshWarp(
+  meshWarp: ImageMeshWarpOptions | undefined,
+  name: string
+): void {
+  if (meshWarp === undefined) return;
+  assertRecord(meshWarp, name);
+  assertOptionalFiniteNumber(meshWarp.gridX, `${name}.gridX`, { min: 1, integer: true });
+  assertOptionalFiniteNumber(meshWarp.gridY, `${name}.gridY`, { min: 1, integer: true });
+  assertOptionalEnum(
+    meshWarp.interpolation,
+    `${name}.interpolation`,
+    ["nearest", "bilinear", "bicubic"] as const
+  );
+  assertOptionalEnum(
+    meshWarp.edgeMode,
+    `${name}.edgeMode`,
+    ["transparent", "clamp", "wrap", "mirror"] as const
+  );
+  if (meshWarp.gridX !== undefined && meshWarp.gridY !== undefined) {
+    assertWithinLimit("maxCollectionItems", meshWarp.gridX * meshWarp.gridY);
+  }
+  if (meshWarp.controlPoints !== undefined) {
+    assertCollection(meshWarp.controlPoints, `${name}.controlPoints`, {
+      min: 1,
+      limit: "maxCollectionItems",
+    });
+    let total = 0;
+    meshWarp.controlPoints.forEach((row, y) => {
+      assertCollection(row, `${name}.controlPoints[${y}]`, {
+        min: 1,
+        limit: "maxCollectionItems",
+      });
+      total += row.length;
+      row.forEach((point, x) =>
+        validatePoint(point, `${name}.controlPoints[${y}][${x}]`)
+      );
+    });
+    assertWithinLimit("maxCollectionItems", total);
   }
 }
 
@@ -55,6 +205,8 @@ export function validateGroupTransform(group: GroupTransformOptions | undefined)
   assertOptionalFiniteNumber(group.scaleY, "createImage.options.groupTransform.scaleY", { min: 0, exclusiveMin: true });
   assertOptionalFiniteNumber(group.blur, "createImage.options.groupTransform.blur", { min: 0 });
   validateFilterList(group.filters, "createImage.options.groupTransform.filters");
+  validateDistortion(group.distortion, "createImage.options.groupTransform.distortion");
+  validateMeshWarp(group.meshWarp, "createImage.options.groupTransform.meshWarp");
   if (group.clipPath !== undefined) {
     assertCollection(group.clipPath, "createImage.options.groupTransform.clipPath", { min: 1, limit: "maxCollectionItems" });
     group.clipPath.forEach((p, i) => validatePoint(p, `createImage.options.groupTransform.clipPath[${i}]`));
@@ -121,33 +273,8 @@ export function validateImageProperties(ip: ImageProperties, index?: number): vo
     assertCollection(ip.clipPath, `${name}.clipPath`, { min: 1, limit: "maxCollectionItems" });
     ip.clipPath.forEach((p, i) => validatePoint(p, `${name}.clipPath[${i}]`));
   }
-  if (ip.distortion !== undefined) {
-    assertRecord(ip.distortion, `${name}.distortion`);
-    assertEnum(ip.distortion.type, `${name}.distortion.type`, ["perspective", "warp", "bulge", "pinch"] as const);
-    assertOptionalFiniteNumber(ip.distortion.intensity, `${name}.distortion.intensity`);
-    if (ip.distortion.points !== undefined) {
-      assertCollection(ip.distortion.points, `${name}.distortion.points`, { min: 1, limit: "maxCollectionItems" });
-      ip.distortion.points.forEach((p, i) => validatePoint(p, `${name}.distortion.points[${i}]`));
-    }
-  }
-  if (ip.meshWarp !== undefined) {
-    assertRecord(ip.meshWarp, `${name}.meshWarp`);
-    assertOptionalFiniteNumber(ip.meshWarp.gridX, `${name}.meshWarp.gridX`, { min: 1, integer: true });
-    assertOptionalFiniteNumber(ip.meshWarp.gridY, `${name}.meshWarp.gridY`, { min: 1, integer: true });
-    if (ip.meshWarp.gridX !== undefined && ip.meshWarp.gridY !== undefined) {
-      assertWithinLimit("maxCollectionItems", ip.meshWarp.gridX * ip.meshWarp.gridY);
-    }
-    if (ip.meshWarp.controlPoints !== undefined) {
-      assertCollection(ip.meshWarp.controlPoints, `${name}.meshWarp.controlPoints`, { min: 1, limit: "maxCollectionItems" });
-      let total = 0;
-      ip.meshWarp.controlPoints.forEach((row, y) => {
-        assertCollection(row, `${name}.meshWarp.controlPoints[${y}]`, { min: 1, limit: "maxCollectionItems" });
-        total += row.length;
-        row.forEach((p, x) => validatePoint(p, `${name}.meshWarp.controlPoints[${y}][${x}]`));
-      });
-      assertWithinLimit("maxCollectionItems", total);
-    }
-  }
+  validateDistortion(ip.distortion, `${name}.distortion`);
+  validateMeshWarp(ip.meshWarp, `${name}.meshWarp`);
   if (ip.effects !== undefined) assertFiniteNumericLeaves(ip.effects, `${name}.effects`);
   validateShape(ip, name);
   if (ip.stroke !== undefined) assertFiniteNumericLeaves(ip.stroke, `${name}.stroke`);

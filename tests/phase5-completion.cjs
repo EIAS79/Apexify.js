@@ -305,6 +305,115 @@ async function main() {
   })).buffer);
   near(pixel(raw, 0, 0), [127, 0, 128, 255], 2, 'background layer order');
 
+  // Advanced distortion engine: warp is a real inverse-mapped transform,
+  // not a declared no-op.
+  {
+    const source = createCanvas(4, 4);
+    const sourceCtx = source.getContext('2d');
+    sourceCtx.fillStyle = '#ff0000';
+    sourceCtx.fillRect(0, 0, 2, 4);
+    sourceCtx.fillStyle = '#0000ff';
+    sourceCtx.fillRect(2, 0, 2, 4);
+
+    const quad = api.createDistortedRaster(
+      sourceCtx,
+      4,
+      4,
+      {
+        type: 'warp',
+        points: [
+          { x: 2, y: 1 },
+          { x: 8, y: 0 },
+          { x: 7, y: 7 },
+          { x: 1, y: 6 },
+        ],
+        interpolation: 'bicubic',
+        edgeMode: 'clamp',
+      },
+      2,
+      2
+    );
+    assert.ok(quad.width >= 6 && quad.height >= 7, 'quad warp must honor destination geometry');
+    const quadCtx = quad.canvas.getContext('2d');
+    assert.ok(quadCtx.getImageData(2, 2, 1, 1).data[3] > 0, 'quad warp must render non-empty pixels');
+
+    const handles = api.createDistortedRaster(
+      sourceCtx,
+      4,
+      4,
+      {
+        type: 'warp',
+        controlPoints: [
+          {
+            from: { x: 1, y: 1 },
+            to: { x: 5, y: 2 },
+            radius: 5,
+            strength: 1,
+            falloff: 'smooth',
+          },
+        ],
+        interpolation: 'bilinear',
+        edgeMode: 'transparent',
+      },
+      0,
+      0
+    );
+    assert.ok(handles.width > 4, 'free warp handles may expand destination bounds');
+
+    const twirl = api.createDistortedRaster(
+      sourceCtx,
+      4,
+      4,
+      { type: 'twirl', angle: 120, radius: 3, interpolation: 'bilinear' },
+      0,
+      0
+    );
+    assert.equal(twirl.width, 4);
+    assert.equal(twirl.height, 4);
+
+    const wave = api.createDistortedRaster(
+      sourceCtx,
+      4,
+      4,
+      {
+        type: 'wave',
+        amplitudeX: 2,
+        amplitudeY: 1,
+        wavelengthX: 4,
+        wavelengthY: 4,
+        phaseX: 30,
+        phaseY: 60,
+      },
+      0,
+      0
+    );
+    assert.ok(wave.width >= 8 && wave.height >= 6, 'wave distortion must reserve displaced bounds');
+
+    assert.throws(
+      () => api.validateImageProperties({
+        source: Buffer.from([1]),
+        x: 0,
+        y: 0,
+        distortion: { type: 'warp' },
+      }),
+      /requires either exactly 4 points or controlPoints/,
+      'warp must reject missing deformation geometry'
+    );
+    assert.throws(
+      () => api.validateImageProperties({
+        source: Buffer.from([1]),
+        x: 0,
+        y: 0,
+        distortion: {
+          type: 'perspective',
+          points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+        },
+      }),
+      /exactly 4 destination corners/,
+      'perspective must require a full corner pin'
+    );
+  }
+
   // Canvas shadows are a real underlay, not a destination-wide backfill. They
   // paint above lower content, below their own background, and are not clipped
   // by the background path, so negative/positive offsets remain usable.

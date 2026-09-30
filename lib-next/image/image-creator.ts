@@ -14,10 +14,9 @@ import { createGradientFill } from "../render/gradient-fill";
 import {
   applyImageMask,
   applyClipPath,
-  applyPerspectiveDistortion,
-  applyBulgeDistortion,
   applyMeshWarp,
 } from "./image-mask";
+import { createDistortedRaster } from "./image-warp";
 import {
   applyVignette,
   applyLensFlare,
@@ -517,7 +516,7 @@ export class ImageCreator {
     ctx.save();
     if (clipPath && clipPath.length >= 3) {
       applyClipPath(ctx, clipPath);
-    } else {
+    } else if (borderRadius) {
       buildPath(ctx, box.x, box.y, box.w, box.h, borderRadius, borderPosition);
       ctx.clip();
     }
@@ -529,87 +528,101 @@ export class ImageCreator {
     ctx.globalAlpha = opacity ?? 1;
     if ((blur ?? 0) > 0) ctx.filter = `blur(${blur}px)`;
 
-    if (filters && filters.length > 0 && filterOrder === 'pre') {
-      const tempCanvas = createCanvas(dw, dh);
-      const tempCtx = getCanvasContext(tempCanvas);
-      tempCtx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
-      const adjustedFilters = filters.map(f => ({
-        ...f,
-        intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
-        value: f.value !== undefined ? f.value * filterIntensity : f.value,
-        radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
-      }));
-      await applyContextImageFilters(tempCtx, adjustedFilters, dw, dh);
-      ctx.filter = "none";
-      ctx.drawImage(tempCanvas, dx, dy);
-      ctx.filter = "none";
-      ctx.globalAlpha = prevAlpha;
-      ctx.restore();
-      ctx.restore();
-      return;
+    const adjustedFilters = filters?.map(f => ({
+      ...f,
+      intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
+      value: f.value !== undefined ? f.value * filterIntensity : f.value,
+      radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
+    }));
+
+    let preFilteredCanvas: ReturnType<typeof createCanvas> | undefined;
+    let preFilteredCtx: SKRSContext2D | undefined;
+    if (adjustedFilters?.length && filterOrder === 'pre') {
+      const rasterWidth = Math.max(1, Math.round(dw));
+      const rasterHeight = Math.max(1, Math.round(dh));
+      preFilteredCanvas = createCanvas(rasterWidth, rasterHeight);
+      preFilteredCtx = getCanvasContext(preFilteredCanvas);
+      preFilteredCtx.drawImage(img, sx, sy, sw, sh, 0, 0, rasterWidth, rasterHeight);
+      await applyContextImageFilters(preFilteredCtx, adjustedFilters, rasterWidth, rasterHeight);
     }
+
+    let renderedBounds = { x: box.x, y: box.y, w: box.w, h: box.h };
+    let contentDrawn = false;
 
     if (distortion) {
-      if (distortion.type === 'perspective' && distortion.points && distortion.points.length === 4) {
-        applyPerspectiveDistortion(ctx, img, distortion.points, dx, dy, dw, dh);
-        ctx.filter = "none";
-        ctx.globalAlpha = prevAlpha;
-        ctx.restore();
-        ctx.restore();
-        return;
-      } else if (distortion.type === 'bulge' || distortion.type === 'pinch') {
-        const centerX = dx + dw / 2;
-        const centerY = dy + dh / 2;
-        const radius = Math.min(dw, dh) / 2;
-        const intensity = (distortion.intensity ?? 0.5) * (distortion.type === 'pinch' ? -1 : 1);
-        applyBulgeDistortion(ctx, img, centerX, centerY, radius, intensity, dx, dy, dw, dh);
-        ctx.filter = "none";
-        ctx.globalAlpha = prevAlpha;
-        ctx.restore();
-        ctx.restore();
-        return;
+      const rasterWidth = Math.max(1, Math.round(dw));
+      const rasterHeight = Math.max(1, Math.round(dh));
+      const sourceCanvas = preFilteredCanvas ?? createCanvas(rasterWidth, rasterHeight);
+      const sourceCtx = preFilteredCtx ?? getCanvasContext(sourceCanvas);
+      if (!preFilteredCtx) {
+        sourceCtx.drawImage(img, sx, sy, sw, sh, 0, 0, rasterWidth, rasterHeight);
       }
+      const warped = createDistortedRaster(
+        sourceCtx,
+        rasterWidth,
+        rasterHeight,
+        distortion,
+        dx,
+        dy
+      );
+      ctx.drawImage(warped.canvas, warped.x, warped.y);
+      renderedBounds = { x: warped.x, y: warped.y, w: warped.width, h: warped.height };
+      contentDrawn = true;
     }
 
-    if (meshWarp && meshWarp.controlPoints) {
-      applyMeshWarp(ctx, img, meshWarp.gridX ?? 10, meshWarp.gridY ?? 10, meshWarp.controlPoints, dx, dy, dw, dh);
+    if (!contentDrawn && meshWarp?.controlPoints) {
+      applyMeshWarp(
+        ctx,
+        img,
+        meshWarp.gridX ?? 10,
+        meshWarp.gridY ?? 10,
+        meshWarp.controlPoints,
+        dx,
+        dy,
+        dw,
+        dh
+      );
+      contentDrawn = true;
+    }
+
+    if (!contentDrawn && preFilteredCanvas) {
       ctx.filter = "none";
-      ctx.globalAlpha = prevAlpha;
-      ctx.restore();
-      ctx.restore();
-      return;
+      ctx.drawImage(preFilteredCanvas, dx, dy, dw, dh);
+      contentDrawn = true;
     }
 
-    if (mask) {
-      await applyImageMask(ctx, img, mask.source, mask.mode ?? 'alpha', dx, dy, dw, dh);
-    } else {
-      ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    if (!contentDrawn) {
+      if (mask) {
+        await applyImageMask(ctx, img, mask.source, mask.mode ?? 'alpha', dx, dy, dw, dh);
+      } else {
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+      }
     }
 
     ctx.filter = "none";
     ctx.globalAlpha = prevAlpha;
     ctx.restore();
 
-    if (filters && filters.length > 0 && filterOrder === 'post') {
-      ctx.save();
-      const imageData = ctx.getImageData(box.x, box.y, box.w, box.h);
-      const tempCanvas = createCanvas(box.w, box.h);
-      const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-      if (tempCtx) {
+    if (adjustedFilters?.length && filterOrder === 'post') {
+      const postX = Math.max(0, Math.floor(renderedBounds.x));
+      const postY = Math.max(0, Math.floor(renderedBounds.y));
+      const postRight = Math.min(ctx.canvas.width, Math.ceil(renderedBounds.x + renderedBounds.w));
+      const postBottom = Math.min(ctx.canvas.height, Math.ceil(renderedBounds.y + renderedBounds.h));
+      const postWidth = postRight - postX;
+      const postHeight = postBottom - postY;
+      if (postWidth > 0 && postHeight > 0) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const imageData = ctx.getImageData(postX, postY, postWidth, postHeight);
+        const tempCanvas = createCanvas(postWidth, postHeight);
+        const tempCtx = getCanvasContext(tempCanvas);
         tempCtx.putImageData(imageData, 0, 0);
-        const adjustedFilters = filters.map(f => ({
-          ...f,
-          intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
-          value: f.value !== undefined ? f.value * filterIntensity : f.value,
-          radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
-        }));
-        await applyContextImageFilters(tempCtx, adjustedFilters, box.w, box.h);
-        ctx.clearRect(box.x, box.y, box.w, box.h);
+        await applyContextImageFilters(tempCtx, adjustedFilters, postWidth, postHeight);
+        ctx.clearRect(postX, postY, postWidth, postHeight);
         ctx.filter = 'none';
-        ctx.drawImage(tempCanvas, box.x, box.y);
-        ctx.filter = 'none';
+        ctx.drawImage(tempCanvas, postX, postY);
+        ctx.restore();
       }
-      ctx.restore();
     }
 
     if (effects) {

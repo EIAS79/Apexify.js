@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Advanced image warping
+
+- Implemented the previously declared `createImage().distortion.type: "warp"` as a real inverse-mapped raster warp instead of a no-op.
+- Added free quad warp, local liquify-style control handles with radius/strength/falloff, projective corner pinning, inverse-mapped bulge/pinch, twirl and wave deformation.
+- Added `nearest`, `bilinear`, and alpha-safe `bicubic` sampling plus `transparent`, `clamp`, `wrap`, and `mirror` edge modes.
+- Distortion output can extend beyond the original layer rectangle unless the caller explicitly clips it, and pre/post filter stages now compose with distortion rather than being skipped by the old early-return path.
+- Added strict validation for warp geometry, interpolation/edge modes, control handles, centers/radii, twirl angles, wave amplitude/wavelength/phase and malformed perspective quads.
+
 ### Canvas video backgrounds
 
 - Extended `CanvasConfig.videoBg` with still-image background parity: `inherit`, `fit`, `align`, `filters`, and `opacity`.
