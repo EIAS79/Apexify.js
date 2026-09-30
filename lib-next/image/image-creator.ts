@@ -22,12 +22,8 @@ import { buildPath, applyRotation } from "../render/clip-path";
 import { applyShadow } from "../render/shadow-renderer";
 import { applyStroke } from "../render/stroke-renderer";
 import { createGradientFill } from "../render/gradient-fill";
-import {
-  applyImageMask,
-  applyClipPath,
-  applyMeshWarp,
-} from "./image-mask";
-import { createDistortedRaster } from "./image-warp";
+import { applyClipPath } from "./image-mask";
+import { processImageRaster } from "./image-raster-pipeline";
 import {
   applyVignette,
   applyLensFlare,
@@ -462,219 +458,161 @@ export class ImageCreator {
     };
   }
 
+  private localizeShapeProperties(
+    shape: ShapeProperties | undefined,
+    x: number,
+    y: number
+  ): ShapeProperties {
+    return {
+      ...(shape ?? {}),
+      points: shape?.points?.map((point) => ({ x: point.x - x, y: point.y - y })),
+      centerX: shape?.centerX === undefined ? undefined : shape.centerX - x,
+      centerY: shape?.centerY === undefined ? undefined : shape.centerY - y,
+    };
+  }
+
+  private requiresRasterShapePipeline(ip: ImageProperties): boolean {
+    return Boolean(
+      ip.filters?.length ||
+      ip.filterIntensity !== undefined ||
+      ip.filterOrder !== undefined ||
+      ip.mask ||
+      ip.clipPath ||
+      ip.distortion ||
+      ip.meshWarp ||
+      ip.effects
+    );
+  }
+
+  private async drawRasterShape(
+    ctx: SKRSContext2D,
+    shapeType: ShapeType,
+    ip: ImageProperties
+  ): Promise<void> {
+    const width = Math.max(1, Math.round(ip.width ?? 100));
+    const height = Math.max(1, Math.round(ip.height ?? 100));
+    const box = { x: ip.x, y: ip.y, w: width, h: height };
+    const sourceCanvas = createCanvas(width, height);
+    const sourceCtx = getCanvasContext(sourceCanvas);
+    drawShape(
+      sourceCtx,
+      shapeType,
+      0,
+      0,
+      width,
+      height,
+      this.localizeShapeProperties(ip.shape, ip.x, ip.y)
+    );
+
+    const processed = await processImageRaster(sourceCanvas, ip.x, ip.y, {
+      filters: ip.filters,
+      filterIntensity: ip.filterIntensity,
+      filterOrder: ip.filterOrder,
+      meshWarp: ip.meshWarp,
+      distortion: ip.distortion,
+      mask: ip.mask,
+      effects: ip.effects,
+    });
+
+    ctx.save();
+    if (ip.blendMode) ctx.globalCompositeOperation = ip.blendMode;
+    applyRotation(ctx, ip.rotation ?? 0, box.x, box.y, box.w, box.h);
+
+    if (ip.shadow && this.isComplexShape(shapeType)) {
+      this.applyShapeShadow(ctx, shapeType, box.x, box.y, box.w, box.h, ip.shadow, ip.shape ?? {});
+    } else {
+      applyShadow(ctx, box, ip.shadow);
+    }
+    drawBoxBackground(ctx, box, ip.boxBackground, ip.borderRadius, ip.borderPosition);
+
+    ctx.save();
+    if (ip.clipPath) {
+      applyClipPath(ctx, ip.clipPath);
+    } else if (ip.borderRadius) {
+      buildPath(ctx, box.x, box.y, box.w, box.h, ip.borderRadius, ip.borderPosition ?? "all");
+      ctx.clip();
+    }
+    ctx.globalAlpha = ip.opacity ?? 1;
+    if ((ip.blur ?? 0) > 0) ctx.filter = `blur(${ip.blur}px)`;
+    ctx.drawImage(processed.canvas, processed.x, processed.y);
+    ctx.filter = "none";
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    if (ip.stroke) {
+      this.applyShapeStroke(ctx, shapeType, box.x, box.y, box.w, box.h, ip.stroke, ip.shape ?? {});
+    }
+    ctx.restore();
+  }
+
   private async drawImageBitmap(ctx: SKRSContext2D, ip: ImageProperties): Promise<void> {
     const {
-      source, x, y,
-      width, height,
-      inherit,
-      fit = "fill",
-      align = "center",
-      rotation = 0,
-      opacity = 1,
-      blur = 0,
-      borderRadius = 0,
-      borderPosition = "all",
-      shadow,
-      stroke,
-      boxBackground,
-      shape,
-      filters,
-      filterIntensity = 1,
-      filterOrder = 'post',
-      mask,
-      clipPath,
-      distortion,
-      meshWarp,
-      effects,
-      blendMode,
+      source, x, y, width, height, inherit,
+      fit = "fill", align = "center",
+      rotation = 0, opacity = 1, blur = 0,
+      borderRadius = 0, borderPosition = "all",
+      shadow, stroke, boxBackground, shape,
+      filters, filterIntensity, filterOrder,
+      mask, clipPath, distortion, meshWarp, effects, blendMode,
     } = ip;
 
     this.validateImageProperties(ip);
 
     if (isShapeSource(source)) {
-      await this.drawShape(ctx, source, x, y, width ?? 100, height ?? 100, {
-        ...shape,
-        rotation,
-        opacity,
-        blur,
-        borderRadius,
-        borderPosition,
-        shadow,
-        stroke,
-        boxBackground,
-        filters,
-        blendMode,
-      });
+      if (this.requiresRasterShapePipeline(ip)) {
+        await this.drawRasterShape(ctx, source, ip);
+      } else {
+        await this.drawShape(ctx, source, x, y, width ?? 100, height ?? 100, {
+          ...shape,
+          rotation, opacity, blur, borderRadius, borderPosition,
+          shadow, stroke, boxBackground, blendMode,
+        });
+      }
       return;
     }
 
     const img = await loadImageCached(source);
-
-    const boxW = (inherit && !width) ? img.width : (width ?? img.width);
-    const boxH = (inherit && !height) ? img.height : (height ?? img.height);
+    const boxW = inherit && !width ? img.width : (width ?? img.width);
+    const boxH = inherit && !height ? img.height : (height ?? img.height);
     const box = { x, y, w: boxW, h: boxH };
+    const { dx, dy, dw, dh, sx, sy, sw, sh } =
+      fitInto(box.x, box.y, box.w, box.h, img.width, img.height, fit, align);
+
+    const rasterWidth = Math.max(1, Math.round(dw));
+    const rasterHeight = Math.max(1, Math.round(dh));
+    const sourceCanvas = createCanvas(rasterWidth, rasterHeight);
+    const sourceCtx = getCanvasContext(sourceCanvas);
+    sourceCtx.drawImage(img, sx, sy, sw, sh, 0, 0, rasterWidth, rasterHeight);
+
+    const processed = await processImageRaster(sourceCanvas, dx, dy, {
+      filters, filterIntensity, filterOrder, meshWarp, distortion, mask, effects,
+    });
 
     ctx.save();
-
-    if (blendMode) {
-      ctx.globalCompositeOperation = blendMode;
-    }
-
+    if (blendMode) ctx.globalCompositeOperation = blendMode;
     applyRotation(ctx, rotation, box.x, box.y, box.w, box.h);
     applyShadow(ctx, box, shadow);
     drawBoxBackground(ctx, box, boxBackground, borderRadius, borderPosition);
 
     ctx.save();
-    if (clipPath && clipPath.length >= 3) {
+    if (clipPath) {
       applyClipPath(ctx, clipPath);
     } else if (borderRadius) {
       buildPath(ctx, box.x, box.y, box.w, box.h, borderRadius, borderPosition);
       ctx.clip();
     }
-
-    const { dx, dy, dw, dh, sx, sy, sw, sh } =
-      fitInto(box.x, box.y, box.w, box.h, img.width, img.height, fit, align);
-
-    const prevAlpha = ctx.globalAlpha;
-    ctx.globalAlpha = opacity ?? 1;
-    if ((blur ?? 0) > 0) ctx.filter = `blur(${blur}px)`;
-
-    const adjustedFilters = filters?.map(f => ({
-      ...f,
-      intensity: f.intensity !== undefined ? f.intensity * filterIntensity : (f.intensity ?? 1) * filterIntensity,
-      value: f.value !== undefined ? f.value * filterIntensity : f.value,
-      radius: f.radius !== undefined ? f.radius * filterIntensity : f.radius
-    }));
-
-    let preFilteredCanvas: Canvas | undefined;
-    let preFilteredCtx: SKRSContext2D | undefined;
-    if (adjustedFilters?.length && filterOrder === 'pre') {
-      const rasterWidth = Math.max(1, Math.round(dw));
-      const rasterHeight = Math.max(1, Math.round(dh));
-      preFilteredCanvas = createCanvas(rasterWidth, rasterHeight);
-      preFilteredCtx = getCanvasContext(preFilteredCanvas);
-      preFilteredCtx.drawImage(img, sx, sy, sw, sh, 0, 0, rasterWidth, rasterHeight);
-      await applyContextImageFilters(preFilteredCtx, adjustedFilters, rasterWidth, rasterHeight);
-    }
-
-    let renderedBounds = { x: box.x, y: box.y, w: box.w, h: box.h };
-    let contentDrawn = false;
-
-    if (distortion) {
-      const rasterWidth = Math.max(1, Math.round(dw));
-      const rasterHeight = Math.max(1, Math.round(dh));
-      const sourceCanvas = preFilteredCanvas ?? createCanvas(rasterWidth, rasterHeight);
-      const sourceCtx = preFilteredCtx ?? getCanvasContext(sourceCanvas);
-      if (!preFilteredCtx) {
-        sourceCtx.drawImage(img, sx, sy, sw, sh, 0, 0, rasterWidth, rasterHeight);
-      }
-      const warped = createDistortedRaster(
-        sourceCtx,
-        rasterWidth,
-        rasterHeight,
-        distortion,
-        dx,
-        dy
-      );
-      ctx.drawImage(warped.canvas, warped.x, warped.y);
-      renderedBounds = { x: warped.x, y: warped.y, w: warped.width, h: warped.height };
-      contentDrawn = true;
-    }
-
-    if (!contentDrawn && meshWarp?.controlPoints) {
-      applyMeshWarp(
-        ctx,
-        img,
-        meshWarp.gridX ?? 10,
-        meshWarp.gridY ?? 10,
-        meshWarp.controlPoints,
-        dx,
-        dy,
-        dw,
-        dh
-      );
-      contentDrawn = true;
-    }
-
-    if (!contentDrawn && preFilteredCanvas) {
-      ctx.filter = "none";
-      ctx.drawImage(preFilteredCanvas, dx, dy, dw, dh);
-      contentDrawn = true;
-    }
-
-    if (!contentDrawn) {
-      if (mask) {
-        await applyImageMask(ctx, img, mask.source, mask.mode ?? 'alpha', dx, dy, dw, dh);
-      } else {
-        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
-      }
-    }
-
+    ctx.globalAlpha = opacity;
+    if (blur > 0) ctx.filter = `blur(${blur}px)`;
+    ctx.drawImage(processed.canvas, processed.x, processed.y);
     ctx.filter = "none";
-    ctx.globalAlpha = prevAlpha;
+    ctx.globalAlpha = 1;
     ctx.restore();
-
-    if (adjustedFilters?.length && filterOrder === 'post') {
-      const postX = Math.max(0, Math.floor(renderedBounds.x));
-      const postY = Math.max(0, Math.floor(renderedBounds.y));
-      const postRight = Math.min(ctx.canvas.width, Math.ceil(renderedBounds.x + renderedBounds.w));
-      const postBottom = Math.min(ctx.canvas.height, Math.ceil(renderedBounds.y + renderedBounds.h));
-      const postWidth = postRight - postX;
-      const postHeight = postBottom - postY;
-      if (postWidth > 0 && postHeight > 0) {
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        const imageData = ctx.getImageData(postX, postY, postWidth, postHeight);
-        const tempCanvas = createCanvas(postWidth, postHeight);
-        const tempCtx = getCanvasContext(tempCanvas);
-        tempCtx.putImageData(imageData, 0, 0);
-        await applyContextImageFilters(tempCtx, adjustedFilters, postWidth, postHeight);
-        ctx.clearRect(postX, postY, postWidth, postHeight);
-        ctx.filter = 'none';
-        ctx.drawImage(tempCanvas, postX, postY);
-        ctx.restore();
-      }
-    }
-
-    if (effects) {
-      ctx.save();
-      const effectsCtx = ctx;
-      if (effects.vignette) {
-        applyVignette(effectsCtx, effects.vignette.intensity, effects.vignette.size, box.w, box.h);
-      }
-      if (effects.lensFlare) {
-        applyLensFlare(effectsCtx, box.x + effects.lensFlare.x, box.y + effects.lensFlare.y, effects.lensFlare.intensity, box.w, box.h);
-      }
-      if (effects.chromaticAberration) {
-        const imageData = ctx.getImageData(box.x, box.y, box.w, box.h);
-        const tempCanvas = createCanvas(box.w, box.h);
-        const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-        if (tempCtx) {
-          tempCtx.putImageData(imageData, 0, 0);
-          applyChromaticAberration(tempCtx, effects.chromaticAberration.intensity, box.w, box.h);
-          ctx.clearRect(box.x, box.y, box.w, box.h);
-          ctx.drawImage(tempCanvas, box.x, box.y);
-        }
-      }
-      if (effects.filmGrain) {
-        const imageData = ctx.getImageData(box.x, box.y, box.w, box.h);
-        const tempCanvas = createCanvas(box.w, box.h);
-        const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-        if (tempCtx) {
-          tempCtx.putImageData(imageData, 0, 0);
-          applyFilmGrain(tempCtx, effects.filmGrain.intensity, box.w, box.h);
-          ctx.clearRect(box.x, box.y, box.w, box.h);
-          ctx.drawImage(tempCanvas, box.x, box.y);
-        }
-      }
-      ctx.restore();
-    }
 
     applyStroke(ctx, box, stroke);
     ctx.restore();
   }
 
-  private offsetDistortion(
+  private offsetDistortion(  private offsetDistortion(
     distortion: ImageDistortionOptions | undefined,
     offsetX: number,
     offsetY: number
@@ -725,406 +663,109 @@ export class ImageCreator {
   async paintImageLayersOntoContext(
     ctx: SKRSContext2D,
     images: ImageProperties | ImageProperties[],
-    canvasSize: { width: number; height: number },
+    _canvasSize: { width: number; height: number },
     options?: CreateImageOptions
   ): Promise<void> {
     this.validateImageArray(images);
     const list = Array.isArray(images) ? images : [images];
-    const cw = canvasSize.width;
-    const ch = canvasSize.height;
-
     const isGrouped = options?.isGrouped && list.length > 1;
     const groupTransform = options?.groupTransform;
 
     if (isGrouped && groupTransform) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const ip of list) {
-          const w = ip.width ?? 100;
-          const h = ip.height ?? 100;
-          minX = Math.min(minX, ip.x);
-          minY = Math.min(minY, ip.y);
-          maxX = Math.max(maxX, ip.x + w);
-          maxY = Math.max(maxY, ip.y + h);
-        }
-        const groupBox = {
-          x: minX,
-          y: minY,
-          w: maxX - minX,
-          h: maxY - minY
-        };
-        const pivotX = groupTransform.pivotX ?? (groupBox.x + groupBox.w / 2);
-        const pivotY = groupTransform.pivotY ?? (groupBox.y + groupBox.h / 2);
-
-        if (groupTransform.distortion) {
-          const groupWidth = Math.max(1, Math.round(groupBox.w));
-          const groupHeight = Math.max(1, Math.round(groupBox.h));
-          const sourceCanvas = createCanvas(groupWidth, groupHeight);
-          const sourceCtx = getCanvasContext(sourceCanvas);
-
-          if (groupTransform.boxBackground) {
-            drawBoxBackground(
-              sourceCtx,
-              { x: 0, y: 0, w: groupWidth, h: groupHeight },
-              groupTransform.boxBackground,
-              groupTransform.borderRadius,
-              groupTransform.borderPosition
-            );
-          }
-
-          sourceCtx.save();
-          if (groupTransform.clipPath && groupTransform.clipPath.length >= 3) {
-            applyClipPath(
-              sourceCtx,
-              groupTransform.clipPath.map((point) => ({
-                x: point.x - groupBox.x,
-                y: point.y - groupBox.y,
-              }))
-            );
-          } else if (groupTransform.borderRadius) {
-            buildPath(
-              sourceCtx,
-              0,
-              0,
-              groupWidth,
-              groupHeight,
-              groupTransform.borderRadius,
-              groupTransform.borderPosition ?? 'all'
-            );
-            sourceCtx.clip();
-          }
-
-          for (const image of list) {
-            await this.drawImageBitmap(
-              sourceCtx,
-              this.groupLocalImage(image, groupBox.x, groupBox.y)
-            );
-          }
-          sourceCtx.restore();
-
-          const groupFilters = groupTransform.filters?.map((filter) => ({
-            ...filter,
-            intensity:
-              filter.intensity !== undefined
-                ? filter.intensity * (groupTransform.filterIntensity ?? 1)
-                : (filter.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
-            value:
-              filter.value !== undefined
-                ? filter.value * (groupTransform.filterIntensity ?? 1)
-                : filter.value,
-            radius:
-              filter.radius !== undefined
-                ? filter.radius * (groupTransform.filterIntensity ?? 1)
-                : filter.radius,
-          }));
-
-          if (groupFilters?.length && groupTransform.filterOrder === 'pre') {
-            await applyContextImageFilters(sourceCtx, groupFilters, groupWidth, groupHeight);
-          }
-
-          const localDistortion = this.offsetDistortion(
-            groupTransform.distortion,
-            -groupBox.x,
-            -groupBox.y
-          )!;
-          const warped = createDistortedRaster(
-            sourceCtx,
-            groupWidth,
-            groupHeight,
-            localDistortion,
-            0,
-            0
-          );
-          const warpedCtx = getCanvasContext(warped.canvas);
-
-          if (groupFilters?.length && groupTransform.filterOrder !== 'pre') {
-            await applyContextImageFilters(
-              warpedCtx,
-              groupFilters,
-              warped.width,
-              warped.height
-            );
-          }
-
-          if (groupTransform.effects?.vignette) {
-            applyVignette(
-              warpedCtx,
-              groupTransform.effects.vignette.intensity,
-              groupTransform.effects.vignette.size,
-              warped.width,
-              warped.height
-            );
-          }
-          if (groupTransform.effects?.lensFlare) {
-            applyLensFlare(
-              warpedCtx,
-              groupTransform.effects.lensFlare.x - warped.x,
-              groupTransform.effects.lensFlare.y - warped.y,
-              groupTransform.effects.lensFlare.intensity,
-              warped.width,
-              warped.height
-            );
-          }
-          if (groupTransform.effects?.chromaticAberration) {
-            applyChromaticAberration(
-              warpedCtx,
-              groupTransform.effects.chromaticAberration.intensity,
-              warped.width,
-              warped.height
-            );
-          }
-          if (groupTransform.effects?.filmGrain) {
-            applyFilmGrain(
-              warpedCtx,
-              groupTransform.effects.filmGrain.intensity,
-              warped.width,
-              warped.height
-            );
-          }
-
-          ctx.save();
-          if (groupTransform.blendMode) {
-            ctx.globalCompositeOperation = groupTransform.blendMode;
-          }
-          if (groupTransform.opacity !== undefined) {
-            ctx.globalAlpha = groupTransform.opacity;
-          }
-          if (groupTransform.blur && groupTransform.blur > 0) {
-            ctx.filter = `blur(${groupTransform.blur}px)`;
-          }
-
-          ctx.translate(pivotX, pivotY);
-          if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
-            ctx.rotate((groupTransform.rotation * Math.PI) / 180);
-          }
-          if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
-            ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
-          }
-          if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
-            ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
-          }
-          ctx.translate(-pivotX, -pivotY);
-
-          const warpedBox = {
-            x: groupBox.x + warped.x,
-            y: groupBox.y + warped.y,
-            w: warped.width,
-            h: warped.height,
-          };
-          if (groupTransform.shadow) {
-            applyShadow(ctx, warpedBox, groupTransform.shadow);
-          }
-          ctx.drawImage(warped.canvas, warpedBox.x, warpedBox.y);
-          ctx.filter = "none";
-          ctx.globalAlpha = 1;
-
-          if (groupTransform.stroke) {
-            applyStroke(ctx, warpedBox, groupTransform.stroke);
-          }
-          ctx.restore();
-          return;
-        }
-
-        ctx.save();
-
-        if (groupTransform.blendMode) {
-          ctx.globalCompositeOperation = groupTransform.blendMode;
-        }
-        if (groupTransform.opacity !== undefined) {
-          ctx.globalAlpha = groupTransform.opacity;
-        }
-        if (groupTransform.blur && groupTransform.blur > 0) {
-          ctx.filter = `blur(${groupTransform.blur}px)`;
-        }
-        if (groupTransform.boxBackground) {
-          drawBoxBackground(ctx, groupBox, groupTransform.boxBackground,
-            groupTransform.borderRadius, groupTransform.borderPosition);
-        }
-        if (groupTransform.shadow) {
-          applyShadow(ctx, groupBox, groupTransform.shadow);
-        }
-        if (groupTransform.clipPath && groupTransform.clipPath.length >= 3) {
-          applyClipPath(ctx, groupTransform.clipPath);
-          ctx.clip();
-        } else if (groupTransform.borderRadius) {
-          buildPath(ctx, groupBox.x, groupBox.y, groupBox.w, groupBox.h,
-            groupTransform.borderRadius, groupTransform.borderPosition ?? 'all');
-          ctx.clip();
-        }
-
-        if (groupTransform.filters && groupTransform.filters.length > 0 &&
-            groupTransform.filterOrder === 'pre') {
-          const tempCanvas = createCanvas(groupBox.w, groupBox.h);
-          const tempCtx = getCanvasContext(tempCanvas);
-          tempCtx.save();
-          for (const ip of list) {
-            const ipWithoutRotation = { ...ip, rotation: 0 };
-            const adjustedIp = {
-              ...ipWithoutRotation,
-              x: ipWithoutRotation.x - groupBox.x,
-              y: ipWithoutRotation.y - groupBox.y
-            };
-            await this.drawImageBitmap(tempCtx, adjustedIp);
-          }
-          tempCtx.restore();
-          const adjustedFilters = groupTransform.filters.map(f => ({
-            ...f,
-            intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) :
-                     (f.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
-            value: f.value !== undefined ? f.value * (groupTransform.filterIntensity ?? 1) : f.value,
-            radius: f.radius !== undefined ? f.radius * (groupTransform.filterIntensity ?? 1) : f.radius
-          }));
-          await applyContextImageFilters(tempCtx, adjustedFilters, groupBox.w, groupBox.h);
-          ctx.drawImage(tempCanvas, groupBox.x, groupBox.y);
-          ctx.filter = "none";
-          ctx.restore();
-          return;
-        }
-
-        ctx.translate(pivotX, pivotY);
-        if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
-          ctx.rotate((groupTransform.rotation * Math.PI) / 180);
-        }
-        if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
-          ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
-        }
-        if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
-          ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
-        }
-        ctx.translate(-pivotX, -pivotY);
-
-        for (const ip of list) {
-          const ipWithoutRotation = { ...ip, rotation: 0 };
-          await this.drawImageBitmap(ctx, ipWithoutRotation);
-        }
-
-        ctx.save();
-
-        if (groupTransform.filters && groupTransform.filters.length > 0 &&
-            groupTransform.filterOrder !== 'pre') {
-          const corners = [
-            { x: groupBox.x, y: groupBox.y },
-            { x: groupBox.x + groupBox.w, y: groupBox.y },
-            { x: groupBox.x + groupBox.w, y: groupBox.y + groupBox.h },
-            { x: groupBox.x, y: groupBox.y + groupBox.h }
-          ];
-          let tMinX = Infinity, tMinY = Infinity, tMaxX = -Infinity, tMaxY = -Infinity;
-          for (const corner of corners) {
-            const dx = corner.x - pivotX;
-            const dy = corner.y - pivotY;
-            const scaleX = groupTransform.scaleX ?? 1;
-            const scaleY = groupTransform.scaleY ?? 1;
-            const rot = (groupTransform.rotation ?? 0) * Math.PI / 180;
-            const cos = Math.cos(rot);
-            const sin = Math.sin(rot);
-            const tx = groupTransform.translateX ?? 0;
-            const ty = groupTransform.translateY ?? 0;
-            const tX = pivotX + (dx * scaleX * cos - dy * scaleY * sin) + tx;
-            const tY = pivotY + (dx * scaleX * sin + dy * scaleY * cos) + ty;
-            tMinX = Math.min(tMinX, tX);
-            tMinY = Math.min(tMinY, tY);
-            tMaxX = Math.max(tMaxX, tX);
-            tMaxY = Math.max(tMaxY, tY);
-          }
-          const tBox = {
-            x: Math.max(0, Math.floor(tMinX)),
-            y: Math.max(0, Math.floor(tMinY)),
-            w: Math.min(cw, Math.ceil(tMaxX)) - Math.max(0, Math.floor(tMinX)),
-            h: Math.min(ch, Math.ceil(tMaxY)) - Math.max(0, Math.floor(tMinY))
-          };
-          if (tBox.w > 0 && tBox.h > 0) {
-            const imageData = ctx.getImageData(tBox.x, tBox.y, tBox.w, tBox.h);
-            const tempCanvas = createCanvas(tBox.w, tBox.h);
-            const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-            if (tempCtx) {
-              tempCtx.putImageData(imageData, 0, 0);
-              const adjustedFilters = groupTransform.filters.map(f => ({
-                ...f,
-                intensity: f.intensity !== undefined ? f.intensity * (groupTransform.filterIntensity ?? 1) :
-                         (f.intensity ?? 1) * (groupTransform.filterIntensity ?? 1),
-                value: f.value !== undefined ? f.value * (groupTransform.filterIntensity ?? 1) : f.value,
-                radius: f.radius !== undefined ? f.radius * (groupTransform.filterIntensity ?? 1) : f.radius
-              }));
-              await applyContextImageFilters(tempCtx, adjustedFilters, tBox.w, tBox.h);
-              ctx.clearRect(tBox.x, tBox.y, tBox.w, tBox.h);
-              ctx.drawImage(tempCanvas, tBox.x, tBox.y);
-            }
-          }
-        }
-
-        if (groupTransform.effects) {
-          const scaleX = groupTransform.scaleX ?? 1;
-          const scaleY = groupTransform.scaleY ?? 1;
-          const effectBox = {
-            x: groupBox.x,
-            y: groupBox.y,
-            w: groupBox.w * scaleX,
-            h: groupBox.h * scaleY
-          };
-          if (groupTransform.effects.vignette) {
-            applyVignette(ctx, groupTransform.effects.vignette.intensity,
-              groupTransform.effects.vignette.size, effectBox.w, effectBox.h);
-          }
-          if (groupTransform.effects.lensFlare) {
-            applyLensFlare(ctx, effectBox.x + groupTransform.effects.lensFlare.x,
-              effectBox.y + groupTransform.effects.lensFlare.y,
-              groupTransform.effects.lensFlare.intensity, effectBox.w, effectBox.h);
-          }
-          if (groupTransform.effects.chromaticAberration) {
-            const imageData = ctx.getImageData(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
-            const tempCanvas = createCanvas(effectBox.w, effectBox.h);
-            const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-            if (tempCtx) {
-              tempCtx.putImageData(imageData, 0, 0);
-              applyChromaticAberration(tempCtx, groupTransform.effects.chromaticAberration.intensity,
-                effectBox.w, effectBox.h);
-              ctx.clearRect(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
-              ctx.drawImage(tempCanvas, effectBox.x, effectBox.y);
-            }
-          }
-          if (groupTransform.effects.filmGrain) {
-            const imageData = ctx.getImageData(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
-            const tempCanvas = createCanvas(effectBox.w, effectBox.h);
-            const tempCtx = tempCanvas.getContext('2d') as SKRSContext2D;
-            if (tempCtx) {
-              tempCtx.putImageData(imageData, 0, 0);
-              applyFilmGrain(tempCtx, groupTransform.effects.filmGrain.intensity, effectBox.w, effectBox.h);
-              ctx.clearRect(effectBox.x, effectBox.y, effectBox.w, effectBox.h);
-              ctx.drawImage(tempCanvas, effectBox.x, effectBox.y);
-            }
-          }
-        }
-
-        ctx.restore();
-        ctx.filter = "none";
-        ctx.globalAlpha = 1;
-        ctx.restore();
-
-        if (groupTransform.stroke) {
-          ctx.save();
-          if (groupTransform.rotation || groupTransform.scaleX || groupTransform.scaleY ||
-              groupTransform.translateX || groupTransform.translateY) {
-            ctx.translate(pivotX, pivotY);
-            if (groupTransform.rotation !== undefined && groupTransform.rotation !== 0) {
-              ctx.rotate((groupTransform.rotation * Math.PI) / 180);
-            }
-            if (groupTransform.scaleX !== undefined || groupTransform.scaleY !== undefined) {
-              ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
-            }
-            if (groupTransform.translateX !== undefined || groupTransform.translateY !== undefined) {
-              ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
-            }
-            ctx.translate(-pivotX, -pivotY);
-          }
-          applyStroke(ctx, groupBox, groupTransform.stroke);
-          ctx.restore();
-        }
-      } else {
-        for (const ip of list) {
-          await this.drawImageBitmap(ctx, ip);
-        }
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const image of list) {
+        const width = image.width ?? 100;
+        const height = image.height ?? 100;
+        minX = Math.min(minX, image.x);
+        minY = Math.min(minY, image.y);
+        maxX = Math.max(maxX, image.x + width);
+        maxY = Math.max(maxY, image.y + height);
       }
+
+      const groupBox = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+      const groupWidth = Math.max(1, Math.round(groupBox.w));
+      const groupHeight = Math.max(1, Math.round(groupBox.h));
+      const pivotX = groupTransform.pivotX ?? groupBox.x + groupBox.w / 2;
+      const pivotY = groupTransform.pivotY ?? groupBox.y + groupBox.h / 2;
+      const sourceCanvas = createCanvas(groupWidth, groupHeight);
+      const sourceCtx = getCanvasContext(sourceCanvas);
+
+      if (groupTransform.boxBackground) {
+        drawBoxBackground(
+          sourceCtx,
+          { x: 0, y: 0, w: groupWidth, h: groupHeight },
+          groupTransform.boxBackground,
+          groupTransform.borderRadius,
+          groupTransform.borderPosition
+        );
+      }
+
+      sourceCtx.save();
+      if (groupTransform.clipPath) {
+        applyClipPath(
+          sourceCtx,
+          groupTransform.clipPath.map((point) => ({
+            x: point.x - groupBox.x,
+            y: point.y - groupBox.y,
+          }))
+        );
+      } else if (groupTransform.borderRadius) {
+        buildPath(
+          sourceCtx, 0, 0, groupWidth, groupHeight,
+          groupTransform.borderRadius,
+          groupTransform.borderPosition ?? "all"
+        );
+        sourceCtx.clip();
+      }
+      for (const image of list) {
+        await this.drawImageBitmap(sourceCtx, this.groupLocalImage(image, groupBox.x, groupBox.y));
+      }
+      sourceCtx.restore();
+
+      const processed = await processImageRaster(sourceCanvas, 0, 0, {
+        filters: groupTransform.filters,
+        filterIntensity: groupTransform.filterIntensity,
+        filterOrder: groupTransform.filterOrder,
+        meshWarp: groupTransform.meshWarp,
+        distortion: this.offsetDistortion(groupTransform.distortion, -groupBox.x, -groupBox.y),
+        mask: groupTransform.mask,
+        effects: groupTransform.effects,
+      });
+
+      ctx.save();
+      if (groupTransform.blendMode) ctx.globalCompositeOperation = groupTransform.blendMode;
+      ctx.globalAlpha = groupTransform.opacity ?? 1;
+      if ((groupTransform.blur ?? 0) > 0) ctx.filter = `blur(${groupTransform.blur}px)`;
+
+      ctx.translate(pivotX, pivotY);
+      if ((groupTransform.rotation ?? 0) !== 0) {
+        ctx.rotate(((groupTransform.rotation ?? 0) * Math.PI) / 180);
+      }
+      ctx.scale(groupTransform.scaleX ?? 1, groupTransform.scaleY ?? 1);
+      ctx.translate(groupTransform.translateX ?? 0, groupTransform.translateY ?? 0);
+      ctx.translate(-pivotX, -pivotY);
+
+      const renderedBox = {
+        x: groupBox.x + processed.x,
+        y: groupBox.y + processed.y,
+        w: processed.width,
+        h: processed.height,
+      };
+      applyShadow(ctx, renderedBox, groupTransform.shadow);
+      ctx.drawImage(processed.canvas, renderedBox.x, renderedBox.y);
+      ctx.filter = "none";
+      ctx.globalAlpha = 1;
+      applyStroke(ctx, renderedBox, groupTransform.stroke);
+      ctx.restore();
+      return;
+    }
+
+    for (const image of list) {
+      await this.drawImageBitmap(ctx, image);
+    }
   }
 
+  async createImage(
   async createImage(
     images: ImageProperties | ImageProperties[],
     canvasBuffer: CanvasResults | Buffer,

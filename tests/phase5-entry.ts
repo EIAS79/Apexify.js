@@ -9,7 +9,9 @@ export { createGradientFill } from "../lib-next/render/gradient-fill";
 export { applyShadow } from "../lib-next/render/shadow-renderer";
 export { applyContextImageFilters } from "../lib-next/render/context-image-filters";
 export { applyImageFilters } from "../lib-next/image/image-filters";
-export { createDistortedRaster } from "../lib-next/image/image-warp";
+export { createDistortedRaster, createMeshWarpedRaster } from "../lib-next/image/image-warp";
+export { applyRasterImageMask } from "../lib-next/image/image-mask";
+export { processImageRaster } from "../lib-next/image/image-raster-pipeline";
 export { validateImageProperties, validateGroupTransform } from "../lib-next/image/image-validation";
 export { applyFilmGrain } from "../lib-next/image/image-effects";
 export {

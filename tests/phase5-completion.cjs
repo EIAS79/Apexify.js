@@ -446,6 +446,159 @@ async function main() {
     assert.ok(groupedAlphaPixels > 0, 'group distortion must render the isolated group raster');
   }
 
+  // createImage parity across mesh, distortion, masks, groups and procedural shapes.
+  {
+    const meshSource = createCanvas(4, 4);
+    const meshCtx = meshSource.getContext('2d');
+    meshCtx.fillStyle = '#ff0000';
+    meshCtx.fillRect(0, 0, 2, 4);
+    meshCtx.fillStyle = '#0000ff';
+    meshCtx.fillRect(2, 0, 2, 4);
+
+    const meshed = api.createMeshWarpedRaster(
+      meshCtx, 4, 4,
+      {
+        gridX: 1,
+        gridY: 1,
+        controlPoints: [
+          [{ x: 0, y: 0 }, { x: 6, y: 0 }],
+          [{ x: 0, y: 4 }, { x: 6, y: 4 }],
+        ],
+        interpolation: 'bicubic',
+        edgeMode: 'mirror',
+      },
+      0, 0
+    );
+    assert.equal(meshed.width, 6, 'mesh must honor expanded vertex bounds');
+    assert.ok(meshed.canvas.getContext('2d').getImageData(3, 2, 1, 1).data[3] > 0);
+
+    const halfMask = createCanvas(8, 8);
+    const halfMaskCtx = halfMask.getContext('2d');
+    halfMaskCtx.fillStyle = '#ffffff';
+    halfMaskCtx.fillRect(0, 0, 4, 8);
+    const halfMaskUri = dataUri(halfMask.toBuffer('image/png'));
+    const sourceUri = dataUri(meshSource.toBuffer('image/png'));
+    const painter = new api.ApexPainter();
+
+    const base = await painter.createCanvas({ width: 24, height: 20, transparentBase: true });
+    const chained = await painter.createImage(
+      {
+        source: sourceUri,
+        x: 4, y: 4, width: 8, height: 8,
+        meshWarp: {
+          gridX: 1, gridY: 1,
+          controlPoints: [
+            [{ x: 0, y: 0 }, { x: 9, y: 0 }],
+            [{ x: 0, y: 8 }, { x: 9, y: 8 }],
+          ],
+          interpolation: 'bilinear',
+          edgeMode: 'clamp',
+        },
+        distortion: { type: 'wave', amplitudeY: 1, wavelengthX: 6 },
+        mask: { source: halfMaskUri, mode: 'alpha' },
+      },
+      base
+    );
+    const chainedRaw = await rgba(chained);
+    let opaque = 0, transparent = 0;
+    for (let y = 3; y < 14; y += 1) {
+      for (let x = 3; x < 16; x += 1) {
+        if (pixel(chainedRaw, x, y)[3] > 0) opaque += 1;
+        else transparent += 1;
+      }
+    }
+    assert.ok(opaque > 0 && transparent > 0, 'mask must compose after meshWarp + distortion');
+
+    const groupBase = await painter.createCanvas({ width: 28, height: 20, transparentBase: true });
+    const grouped = await painter.createImage(
+      [
+        { source: sourceUri, x: 4, y: 4, width: 6, height: 6 },
+        { source: sourceUri, x: 10, y: 4, width: 6, height: 6 },
+      ],
+      groupBase,
+      {
+        isGrouped: true,
+        groupTransform: {
+          meshWarp: {
+            gridX: 1, gridY: 1,
+            controlPoints: [
+              [{ x: 0, y: 0 }, { x: 14, y: 0 }],
+              [{ x: 0, y: 6 }, { x: 14, y: 7 }],
+            ],
+            interpolation: 'nearest',
+            edgeMode: 'wrap',
+          },
+          distortion: { type: 'twirl', angle: 20, radius: 8 },
+          mask: { source: halfMaskUri, mode: 'alpha' },
+        },
+      }
+    );
+    const groupRaw = await rgba(grouped);
+    let groupAlpha = 0;
+    for (let i = 3; i < groupRaw.data.length; i += 4) if (groupRaw.data[i] > 0) groupAlpha += 1;
+    assert.ok(groupAlpha > 0, 'group meshWarp + distortion + mask must render');
+
+    const shapeBase = await painter.createCanvas({ width: 20, height: 20, transparentBase: true });
+    const shapeOutput = await painter.createImage(
+      {
+        source: 'rectangle',
+        x: 3, y: 3, width: 8, height: 8,
+        shape: { color: '#ff0000' },
+        filters: [{ type: 'invert' }],
+        filterIntensity: 1,
+        filterOrder: 'pre',
+        meshWarp: {
+          gridX: 1, gridY: 1,
+          controlPoints: [
+            [{ x: 0, y: 0 }, { x: 8, y: 0 }],
+            [{ x: 1, y: 8 }, { x: 8, y: 8 }],
+          ],
+          interpolation: 'bilinear',
+        },
+        distortion: { type: 'wave', amplitudeX: 1, wavelengthY: 6 },
+        mask: { source: halfMaskUri, mode: 'alpha' },
+        effects: {
+          filmGrain: { intensity: 0 },
+          vignette: { intensity: 0, size: 1 },
+        },
+      },
+      shapeBase
+    );
+    const shapeRaw = await rgba(shapeOutput);
+    const shapePixel = pixel(shapeRaw, 5, 5);
+    assert.ok(shapePixel[1] > 170 && shapePixel[2] > 170, `shape filter parity failed: ${shapePixel}`);
+    assert.ok(shapePixel[3] > 0, 'shape mask/warp/effects must render');
+
+    assert.throws(
+      () => api.validateImageProperties({
+        source: sourceUri, x: 0, y: 0,
+        clipPath: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+      }),
+      /at least 3|minimum/i,
+      'clipPath must fail validation before rendering'
+    );
+
+    assert.doesNotThrow(
+      () => api.validateImageProperties({
+        source: sourceUri, x: 0, y: 0,
+        meshWarp: {
+          gridX: 1, gridY: 1,
+          controlPoints: [
+            [{ x: 0, y: 0 }, { x: 4, y: 0 }],
+            [{ x: 0, y: 4 }, { x: 4, y: 4 }],
+          ],
+        },
+        distortion: { type: 'wave', amplitudeX: 1 },
+      })
+    );
+
+    assert.throws(
+      () => api.validateGroupTransform({ mask: { source: halfMaskUri, mode: 'bogus' } }),
+      /mode/,
+      'group mask must be validated'
+    );
+  }
+
   // Canvas shadows are a real underlay, not a destination-wide backfill. They
   // paint above lower content, below their own background, and are not clipped
   // by the background path, so negative/positive offsets remain usable.
