@@ -301,11 +301,12 @@ async function main() {
     assert.equal(alignedRaw.data[alignedIndex + 3], 0, 'videoBg contain/right must preserve transparent left letterbox');
 
     await assert.rejects(
-      painter.createCanvas({
-        width: 160,
-        height: 90,
-        videoBg: { source: sourceA, frame: 1, time: 0 },
-      }),
+      async () =>
+        painter.createCanvas({
+          width: 160,
+          height: 90,
+          videoBg: { source: sourceA, frame: 1, time: 0 },
+        }),
       /frame or time/,
       'videoBg must reject simultaneous frame and time selectors'
     );
