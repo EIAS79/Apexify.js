@@ -7,6 +7,7 @@ import {
 import type {
   ApexifyPlugin,
   CanvasConfig,
+  CreateTextOptions,
   RenderLimits,
   SceneRenderInput,
 } from "apexify.js";
@@ -23,6 +24,20 @@ const png: Buffer = await painter.createText(
     fill: { color: "#ffffff" },
   },
   canvas
+);
+
+const advancedText: CreateTextOptions = {
+  isGrouped: true,
+  groupTransform: { rotation: 4, scaleX: 1.05, opacity: 0.9 },
+};
+const advancedPng: Buffer = await painter.createText(
+  [
+    { text: "typed", x: 20, y: 40, font: { size: 24, weight: 600, style: "oblique" } },
+    { text: "group", x: 95, y: 40, font: { size: 24, family: "Arial" } },
+  ],
+  canvas,
+  advancedText,
+  { resolveAssetRefs: false }
 );
 
 const scene: SceneRenderInput = { width: 320, height: 180, layers: [] };
@@ -43,4 +58,5 @@ const sample = new ApexifyResourceLimitError("maxBatchOperations", 256, 257);
 if (sample.code !== "APEXIFY_RESOURCE_LIMIT") throw new Error("Unexpected error code.");
 
 void png;
+void advancedPng;
 void limits;
