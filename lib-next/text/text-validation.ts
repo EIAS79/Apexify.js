@@ -3,7 +3,7 @@ import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
 import {
-  assertFiniteNumber, assertFiniteNumericLeaves, assertGradient, assertOpacity,
+  assertFiniteNumber, assertFiniteNumericLeaves, assertGradient, assertNonEmptyString, assertOpacity,
   assertOptionalEnum, assertOptionalFiniteNumber, assertRecord,
 } from "../runtime/validation";
 
@@ -13,6 +13,13 @@ const CURVE_MODE = ["fit", "clamp", "override"] as const;
 const FONT_STYLE = ["normal", "italic", "oblique"] as const;
 const FONT_WEIGHT = ["normal", "bold", "bolder", "lighter"] as const;
 const STROKE_STYLE = ["solid", "dashed", "dotted", "groove", "ridge", "double"] as const;
+const COMPOSITE_MODES = [
+  "source-over", "source-in", "source-out", "source-atop",
+  "destination-over", "destination-in", "destination-out", "destination-atop",
+  "lighter", "copy", "xor", "multiply", "screen", "overlay", "darken", "lighten",
+  "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion",
+  "hue", "saturation", "color", "luminosity",
+] as const;
 
 function validatePerspective(value: TextPerspectiveOptions | undefined, name: string): void {
   if (value === undefined) return;
@@ -38,8 +45,19 @@ function validateSkew(value: unknown, name: string): void {
 function validateLineDecoration(value: unknown, name: string): void {
   if (value === undefined || typeof value === "boolean") return;
   assertRecord(value, name);
+  if (value.color !== undefined) assertNonEmptyString(value.color, `${name}.color`, 512);
   assertOptionalFiniteNumber(value.width, `${name}.width`, { min: 0 });
   assertGradient(value.gradient, `${name}.gradient`);
+}
+
+function validateOptionalColor(value: unknown, name: string): void {
+  if (value !== undefined) assertNonEmptyString(value, name, 512);
+}
+
+function validateOptionalBoolean(value: unknown, name: string): void {
+  if (value !== undefined && typeof value !== "boolean") {
+    throw new ApexifyInputError(`${name} must be a boolean.`);
+  }
 }
 
 export function validateTextProperties(textProps: TextProperties, index?: number): void {
@@ -68,6 +86,15 @@ export function validateTextProperties(textProps: TextProperties, index?: number
       assertOptionalEnum(textProps.font.weight, `${name}.font.weight`, FONT_WEIGHT);
     }
     assertOptionalEnum(textProps.font.style, `${name}.font.style`, FONT_STYLE);
+  }
+  for (const [key, value] of [
+    ["fontFamily", textProps.fontFamily],
+    ["fontName", textProps.fontName],
+    ["fontPath", textProps.fontPath],
+  ] as const) {
+    if (value !== undefined && (typeof value !== "string" || value.trim().length === 0 || value.includes("\0"))) {
+      throw new ApexifyInputError(`${name}.${key} must be a non-empty string without NUL bytes.`);
+    }
   }
   const fontSize = textProps.font?.size ?? textProps.fontSize;
   assertOptionalFiniteNumber(fontSize, `${name}.fontSize`, { min: 0, exclusiveMin: true });
@@ -101,6 +128,7 @@ export function validateTextProperties(textProps: TextProperties, index?: number
 
   const fill = textProps.fill;
   if (fill !== undefined) assertRecord(fill, `${name}.fill`);
+  validateOptionalColor(fill?.color ?? textProps.color, `${name}.color`);
   assertOpacity(fill?.opacity ?? textProps.opacity, `${name}.opacity`);
   assertGradient(fill?.gradient ?? textProps.gradient, `${name}.gradient`);
 
@@ -112,6 +140,7 @@ export function validateTextProperties(textProps: TextProperties, index?: number
     assertOptionalFiniteNumber(shadow.offsetX, `${name}.shadow.offsetX`);
     assertOptionalFiniteNumber(shadow.offsetY, `${name}.shadow.offsetY`);
     assertOptionalFiniteNumber(shadow.blur, `${name}.shadow.blur`, { min: 0 });
+    validateOptionalColor(shadow.color, `${name}.shadow.color`);
     assertOpacity(shadow.opacity, `${name}.shadow.opacity`);
     assertGradient(shadow.gradient, `${name}.shadow.gradient`);
   }
@@ -119,18 +148,21 @@ export function validateTextProperties(textProps: TextProperties, index?: number
   if (glow !== undefined) {
     assertRecord(glow, `${name}.glow`);
     assertOptionalFiniteNumber(glow.intensity, `${name}.glow.intensity`, { min: 0 });
+    validateOptionalColor(glow.color, `${name}.glow.color`);
     assertOpacity(glow.opacity, `${name}.glow.opacity`);
     assertGradient(glow.gradient, `${name}.glow.gradient`);
   }
   const highlight = effects?.highlight ?? textProps.highlight;
   if (highlight !== undefined) {
     assertRecord(highlight, `${name}.highlight`);
+    validateOptionalColor(highlight.color, `${name}.highlight.color`);
     assertOpacity(highlight.opacity, `${name}.highlight.opacity`);
     assertGradient(highlight.gradient, `${name}.highlight.gradient`);
   }
 
   if (textProps.stroke !== undefined) {
     assertRecord(textProps.stroke, `${name}.stroke`);
+    validateOptionalColor(textProps.stroke.color, `${name}.stroke.color`);
     assertOptionalFiniteNumber(textProps.stroke.width, `${name}.stroke.width`, { min: 0 });
     assertOpacity(textProps.stroke.opacity, `${name}.stroke.opacity`);
     assertGradient(textProps.stroke.gradient, `${name}.stroke.gradient`);
@@ -138,6 +170,9 @@ export function validateTextProperties(textProps: TextProperties, index?: number
   }
 
   const dec = textProps.decorations;
+  if (dec !== undefined) assertRecord(dec, `${name}.decorations`);
+  validateOptionalBoolean(dec?.bold ?? textProps.bold, `${name}.bold`);
+  validateOptionalBoolean(dec?.italic ?? textProps.italic, `${name}.italic`);
   validateLineDecoration(dec?.underline ?? textProps.underline, `${name}.underline`);
   validateLineDecoration(dec?.overline ?? textProps.overline, `${name}.overline`);
   validateLineDecoration(dec?.strikethrough ?? textProps.strikethrough, `${name}.strikethrough`);
@@ -164,6 +199,7 @@ export function validateTextProperties(textProps: TextProperties, index?: number
   if (textProps.outlined !== undefined && typeof textProps.outlined !== "boolean") {
     throw new ApexifyInputError(`${name}.outlined must be a boolean.`);
   }
+  validateOptionalBoolean(textProps.includeCharMetrics, `${name}.includeCharMetrics`);
 
   if (textProps.measurementCanvas !== undefined) {
     assertRecord(textProps.measurementCanvas, `${name}.measurementCanvas`);
@@ -171,7 +207,7 @@ export function validateTextProperties(textProps: TextProperties, index?: number
     const h = textProps.measurementCanvas.height;
     assertOptionalFiniteNumber(w, `${name}.measurementCanvas.width`, { min: 0, exclusiveMin: true, integer: true });
     assertOptionalFiniteNumber(h, `${name}.measurementCanvas.height`, { min: 0, exclusiveMin: true, integer: true });
-    if (w !== undefined && h !== undefined) assertCanvasResourceLimits(w, h);
+    if (w !== undefined || h !== undefined) assertCanvasResourceLimits(w ?? 1, h ?? 1);
   }
   assertFiniteNumericLeaves(textProps, name);
 }
@@ -217,5 +253,6 @@ export function validateCreateTextOptions(options: CreateTextOptions | undefined
   validateSkew(group.skewX, "createText.options.groupTransform.skewX");
   validateSkew(group.skewY, "createText.options.groupTransform.skewY");
   assertOpacity(group.opacity, "createText.options.groupTransform.opacity");
+  assertOptionalEnum(group.blendMode, "createText.options.groupTransform.blendMode", COMPOSITE_MODES);
   validatePerspective(group.perspective, "createText.options.groupTransform.perspective");
 }
