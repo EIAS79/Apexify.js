@@ -278,14 +278,26 @@ export class ApexPainter {
   createText(
     textArray: TextProperties | TextProperties[],
     canvasBuffer: CanvasResults | Buffer,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<Buffer>;
+  createText(
+    textArray: TextProperties | TextProperties[],
+    canvasBuffer: CanvasResults | Buffer,
+    options: CreateTextOptions,
+    painterOpts?: PainterAssetRefsOptions
+  ): Promise<Buffer>;
+  createText(
+    textArray: TextProperties | TextProperties[],
+    canvasBuffer: CanvasResults | Buffer,
     optionsOrPainterOpts?: CreateTextOptions | PainterAssetRefsOptions,
     painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer> {
     const third = optionsOrPainterOpts as (CreateTextOptions & PainterAssetRefsOptions) | undefined;
     const isCreateTextOptions =
-      !!third &&
-      (Object.prototype.hasOwnProperty.call(third, "isGrouped") ||
-        Object.prototype.hasOwnProperty.call(third, "groupTransform"));
+      painterOpts !== undefined ||
+      (!!third &&
+        (Object.prototype.hasOwnProperty.call(third, "isGrouped") ||
+          Object.prototype.hasOwnProperty.call(third, "groupTransform")));
     const options = isCreateTextOptions ? optionsOrPainterOpts as CreateTextOptions : undefined;
     const assetOpts = isCreateTextOptions
       ? painterOpts
