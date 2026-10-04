@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened text validation for nested/legacy boolean flags, legacy font aliases, paint/effect/stroke/decoration colors, group blend modes, and one-dimensional `measurementCanvas` resource budgets.
 - Scene text layers can opt into the same `CreateTextOptions`, keeping scene and imperative rendering semantics aligned.
 
+### Image cache correctness
+
+- Windows absolute paths and `file:` URLs are now classified as filesystem sources before generic URI-scheme detection, so decoded-image cache keys include size/mtime metadata and invalidate when a file is replaced in place.
+
 ### Advanced image warping
 
 - Implemented the previously declared `createImage().distortion.type: "warp"` as a real inverse-mapped raster warp instead of a no-op.
