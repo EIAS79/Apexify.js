@@ -78,6 +78,35 @@ function png(width, height, color) {
       () => api.validateTextProperties({ text: 'x', x: 0, y: 0, font: { weight: 950 } }),
       /font\.weight/
     );
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, decorations: { bold: 'yes' } }),
+      /bold/
+    );
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, includeCharMetrics: 'yes' }),
+      /includeCharMetrics/
+    );
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, fill: { color: 42 } }),
+      /color/
+    );
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, fontPath: 42 }),
+      /fontPath/
+    );
+    assert.throws(
+      () => api.validateTextProperties({
+        text: 'x',
+        x: 0,
+        y: 0,
+        measurementCanvas: { width: Number.MAX_SAFE_INTEGER },
+      }),
+      api.ApexifyResourceLimitError
+    );
+    assert.throws(
+      () => api.validateCreateTextOptions({ groupTransform: { blendMode: 'not-a-mode' } }),
+      /blendMode/
+    );
 
     const pathOnlyIdentity = api.resolveTextFontIdentity({
       text: 'x',
@@ -167,6 +196,28 @@ function png(width, height, color) {
       { resolveAssetRefs: false }
     );
     assert(Buffer.isBuffer(legacyPainterOpts), 'legacy third-argument PainterAssetRefsOptions must remain compatible');
+
+    painter.assets.loadPalette('textParity', { accent: '#00ff00' });
+    const assetBase = await painter.createCanvas({ width: 80, height: 50, transparentBase: true });
+    const fourthArgResolved = await painter.createText(
+      {
+        text: 'X',
+        x: 8,
+        y: 36,
+        font: { size: 32, family: 'Arial' },
+        fill: { color: '$textParity.accent' },
+      },
+      assetBase,
+      {},
+      { resolveAssetRefs: true }
+    );
+    const resolvedRaw = await sharp(fourthArgResolved).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let greenPixels = 0;
+    for (let i = 0; i < resolvedRaw.data.length; i += 4) {
+      const [r, g, b, a] = resolvedRaw.data.subarray(i, i + 4);
+      if (a > 0 && g > 100 && g > r * 1.5 && g > b * 1.5) greenPixels += 1;
+    }
+    assert(greenPixels > 0, 'empty CreateTextOptions plus fourth painter options must still resolve asset refs');
 
     const scene = await painter.renderScene({
       width: 120,
