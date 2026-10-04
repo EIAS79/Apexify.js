@@ -1,5 +1,7 @@
-import type { SKRSContext2D } from "@napi-rs/canvas";
-import { resolveTextDecorations, resolveTextEffects, resolveTextStroke, type TextCurveConfig, type TextProperties } from "../types";
+import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import { resolveTextDecorations, resolveTextEffects, resolveTextPlacement, resolveTextStroke, type TextCurveConfig, type TextProperties } from "../types";
+import { getCanvasContext } from "../core/errors";
+import { applyTextPerspective, cropTransparentTextRaster } from "./text-transform";
 import {
   applyTextTransformations,
   computeWrappedTextLines,
@@ -24,6 +26,24 @@ import { computeCircularArcPlacements } from "./text-curved";
 /** Enhanced text renderer. Measurement and rendering share the same font/wrapping helpers. */
 export class EnhancedTextRenderer {
   static async renderText(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
+    const perspective = resolveTextPlacement(textProps).perspective;
+    if (perspective) {
+      const offscreen = createCanvas(ctx.canvas.width, ctx.canvas.height);
+      const offscreenCtx = getCanvasContext(offscreen);
+      const placement = textProps.placement
+        ? { ...textProps.placement, perspective: undefined }
+        : undefined;
+      await EnhancedTextRenderer.renderTextDirect(offscreenCtx, { ...textProps, placement });
+      const cropped = cropTransparentTextRaster(offscreen);
+      if (!cropped) return;
+      const warped = applyTextPerspective(cropped, perspective);
+      ctx.drawImage(warped.canvas, warped.x, warped.y);
+      return;
+    }
+    await EnhancedTextRenderer.renderTextDirect(ctx, textProps);
+  }
+
+  private static async renderTextDirect(ctx: SKRSContext2D, textProps: TextProperties): Promise<void> {
     ctx.save();
     try {
       const identity = resolveTextFontIdentity(textProps);

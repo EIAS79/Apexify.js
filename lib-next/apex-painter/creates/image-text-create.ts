@@ -1,4 +1,4 @@
-import type { CreateImageOptions, ImageProperties, TextMetrics, TextProperties } from "../../types";
+import type { CreateImageOptions, CreateTextOptions, ImageProperties, TextMetrics, TextProperties } from "../../types";
 import type { CanvasResults } from "../../types";
 import { ApexifyInputError } from "../../runtime/errors";
 import { assertCanvasResourceLimits } from "../../runtime/limits";
@@ -7,7 +7,7 @@ import { loadImageCached } from "../../image/image-properties";
 import { validateImageInput } from "../../image/image-validation";
 import { TextCreator } from "../../text/text-creator";
 import { TextMetricsCreator } from "../../text/text-metrics";
-import { validateTextInput, validateTextProperties } from "../../text/text-validation";
+import { validateCreateTextOptions, validateTextInput, validateTextProperties } from "../../text/text-validation";
 
 function canvasBufferOf(canvasBuffer: CanvasResults | Buffer, label: string): Buffer {
   const buffer = Buffer.isBuffer(canvasBuffer)
@@ -38,13 +38,15 @@ export class ImageTextCreate {
 
   async createText(
     textArray: TextProperties | TextProperties[],
-    canvasBuffer: CanvasResults | Buffer
+    canvasBuffer: CanvasResults | Buffer,
+    options?: CreateTextOptions
   ): Promise<Buffer> {
     const textList = validateTextInput(textArray);
+    validateCreateTextOptions(options);
     const buffer = canvasBufferOf(canvasBuffer, "createText");
     const decoded = await loadImageCached(buffer);
     assertCanvasResourceLimits(decoded.width, decoded.height);
-    return this.textCreator.createTextFromDecodedBase(textList, canvasBuffer, decoded);
+    return this.textCreator.createTextFromDecodedBase(textList, canvasBuffer, decoded, options);
   }
 
   measureText(textProps: TextProperties): Promise<TextMetrics> {

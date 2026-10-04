@@ -10,6 +10,7 @@ import type {
   OutputFormat,
   CanvasConfig,
   CreateImageOptions,
+  CreateTextOptions,
   ImageProperties,
   SaveOptions,
   SaveResult,
@@ -277,10 +278,24 @@ export class ApexPainter {
   createText(
     textArray: TextProperties | TextProperties[],
     canvasBuffer: CanvasResults | Buffer,
+    optionsOrPainterOpts?: CreateTextOptions | PainterAssetRefsOptions,
     painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer> {
-    const texts = this.maybeResolveRefs(textArray, painterOpts?.resolveAssetRefs);
-    return this.imageTextCreate.createText(texts, canvasBuffer);
+    const third = optionsOrPainterOpts as (CreateTextOptions & PainterAssetRefsOptions) | undefined;
+    const isCreateTextOptions =
+      !!third &&
+      (Object.prototype.hasOwnProperty.call(third, "isGrouped") ||
+        Object.prototype.hasOwnProperty.call(third, "groupTransform"));
+    const options = isCreateTextOptions ? optionsOrPainterOpts as CreateTextOptions : undefined;
+    const assetOpts = isCreateTextOptions
+      ? painterOpts
+      : optionsOrPainterOpts as PainterAssetRefsOptions | undefined;
+    const texts = this.maybeResolveRefs(textArray, assetOpts?.resolveAssetRefs);
+    const resolvedOptions =
+      assetOpts?.resolveAssetRefs && options !== undefined
+        ? this.prepareForRender(options)
+        : options;
+    return this.imageTextCreate.createText(texts, canvasBuffer, resolvedOptions);
   }
 
   measureText(textProps: TextProperties, painterOpts?: PainterAssetRefsOptions): Promise<TextMetrics> {

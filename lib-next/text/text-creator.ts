@@ -1,5 +1,5 @@
 import { createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
-import type { TextProperties } from "../types";
+import type { CreateTextOptions, TextProperties } from "../types";
 import { assignCanvasResultsBuffer } from "../canvas/canvas-creator";
 import type { CanvasResults } from "../types";
 import { EnhancedTextRenderer } from "./enhanced-text-renderer";
@@ -8,6 +8,12 @@ import { loadImageCached } from "../image/image-properties";
 import { assertCanvasResourceLimits } from "../runtime/limits";
 import { ApexifyDecodeError, ApexifyError, ApexifyInputError } from "../runtime/errors";
 import { encodeTextCanvasPng } from "./text-png-encoder";
+import { validateCreateTextOptions } from "./text-validation";
+import {
+  applyTextPerspective,
+  cropTransparentTextRaster,
+  drawTextGroupSurface,
+} from "./text-transform";
 
 /** Extended class for text creation functionality. */
 export class TextCreator {
@@ -33,14 +39,35 @@ export class TextCreator {
     }
   }
 
-  private async renderValidatedTextsOntoContext(ctx: SKRSContext2D, textList: TextProperties[]): Promise<void> {
-    for (const textProps of textList) await this.renderEnhancedText(ctx, textProps);
+  private async renderValidatedTextsOntoContext(
+    ctx: SKRSContext2D,
+    textList: TextProperties[],
+    options?: CreateTextOptions
+  ): Promise<void> {
+    const group = options?.groupTransform;
+    if (!group && !options?.isGrouped) {
+      for (const textProps of textList) await this.renderEnhancedText(ctx, textProps);
+      return;
+    }
+
+    const groupCanvas = createCanvas(ctx.canvas.width, ctx.canvas.height);
+    const groupCtx = getCanvasContext(groupCanvas);
+    for (const textProps of textList) await this.renderEnhancedText(groupCtx, textProps);
+    let surface = cropTransparentTextRaster(groupCanvas);
+    if (!surface) return;
+    if (group?.perspective) surface = applyTextPerspective(surface, group.perspective);
+    drawTextGroupSurface(ctx, surface, group ?? {});
   }
 
   /** Renders one or more rich text objects onto an existing context (no buffer round-trip). */
-  async renderTextsOntoContext(ctx: SKRSContext2D, textArray: TextProperties | TextProperties[]): Promise<void> {
+  async renderTextsOntoContext(
+    ctx: SKRSContext2D,
+    textArray: TextProperties | TextProperties[],
+    options?: CreateTextOptions
+  ): Promise<void> {
     const textList = this.validateTextArray(textArray);
-    await this.renderValidatedTextsOntoContext(ctx, textList);
+    validateCreateTextOptions(options);
+    await this.renderValidatedTextsOntoContext(ctx, textList, options);
   }
 
   /**
@@ -50,27 +77,33 @@ export class TextCreator {
   async createTextFromDecodedBase(
     textArray: TextProperties | TextProperties[],
     canvasBuffer: CanvasResults | Buffer,
-    existingImage: Image
+    existingImage: Image,
+    options?: CreateTextOptions
   ): Promise<Buffer> {
     const textList = Array.isArray(textArray) ? textArray : [textArray];
     const canvas = createCanvas(existingImage.width, existingImage.height);
     const ctx = getCanvasContext(canvas);
     ctx.drawImage(existingImage, 0, 0);
-    await this.renderValidatedTextsOntoContext(ctx, textList);
+    await this.renderValidatedTextsOntoContext(ctx, textList, options);
     const encoded = await encodeTextCanvasPng(canvas);
     return assignCanvasResultsBuffer(canvasBuffer, encoded);
   }
 
   /** Creates text on an existing canvas buffer with enhanced styling options. */
-  async createText(textArray: TextProperties | TextProperties[], canvasBuffer: CanvasResults | Buffer): Promise<Buffer> {
+  async createText(
+    textArray: TextProperties | TextProperties[],
+    canvasBuffer: CanvasResults | Buffer,
+    options?: CreateTextOptions
+  ): Promise<Buffer> {
     try {
       if (!canvasBuffer) throw new ApexifyInputError("createText: canvasBuffer is required.");
       const textList = this.validateTextArray(textArray);
+      validateCreateTextOptions(options);
       const sourceBuffer = Buffer.isBuffer(canvasBuffer) ? canvasBuffer : canvasBuffer?.buffer;
       if (!sourceBuffer) throw new ApexifyInputError("Invalid canvasBuffer provided. It should be a Buffer or CanvasResults object with a buffer.");
       const existingImage = await loadImageCached(sourceBuffer);
       assertCanvasResourceLimits(existingImage.width, existingImage.height);
-      return await this.createTextFromDecodedBase(textList, canvasBuffer, existingImage);
+      return await this.createTextFromDecodedBase(textList, canvasBuffer, existingImage, options);
     } catch (error) {
       if (error instanceof ApexifyError) throw error;
       throw new ApexifyDecodeError("createText failed.", { cause: error });

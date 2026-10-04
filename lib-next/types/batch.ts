@@ -1,6 +1,6 @@
 import type { CanvasConfig } from "./canvas";
 import type { ImageProperties } from "./image";
-import type { TextProperties } from "./text";
+import type { CreateTextOptions, TextProperties } from "./text";
 import type { PainterAssetRefsOptions } from "./painter-resolve";
 import type { AssetResolveFn } from "./assets";
 
@@ -70,6 +70,7 @@ export interface BatchChainPainter {
   createText(
     textArray: TextProperties | TextProperties[],
     canvasBuffer: unknown,
+    optionsOrPainterOpts?: CreateTextOptions | PainterAssetRefsOptions,
     painterOpts?: PainterAssetRefsOptions
   ): Promise<Buffer>;
 }
