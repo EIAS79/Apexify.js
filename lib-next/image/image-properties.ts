@@ -65,11 +65,24 @@ async function sourceCacheKey(src: MediaSource): Promise<string | undefined> {
   }
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
+
+  // Windows absolute paths (for example C:\\assets\\image.png) match the generic
+  // URI-scheme regex because of the drive-letter colon. Classify filesystem paths
+  // before URL schemes so path and file: URL cache keys include file metadata.
+  if (path.isAbsolute(trimmed)) {
+    try {
+      const stat = await fs.stat(trimmed);
+      return `file:${digestCacheKey(`${trimmed}\0${stat.size}\0${stat.mtimeMs}`)}`;
+    } catch {
+      return `file:${digestCacheKey(trimmed)}`;
+    }
+  }
+
   if (/^https?:\/\//i.test(trimmed)) return `remote:${digestCacheKey(trimmed)}`;
   if (/^data:/i.test(trimmed)) return `data:${digestCacheKey(trimmed)}`;
   if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return `url:${digestCacheKey(trimmed)}`;
 
-  const absolute = path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
+  const absolute = path.resolve(process.cwd(), trimmed);
   try {
     const stat = await fs.stat(absolute);
     return `file:${digestCacheKey(`${absolute}\0${stat.size}\0${stat.mtimeMs}`)}`;
