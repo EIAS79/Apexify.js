@@ -81,6 +81,27 @@ await writeFile("output.png", png);
 
 `createCanvas()` returns `CanvasResults` (`buffer` plus canvas metadata). Most raster drawing/rendering methods return a PNG `Buffer`.
 
+### Advanced text composition
+
+`createText()` keeps the legacy third-argument asset-resolution form, while grouped text composition uses `CreateTextOptions` plus an optional fourth painter-options argument:
+
+```ts
+const output = await painter.createText(
+  [
+    { text: "Apex", x: 60, y: 90, font: { size: 42, weight: 700 } },
+    { text: "ify", x: 155, y: 90, font: { size: 42, style: "oblique" } },
+  ],
+  canvas,
+  {
+    isGrouped: true,
+    groupTransform: { rotation: -4, scaleX: 1.05, opacity: 0.95 },
+  },
+  { resolveAssetRefs: true }
+);
+```
+
+Per-text placement also supports scale, skew, and corner-pin perspective. Text layout honors `maxWidth` and `maxHeight`, including curved text; font weight/style, gradients, strokes, effects, legacy aliases, and scene text layers share the same validated runtime semantics.
+
 The repository keeps equivalent ESM, CommonJS, and TypeScript examples under `examples/phase13/`; CI installs the packed `.tgz` into fresh consumer fixtures and executes/typechecks those examples.
 
 ## Package-root API
