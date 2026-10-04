@@ -1,7 +1,7 @@
 import type { SceneLayer, SceneRenderInput } from "../types";
 import { validateCanvasConfig } from "../canvas/canvas-validation";
 import { validateImageInput } from "../image/image-validation";
-import { validateTextInput } from "../text/text-validation";
+import { validateCreateTextOptions, validateTextInput } from "../text/text-validation";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyInputError, ApexifyResourceLimitError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
@@ -85,6 +85,7 @@ function validateLayer(layer: SceneLayer, depth: number, maxDepth: number, count
     }
     case "text": {
       const list = validateTextInput(layer.texts);
+      validateCreateTextOptions(layer.options);
       counters.textLayers += 1;
       counters.textContent += list.reduce((sum, text) => sum + text.text.length, 0);
       assertWithinLimit("maxSceneTextLayers", counters.textLayers);

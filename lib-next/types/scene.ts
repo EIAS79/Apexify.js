@@ -1,7 +1,7 @@
 import type { Canvas, SKRSContext2D } from "@napi-rs/canvas";
 import type { CanvasConfig } from "./canvas";
 import type { CreateImageOptions, ImageProperties } from "./image";
-import type { TextProperties } from "./text";
+import type { CreateTextOptions, TextProperties } from "./text";
 import type { CustomOptions } from "./path";
 import type { GIFInputFrame } from "./gif";
 import type { PathCommand } from "./pathCommands";
@@ -37,7 +37,7 @@ export type SceneVideoFrameSlot = string | Buffer | { source: string | Buffer; r
 /** One drawable item in deterministic paint order (array index 0 is bottom, final index is top). */
 export type SceneLayer =
   | { type: "image"; images: ImageProperties | ImageProperties[]; options?: CreateImageOptions }
-  | { type: "text"; texts: TextProperties | TextProperties[] }
+  | { type: "text"; texts: TextProperties | TextProperties[]; options?: CreateTextOptions }
   | { type: "path"; path: PathCommand[] | unknown; options?: Path2DDrawOptions }
   | {
       type: "imageBuffer";
@@ -120,7 +120,11 @@ export interface SceneCreatorDeps {
     ): Promise<void>;
   };
   textCreator: {
-    renderTextsOntoContext(ctx: SKRSContext2D, texts: TextProperties | TextProperties[]): Promise<void>;
+    renderTextsOntoContext(
+      ctx: SKRSContext2D,
+      texts: TextProperties | TextProperties[],
+      options?: CreateTextOptions
+    ): Promise<void>;
   };
   path2DCreator: {
     drawPathOntoContext(

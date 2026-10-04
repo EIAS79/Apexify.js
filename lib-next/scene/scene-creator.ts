@@ -56,7 +56,7 @@ export class SceneCreator {
           await this.deps.imageCreator.paintImageLayersOntoContext(ctx, layer.images, size, layer.options);
           break;
         case "text":
-          await this.deps.textCreator.renderTextsOntoContext(ctx, layer.texts);
+          await this.deps.textCreator.renderTextsOntoContext(ctx, layer.texts, layer.options);
           break;
         case "path":
           this.deps.path2DCreator.drawPathOntoContext(ctx, layer.path, size, layer.options);

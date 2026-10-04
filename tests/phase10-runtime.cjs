@@ -44,6 +44,148 @@ function png(width, height, color) {
     (error) => error instanceof api.ApexifyInputError && /missing|invalid/i.test(error.message)
   );
 
+  // TEXT PARITY: bounded multiline, curve wrapping, strict validation, advanced fonts,
+  // legacy aliases, affine transforms, perspective and grouped composition.
+  {
+    const maxHeightMetrics = await new api.TextMetricsCreator().measureText({
+      text: 'one\ntwo\nthree',
+      x: 0,
+      y: 0,
+      font: { size: 10, family: 'Arial', weight: 500, style: 'oblique' },
+      layout: { lineHeight: 1, maxHeight: 20 },
+    });
+    assert.equal(maxHeightMetrics.lineCount, 2, 'maxHeight must limit multiline text without maxWidth');
+
+    const curvedWrapped = await new api.TextMetricsCreator().measureText({
+      text: 'alpha beta gamma delta',
+      x: 50,
+      y: 50,
+      font: { size: 16, family: 'Arial' },
+      layout: { maxWidth: 65, lineHeight: 1.2 },
+      textOnCurve: { sweepAngle: 120, radius: 80 },
+    });
+    assert(curvedWrapped.lineCount > 1, 'textOnCurve must honor wrapped lines');
+
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, textOnCurve: { sweepAngle: 360 } }),
+      /< 360/
+    );
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, stroke: { style: 'invalid' } }),
+      /stroke\.style/
+    );
+    assert.throws(
+      () => api.validateTextProperties({ text: 'x', x: 0, y: 0, font: { weight: 950 } }),
+      /font\.weight/
+    );
+
+    const pathOnlyIdentity = api.resolveTextFontIdentity({
+      text: 'x',
+      x: 0,
+      y: 0,
+      font: { path: './fonts/example.ttf' },
+    });
+    assert.match(pathOnlyIdentity.family, /^Apexify_/);
+
+    const gradientCanvas = api.createCanvas(20, 20);
+    const gradientCtx = api.getCanvasContext(gradientCanvas);
+    assert.doesNotThrow(() => api.createTextGradient(
+      gradientCtx,
+      {
+        type: 'linear',
+        startX: 2,
+        startY: 3,
+        endX: 18,
+        endY: 4,
+        rotate: 25,
+        pivotX: 10,
+        pivotY: 10,
+        colors: [{ stop: 0, color: '#ff0000' }, { stop: 1, color: '#0000ff' }],
+      },
+      0, 0, 20, 20
+    ));
+
+    const painter = new api.ApexPainter();
+    const textBase = await painter.createCanvas({ width: 160, height: 100, transparentBase: true });
+    const advanced = await painter.createText(
+      [
+        {
+          text: 'A',
+          x: 30,
+          y: 45,
+          font: { size: 28, family: 'Arial', weight: 600, style: 'oblique' },
+          isBold: true,
+          outlined: true,
+          fill: { color: '#ff0000' },
+          placement: {
+            scaleX: 1.15,
+            scaleY: 0.9,
+            skewX: 8,
+            skewY: -4,
+            perspective: {
+              points: [
+                { x: 15, y: 10 },
+                { x: 70, y: 14 },
+                { x: 66, y: 70 },
+                { x: 12, y: 66 },
+              ],
+              interpolation: 'bilinear',
+              edgeMode: 'transparent',
+            },
+          },
+        },
+        {
+          text: 'B',
+          x: 90,
+          y: 52,
+          font: { size: 24, family: 'Arial' },
+          fill: { color: '#0000ff' },
+        },
+      ],
+      textBase,
+      {
+        isGrouped: true,
+        groupTransform: {
+          translateX: 5,
+          translateY: 2,
+          rotation: 5,
+          scaleX: 1.05,
+          scaleY: 1,
+          skewX: 3,
+          opacity: 0.9,
+        },
+      }
+    );
+    const advancedRaw = await sharp(advanced).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let alphaPixels = 0;
+    for (let i = 3; i < advancedRaw.data.length; i += 4) if (advancedRaw.data[i] > 0) alphaPixels += 1;
+    assert(alphaPixels > 0, 'perspective/grouped advanced text must produce visible pixels');
+
+    const legacyPainterOpts = await painter.createText(
+      { text: 'asset-compatible', x: 5, y: 90, font: { size: 10, family: 'Arial' } },
+      textBase,
+      { resolveAssetRefs: false }
+    );
+    assert(Buffer.isBuffer(legacyPainterOpts), 'legacy third-argument PainterAssetRefsOptions must remain compatible');
+
+    const scene = await painter.renderScene({
+      width: 120,
+      height: 80,
+      layers: [{
+        type: 'text',
+        texts: [
+          { text: 'G', x: 20, y: 40, font: { size: 24, family: 'Arial' }, fill: { color: '#ffffff' } },
+          { text: 'R', x: 45, y: 40, font: { size: 24, family: 'Arial' }, fill: { color: '#ffffff' } },
+        ],
+        options: {
+          isGrouped: true,
+          groupTransform: { rotation: 8, scaleX: 1.1, skewY: 2 },
+        },
+      }],
+    });
+    assert(Buffer.isBuffer(scene), 'scene text layers must accept CreateTextOptions');
+  }
+
   // PATH: finite validation and all authoritative commands; malformed numeric state rejects before native backend.
   const pathCreator = new api.Path2DCreator();
   const commands = [

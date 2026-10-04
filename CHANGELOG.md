@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Advanced text composition parity
+
+- Completed `createText()` typography parity: path-only custom fonts now receive a deterministic registered identity, explicit numeric font weights (100–900) and normal/italic/oblique styles are supported, and deprecated `isBold` / `outlined` aliases render instead of being declaration-only.
+- `layout.maxHeight` now limits ordinary multiline text even without `maxWidth`; curved text consumes wrapped/max-height lines; a 360° sweep is rejected instead of silently falling back to straight text.
+- Text gradients now honor explicit linear endpoints plus shared rotate/pivot geometry for linear/radial/conic paint; stroke style is runtime-enum validated.
+- Added per-text scale/skew and raster corner-pin perspective, plus grouped text translation/rotation/scale/skew/opacity/blend/perspective through `CreateTextOptions`.
+- Existing `createText(texts, canvas, { resolveAssetRefs })` calls remain source-compatible; advanced text options use a discriminated third argument with optional fourth painter options.
+- Scene text layers can opt into the same `CreateTextOptions`, keeping scene and imperative rendering semantics aligned.
+
 ### Advanced image warping
 
 - Implemented the previously declared `createImage().distortion.type: "warp"` as a real inverse-mapped raster warp instead of a no-op.
