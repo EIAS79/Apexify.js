@@ -12,6 +12,29 @@ const registeredFonts = new Set<string>();
 const pendingFonts = new Map<string, Promise<void>>();
 
 /** Register a local font once per process. Missing/invalid fonts fail predictably instead of silently changing metrics. */
+function stableFontAlias(fontPath: string): string {
+  const base = path.basename(fontPath, path.extname(fontPath)).replace(/[^a-zA-Z0-9_-]+/g, "_") || "font";
+  let hash = 2166136261;
+  for (const char of fontPath) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `Apexify_${base}_${(hash >>> 0).toString(16)}`;
+}
+
+export function resolveTextFontIdentity(textProps: TextProperties): {
+  path?: string;
+  family: string;
+} {
+  const fontPath = textProps.font?.path ?? textProps.fontPath;
+  const explicitName = textProps.font?.name ?? textProps.fontName;
+  const family = textProps.font?.family ?? textProps.fontFamily;
+  if (fontPath) {
+    return { path: fontPath, family: explicitName ?? family ?? stableFontAlias(fontPath) };
+  }
+  return { family: explicitName ?? family ?? "Arial" };
+}
+
 export async function registerTextFontFromPath(fontPath: string, fontName: string): Promise<void> {
   const fullPath = path.isAbsolute(fontPath) ? fontPath : path.join(process.cwd(), fontPath);
   const key = `${fullPath}\u0000${fontName}`;
@@ -45,9 +68,24 @@ export function applyTextTransformations(ctx: SKRSContext2D, textProps: TextProp
   const pl = resolveTextPlacement(textProps);
   const fl = resolveTextFill(textProps);
   const rotation = pl.rotation ?? 0;
-  if (rotation !== 0) {
+  const scaleX = pl.scaleX ?? 1;
+  const scaleY = pl.scaleY ?? 1;
+  const skewX = ((pl.skewX ?? 0) * Math.PI) / 180;
+  const skewY = ((pl.skewY ?? 0) * Math.PI) / 180;
+  const hasAffine =
+    rotation !== 0 ||
+    scaleX !== 1 ||
+    scaleY !== 1 ||
+    skewX !== 0 ||
+    skewY !== 0;
+
+  if (hasAffine) {
     ctx.translate(textProps.x, textProps.y);
-    ctx.rotate((rotation * Math.PI) / 180);
+    if (rotation !== 0) ctx.rotate((rotation * Math.PI) / 180);
+    if (skewX !== 0 || skewY !== 0) {
+      ctx.transform(1, Math.tan(skewY), Math.tan(skewX), 1, 0, 0);
+    }
+    if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY);
     ctx.translate(-textProps.x, -textProps.y);
   }
   if (fl.opacity !== undefined) ctx.globalAlpha = Math.max(0, Math.min(1, fl.opacity));
@@ -59,12 +97,18 @@ export function resolveTextFontSize(textProps: TextProperties): number {
 
 export function setupTextFont(ctx: SKRSContext2D, textProps: TextProperties): void {
   const fontSize = resolveTextFontSize(textProps);
-  const fontFamily = textProps.font?.name ?? textProps.fontName ?? textProps.font?.family ?? textProps.fontFamily ?? "Arial";
+  const fontFamily = resolveTextFontIdentity(textProps).family;
   const dec = resolveTextDecorations(textProps);
-  let fontString = "";
-  if (dec.bold) fontString += "bold ";
-  if (dec.italic) fontString += "italic ";
-  ctx.font = `${fontString}${fontSize}px "${fontFamily}"`;
+  const explicitStyle = textProps.font?.style;
+  const explicitWeight = textProps.font?.weight;
+  const style = explicitStyle ?? (dec.italic ? "italic" : "normal");
+  const weight =
+    explicitWeight !== undefined
+      ? String(explicitWeight)
+      : dec.bold
+        ? "bold"
+        : "normal";
+  ctx.font = `${style} ${weight} ${fontSize}px "${fontFamily}"`;
 
   const lay = resolveTextLayout(textProps);
   if (lay.letterSpacing !== undefined) ctx.letterSpacing = `${lay.letterSpacing}px`;

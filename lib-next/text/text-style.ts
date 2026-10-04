@@ -7,10 +7,29 @@ import type {
   TextProperties,
   TextShadowStyle,
 } from "../types";
-import { resolveTextDecorations, resolveTextEffects, resolveTextFill } from "../types";
+import { resolveTextDecorations, resolveTextEffects, resolveTextFill, resolveTextStroke } from "../types";
 import type { gradient } from "../types";
 import { createRepeatingGradientPattern } from "../render/repeating-gradient-pattern";
 import { TEXT_MIDDLE_TO_ALPHABETIC } from "./text-layout";
+
+function rotatePoint(
+  x: number,
+  y: number,
+  angleDeg: number,
+  pivotX: number,
+  pivotY: number
+): { x: number; y: number } {
+  if (angleDeg === 0) return { x, y };
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = x - pivotX;
+  const dy = y - pivotY;
+  return {
+    x: pivotX + dx * cos - dy * sin,
+    y: pivotY + dx * sin + dy * cos,
+  };
+}
 
 export function createTextGradient(
   ctx: SKRSContext2D,
@@ -27,9 +46,22 @@ export function createTextGradient(
   let grad: CanvasGradient;
   const width = Math.max(1, Math.abs(endX - startX));
   const height = Math.max(1, Math.abs(endY - startY));
+  const rotate = gradientOptions.rotate ?? 0;
 
   if (gradientOptions.type === "linear") {
-    grad = ctx.createLinearGradient(startX, startY, endX, endY);
+    let p0 = {
+      x: gradientOptions.startX ?? startX,
+      y: gradientOptions.startY ?? startY,
+    };
+    let p1 = {
+      x: gradientOptions.endX ?? endX,
+      y: gradientOptions.endY ?? endY,
+    };
+    const pivotX = gradientOptions.pivotX ?? (p0.x + p1.x) / 2;
+    const pivotY = gradientOptions.pivotY ?? (p0.y + p1.y) / 2;
+    p0 = rotatePoint(p0.x, p0.y, rotate, pivotX, pivotY);
+    p1 = rotatePoint(p1.x, p1.y, rotate, pivotX, pivotY);
+    grad = ctx.createLinearGradient(p0.x, p0.y, p1.x, p1.y);
     for (const colorStop of gradientOptions.colors) grad.addColorStop(colorStop.stop, colorStop.color);
     if (gradientOptions.repeat && gradientOptions.repeat !== "no-repeat") {
       return createTextRepeatingGradientPattern(ctx, grad, gradientOptions.repeat, width, height);
@@ -38,12 +70,24 @@ export function createTextGradient(
   }
 
   if (gradientOptions.type === "radial") {
+    let p0 = {
+      x: gradientOptions.startX ?? startX,
+      y: gradientOptions.startY ?? startY,
+    };
+    let p1 = {
+      x: gradientOptions.endX ?? endX,
+      y: gradientOptions.endY ?? endY,
+    };
+    const pivotX = gradientOptions.pivotX ?? (p0.x + p1.x) / 2;
+    const pivotY = gradientOptions.pivotY ?? (p0.y + p1.y) / 2;
+    p0 = rotatePoint(p0.x, p0.y, rotate, pivotX, pivotY);
+    p1 = rotatePoint(p1.x, p1.y, rotate, pivotX, pivotY);
     grad = ctx.createRadialGradient(
-      gradientOptions.startX ?? startX,
-      gradientOptions.startY ?? startY,
+      p0.x,
+      p0.y,
       gradientOptions.startRadius ?? 0,
-      gradientOptions.endX ?? endX,
-      gradientOptions.endY ?? endY,
+      p1.x,
+      p1.y,
       gradientOptions.endRadius ?? 0
     );
     for (const colorStop of gradientOptions.colors) grad.addColorStop(colorStop.stop, colorStop.color);
@@ -54,11 +98,15 @@ export function createTextGradient(
   }
 
   if (gradientOptions.type === "conic") {
-    const centerX = gradientOptions.centerX ?? (startX + endX) / 2;
-    const centerY = gradientOptions.centerY ?? (startY + endY) / 2;
-    const startAngle = gradientOptions.startAngle ?? 0;
-    const angleRad = (startAngle * Math.PI) / 180;
-    grad = ctx.createConicGradient(angleRad, centerX, centerY);
+    let center = {
+      x: gradientOptions.centerX ?? (startX + endX) / 2,
+      y: gradientOptions.centerY ?? (startY + endY) / 2,
+    };
+    const pivotX = gradientOptions.pivotX ?? center.x;
+    const pivotY = gradientOptions.pivotY ?? center.y;
+    center = rotatePoint(center.x, center.y, rotate, pivotX, pivotY);
+    const angleRad = ((gradientOptions.startAngle ?? 0) + rotate) * Math.PI / 180;
+    grad = ctx.createConicGradient(angleRad, center.x, center.y);
     for (const colorStop of gradientOptions.colors) grad.addColorStop(colorStop.stop, colorStop.color);
     return grad;
   }
@@ -328,7 +376,7 @@ export function renderEnhancedTextLine(ctx: SKRSContext2D, text: string, x: numb
   // Plain text is by far the most frequent path and needs neither metrics nor nested
   // save/restore state. The outer EnhancedTextRenderer already owns a saved context.
   // Gradient/effects/stroke/decorations retain the full feature path below.
-  if (!effects.highlight && !effects.glow && !effects.shadow && !textProps.stroke && !hasLineDecorations && !fill.gradient) {
+  if (!effects.highlight && !effects.glow && !effects.shadow && !resolveTextStroke(textProps) && !hasLineDecorations && !fill.gradient) {
     ctx.fillStyle = fill.color ?? "#000000";
     ctx.fillText(text, x, y);
     return;
@@ -338,10 +386,11 @@ export function renderEnhancedTextLine(ctx: SKRSContext2D, text: string, x: numb
   const textWidth = metrics.width;
   const fontSize = textProps.font?.size ?? textProps.fontSize ?? 16;
   const textHeight = fontSize;
+  const stroke = resolveTextStroke(textProps);
   if (effects.highlight) renderTextHighlight(ctx, x, y, textWidth, textHeight, effects.highlight);
   if (effects.glow) renderTextGlow(ctx, text, x, y, effects.glow);
   if (effects.shadow) renderTextShadow(ctx, text, x, y, effects.shadow);
-  if (textProps.stroke) renderTextStroke(ctx, text, x, y, textProps.stroke);
+  if (stroke) renderTextStroke(ctx, text, x, y, stroke);
   renderTextFill(ctx, text, x, y, textProps);
   if (hasLineDecorations) renderTextDecorations(ctx, text, x, y, textWidth, textHeight, textProps);
 }

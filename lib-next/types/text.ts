@@ -1,4 +1,5 @@
 import type { gradient } from "./gradient";
+import type { ImageEdgeMode, ImageInterpolationMode } from "./image";
 
 /**
  * Text styling types for {@link TextProperties}, used by **`createText`**, **`measureText`**, **`TextCreator.renderTextsOntoContext`**, and scene **`text`** layers.
@@ -92,6 +93,15 @@ export type TextLineDecoration =
     };
 
 /** Typographic extras: line-edge marks plus bold/italic flags (canvas font string). Prefer nested `decorations` over flat `underline` / `bold` / etc. */
+export type TextFontWeight =
+  | number
+  | "normal"
+  | "bold"
+  | "bolder"
+  | "lighter";
+
+export type TextFontStyle = "normal" | "italic" | "oblique";
+
 export interface TextDecorations {
   underline?: TextLineDecoration;
   overline?: TextLineDecoration;
@@ -169,10 +179,50 @@ export interface TextLayout {
 }
 
 /** Anchor, baseline, and rotation around `(x, y)`. Prefer over top-level `textAlign` / `rotation` / etc. */
+export interface TextPerspectiveOptions {
+  /** Destination quad: top-left, top-right, bottom-right, bottom-left. */
+  points: [
+    { x: number; y: number },
+    { x: number; y: number },
+    { x: number; y: number },
+    { x: number; y: number }
+  ];
+  interpolation?: ImageInterpolationMode;
+  edgeMode?: ImageEdgeMode;
+}
+
 export interface TextPlacement {
   textAlign?: TextAlignMode;
   textBaseline?: TextBaselineMode;
   rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+  /** Horizontal shear in degrees. Must remain strictly between -90 and 90. */
+  skewX?: number;
+  /** Vertical shear in degrees. Must remain strictly between -90 and 90. */
+  skewY?: number;
+  /** Raster corner-pin applied after normal text layout/effects and affine transforms. */
+  perspective?: TextPerspectiveOptions;
+}
+
+export interface TextGroupTransformOptions {
+  rotation?: number;
+  translateX?: number;
+  translateY?: number;
+  scaleX?: number;
+  scaleY?: number;
+  skewX?: number;
+  skewY?: number;
+  pivotX?: number;
+  pivotY?: number;
+  opacity?: number;
+  blendMode?: GlobalCompositeOperation;
+  perspective?: TextPerspectiveOptions;
+}
+
+export interface CreateTextOptions {
+  isGrouped?: boolean;
+  groupTransform?: TextGroupTransformOptions;
 }
 
 /** Primary fill paint and overall draw opacity. Prefer over top-level `color` / `gradient` / `opacity`. */
@@ -188,7 +238,7 @@ export function resolveTextDecorations(p: TextProperties): TextDecorations {
     underline: p.decorations?.underline ?? p.underline,
     overline: p.decorations?.overline ?? p.overline,
     strikethrough: p.decorations?.strikethrough ?? p.strikethrough,
-    bold: p.decorations?.bold ?? p.bold,
+    bold: p.decorations?.bold ?? p.bold ?? p.isBold,
     italic: p.decorations?.italic ?? p.italic,
   };
 }
@@ -219,6 +269,11 @@ export function resolveTextPlacement(p: TextProperties): TextPlacement {
     textAlign: p.placement?.textAlign ?? p.textAlign,
     textBaseline: p.placement?.textBaseline ?? p.textBaseline,
     rotation: p.placement?.rotation ?? p.rotation,
+    scaleX: p.placement?.scaleX ?? p.scaleX,
+    scaleY: p.placement?.scaleY ?? p.scaleY,
+    skewX: p.placement?.skewX ?? p.skewX,
+    skewY: p.placement?.skewY ?? p.skewY,
+    perspective: p.placement?.perspective,
   };
 }
 
@@ -231,6 +286,12 @@ export function resolveTextFill(p: TextProperties): TextFill {
   };
 }
 
+/** Legacy `outlined:true` maps to the default outline unless an explicit stroke exists. */
+export function resolveTextStroke(p: TextProperties): TextStrokeStyle | undefined {
+  if (p.stroke) return p.stroke;
+  return p.outlined ? { color: "#000000", width: 1, style: "solid" } : undefined;
+}
+
 export interface TextProperties {
   text: string;
   x: number;
@@ -241,6 +302,10 @@ export interface TextProperties {
     family?: string;
     name?: string;
     path?: string;
+    /** CSS/canvas font weight. Numeric values accept 100..900. */
+    weight?: TextFontWeight;
+    /** Explicit font style; overrides legacy decorations.italic when supplied. */
+    style?: TextFontStyle;
   };
   /** @deprecated Use `font.size` */
   fontSize?: number;
@@ -310,6 +375,14 @@ export interface TextProperties {
   textBaseline?: TextBaselineMode;
   /** @deprecated Prefer `placement.rotation` */
   rotation?: number;
+  /** @deprecated Prefer `placement.scaleX` */
+  scaleX?: number;
+  /** @deprecated Prefer `placement.scaleY` */
+  scaleY?: number;
+  /** @deprecated Prefer `placement.skewX` */
+  skewX?: number;
+  /** @deprecated Prefer `placement.skewY` */
+  skewY?: number;
 
   /** @deprecated Prefer `fill.color` */
   color?: string;
@@ -328,12 +401,12 @@ export interface TextProperties {
     width?: number;
     height?: number;
   };
+
+  /** @deprecated Use `decorations.bold`; retained as a rendered legacy alias. */
+  isBold?: boolean;
+  /** @deprecated Use `stroke`; true enables the default text outline. */
+  outlined?: boolean;
 }
 
 /** @deprecated Use TextProperties instead */
-export interface TextObject extends TextProperties {
-  /** @deprecated Use bold instead */
-  isBold?: boolean;
-  /** @deprecated Use outlined instead of stroke */
-  outlined?: boolean;
-}
+export interface TextObject extends TextProperties {}

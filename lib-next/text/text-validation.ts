@@ -1,4 +1,4 @@
-import type { TextProperties } from "../types";
+import type { CreateTextOptions, TextPerspectiveOptions, TextProperties } from "../types";
 import { getDefaultApexifyRuntimeConfig } from "../runtime/config";
 import { ApexifyInputError } from "../runtime/errors";
 import { assertCanvasResourceLimits, assertWithinLimit } from "../runtime/limits";
@@ -10,6 +10,30 @@ import {
 const ALIGN = ["left", "center", "right", "start", "end"] as const;
 const BASELINE = ["alphabetic", "bottom", "hanging", "ideographic", "middle", "top"] as const;
 const CURVE_MODE = ["fit", "clamp", "override"] as const;
+const FONT_STYLE = ["normal", "italic", "oblique"] as const;
+const FONT_WEIGHT = ["normal", "bold", "bolder", "lighter"] as const;
+const STROKE_STYLE = ["solid", "dashed", "dotted", "groove", "ridge", "double"] as const;
+
+function validatePerspective(value: TextPerspectiveOptions | undefined, name: string): void {
+  if (value === undefined) return;
+  assertRecord(value, name);
+  if (!Array.isArray(value.points) || value.points.length !== 4) {
+    throw new ApexifyInputError(`${name}.points must contain exactly 4 destination corners.`);
+  }
+  value.points.forEach((point, index) => {
+    assertRecord(point, `${name}.points[${index}]`);
+    assertFiniteNumber(point.x, `${name}.points[${index}].x`);
+    assertFiniteNumber(point.y, `${name}.points[${index}].y`);
+  });
+  assertOptionalEnum(value.interpolation, `${name}.interpolation`, ["nearest", "bilinear", "bicubic"] as const);
+  assertOptionalEnum(value.edgeMode, `${name}.edgeMode`, ["transparent", "clamp", "wrap", "mirror"] as const);
+}
+
+function validateSkew(value: unknown, name: string): void {
+  if (value === undefined) return;
+  assertFiniteNumber(value, name);
+  if (Math.abs(value) >= 90) throw new ApexifyInputError(`${name} must be strictly between -90 and 90 degrees.`);
+}
 
 function validateLineDecoration(value: unknown, name: string): void {
   if (value === undefined || typeof value === "boolean") return;
@@ -27,6 +51,24 @@ export function validateTextProperties(textProps: TextProperties, index?: number
   assertWithinLimit("maxTextLength", textProps.text.length);
   assertFiniteNumber(textProps.x, `${name}.x`);
   assertFiniteNumber(textProps.y, `${name}.y`);
+  if (textProps.font !== undefined) {
+    assertRecord(textProps.font, `${name}.font`);
+    for (const [key, value] of [
+      ["family", textProps.font.family],
+      ["name", textProps.font.name],
+      ["path", textProps.font.path],
+    ] as const) {
+      if (value !== undefined && (typeof value !== "string" || value.trim().length === 0 || value.includes("\0"))) {
+        throw new ApexifyInputError(`${name}.font.${key} must be a non-empty string without NUL bytes.`);
+      }
+    }
+    if (typeof textProps.font.weight === "number") {
+      assertFiniteNumber(textProps.font.weight, `${name}.font.weight`, { min: 100, max: 900, integer: true });
+    } else {
+      assertOptionalEnum(textProps.font.weight, `${name}.font.weight`, FONT_WEIGHT);
+    }
+    assertOptionalEnum(textProps.font.style, `${name}.font.style`, FONT_STYLE);
+  }
   const fontSize = textProps.font?.size ?? textProps.fontSize;
   assertOptionalFiniteNumber(fontSize, `${name}.fontSize`, { min: 0, exclusiveMin: true });
   if (typeof fontSize === "number") assertWithinLimit("maxCanvasDimension", fontSize);
@@ -51,6 +93,11 @@ export function validateTextProperties(textProps: TextProperties, index?: number
   assertOptionalEnum(placement?.textAlign ?? textProps.textAlign, `${name}.textAlign`, ALIGN);
   assertOptionalEnum(placement?.textBaseline ?? textProps.textBaseline, `${name}.textBaseline`, BASELINE);
   assertOptionalFiniteNumber(placement?.rotation ?? textProps.rotation, `${name}.rotation`);
+  assertOptionalFiniteNumber(placement?.scaleX ?? textProps.scaleX, `${name}.scaleX`);
+  assertOptionalFiniteNumber(placement?.scaleY ?? textProps.scaleY, `${name}.scaleY`);
+  validateSkew(placement?.skewX ?? textProps.skewX, `${name}.skewX`);
+  validateSkew(placement?.skewY ?? textProps.skewY, `${name}.skewY`);
+  validatePerspective(placement?.perspective, `${name}.placement.perspective`);
 
   const fill = textProps.fill;
   if (fill !== undefined) assertRecord(fill, `${name}.fill`);
@@ -87,6 +134,7 @@ export function validateTextProperties(textProps: TextProperties, index?: number
     assertOptionalFiniteNumber(textProps.stroke.width, `${name}.stroke.width`, { min: 0 });
     assertOpacity(textProps.stroke.opacity, `${name}.stroke.opacity`);
     assertGradient(textProps.stroke.gradient, `${name}.stroke.gradient`);
+    assertOptionalEnum(textProps.stroke.style, `${name}.stroke.style`, STROKE_STYLE);
   }
 
   const dec = textProps.decorations;
@@ -98,10 +146,23 @@ export function validateTextProperties(textProps: TextProperties, index?: number
     const curve = textProps.textOnCurve;
     assertRecord(curve, `${name}.textOnCurve`);
     assertFiniteNumber(curve.sweepAngle, `${name}.textOnCurve.sweepAngle`, { min: 0, exclusiveMin: true, max: 360 });
+    if (curve.sweepAngle >= 360) {
+      throw new ApexifyInputError(`${name}.textOnCurve.sweepAngle must be < 360.`);
+    }
     assertOptionalFiniteNumber(curve.radius, `${name}.textOnCurve.radius`, { min: 0, exclusiveMin: true });
+    if (curve.up !== undefined && typeof curve.up !== "boolean") {
+      throw new ApexifyInputError(`${name}.textOnCurve.up must be a boolean.`);
+    }
     assertOptionalEnum(curve.layoutMode, `${name}.textOnCurve.layoutMode`, CURVE_MODE);
     assertOptionalFiniteNumber(curve.baselineOffset, `${name}.textOnCurve.baselineOffset`);
     assertOptionalFiniteNumber(curve.startAngleDeg, `${name}.textOnCurve.startAngleDeg`);
+  }
+
+  if (textProps.isBold !== undefined && typeof textProps.isBold !== "boolean") {
+    throw new ApexifyInputError(`${name}.isBold must be a boolean.`);
+  }
+  if (textProps.outlined !== undefined && typeof textProps.outlined !== "boolean") {
+    throw new ApexifyInputError(`${name}.outlined must be a boolean.`);
   }
 
   if (textProps.measurementCanvas !== undefined) {
@@ -130,4 +191,31 @@ export function validateTextInput(texts: TextProperties | TextProperties[]): Tex
 
 export function getTextValidationDefaults(): { maxTextLength: number } {
   return { maxTextLength: getDefaultApexifyRuntimeConfig().limits.maxTextLength };
+}
+
+
+export function validateCreateTextOptions(options: CreateTextOptions | undefined): void {
+  if (options === undefined) return;
+  assertRecord(options, "createText.options");
+  if (options.isGrouped !== undefined && typeof options.isGrouped !== "boolean") {
+    throw new ApexifyInputError("createText.options.isGrouped must be a boolean.");
+  }
+  const group = options.groupTransform;
+  if (group === undefined) return;
+  assertRecord(group, "createText.options.groupTransform");
+  for (const [key, value] of [
+    ["rotation", group.rotation],
+    ["translateX", group.translateX],
+    ["translateY", group.translateY],
+    ["scaleX", group.scaleX],
+    ["scaleY", group.scaleY],
+    ["pivotX", group.pivotX],
+    ["pivotY", group.pivotY],
+  ] as const) {
+    assertOptionalFiniteNumber(value, `createText.options.groupTransform.${key}`);
+  }
+  validateSkew(group.skewX, "createText.options.groupTransform.skewX");
+  validateSkew(group.skewY, "createText.options.groupTransform.skewY");
+  assertOpacity(group.opacity, "createText.options.groupTransform.opacity");
+  validatePerspective(group.perspective, "createText.options.groupTransform.perspective");
 }

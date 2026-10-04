@@ -6,6 +6,7 @@ import { curvedArcBoundingChord, resolveArcRadiusAndSweep } from "./text-curved"
 import {
   computeWrappedTextLines,
   registerTextFontFromPath,
+  resolveTextFontIdentity,
   resolveTextFontSize,
   resolveTextLineHeight,
   setupTextAlignment,
@@ -67,9 +68,8 @@ export class TextMetricsCreator {
       const lay = resolveTextLayout(textProps);
       const fontSize = resolveTextFontSize(textProps);
       const lineHeight = resolveTextLineHeight(textProps);
-      const fontPath = textProps.font?.path ?? textProps.fontPath;
-      const fontName = textProps.font?.name ?? textProps.fontName;
-      if (fontPath) await registerTextFontFromPath(fontPath, fontName ?? "customFont");
+      const identity = resolveTextFontIdentity(textProps);
+      if (identity.path) await registerTextFontFromPath(identity.path, identity.family);
 
       // Native text metrics are independent of surface dimensions. A 1000x500+ temporary
       // canvas was previously allocated for ordinary measurements even though no pixels are
@@ -81,7 +81,10 @@ export class TextMetricsCreator {
       setupTextFont(ctx, textProps);
       setupTextAlignment(ctx, textProps);
 
-      const wrapped = lay.maxWidth !== undefined ? computeWrappedTextLines(ctx, textProps) : textProps.text.split("\n");
+      const wrapped =
+        lay.maxWidth !== undefined || lay.maxHeight !== undefined
+          ? computeWrappedTextLines(ctx, textProps)
+          : textProps.text.split("\n");
       const lines = wrapped.length > 0 ? wrapped : [""];
       const lineNative = lines.map((line) => ctx.measureText(line));
       const lineFields = lineNative.map((metric) => metricFields(metric, fontSize, lineHeight));
@@ -118,15 +121,26 @@ export class TextMetricsCreator {
         metrics.charPositions = charPositions;
       }
 
-      if (textProps.textOnCurve && lines.length === 1) {
+      if (textProps.textOnCurve) {
         const curve = textProps.textOnCurve;
         const sweepRad = (curve.sweepAngle * Math.PI) / 180;
-        const { R, sweepRad: effectiveSweep } = resolveArcRadiusAndSweep(metrics.width, sweepRad, curve.radius, curve.layoutMode);
-        const { chord, sagitta } = curvedArcBoundingChord(effectiveSweep, R);
-        metrics.width = chord;
-        metrics.height = firstFields.height + sagitta;
+        let curvedWidth = 0;
+        let maxSagitta = 0;
+        for (const lineMetric of lineNative) {
+          const { R, sweepRad: effectiveSweep } = resolveArcRadiusAndSweep(
+            lineMetric.width,
+            sweepRad,
+            curve.radius,
+            curve.layoutMode
+          );
+          const { chord, sagitta } = curvedArcBoundingChord(effectiveSweep, R);
+          curvedWidth = Math.max(curvedWidth, chord);
+          maxSagitta = Math.max(maxSagitta, sagitta);
+        }
+        metrics.width = curvedWidth;
+        metrics.height = Math.max(firstFields.height + maxSagitta, lines.length * lineHeight + maxSagitta);
         metrics.totalHeight = metrics.height;
-        metrics.centerX = chord / 2;
+        metrics.centerX = curvedWidth / 2;
         metrics.centerY = metrics.height / 2;
       }
 
