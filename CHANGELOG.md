@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `layout.maxHeight` now limits ordinary multiline text even without `maxWidth`; curved text consumes wrapped/max-height lines; a 360° sweep is rejected instead of silently falling back to straight text.
 - Text gradients now honor explicit linear endpoints plus shared rotate/pivot geometry for linear/radial/conic paint; stroke style is runtime-enum validated.
 - Added per-text scale/skew and raster corner-pin perspective, plus grouped text translation/rotation/scale/skew/opacity/blend/perspective through `CreateTextOptions`.
-- Existing `createText(texts, canvas, { resolveAssetRefs })` calls remain source-compatible; advanced text options use a discriminated third argument with optional fourth painter options.
+- Existing `createText(texts, canvas, { resolveAssetRefs })` calls remain source-compatible; explicit overloads now also make `createText(texts, canvas, options, painterOptions)` unambiguous even when `options` is `{}`.
+- Hardened text validation for nested/legacy boolean flags, legacy font aliases, paint/effect/stroke/decoration colors, group blend modes, and one-dimensional `measurementCanvas` resource budgets.
 - Scene text layers can opt into the same `CreateTextOptions`, keeping scene and imperative rendering semantics aligned.
 
 ### Advanced image warping
