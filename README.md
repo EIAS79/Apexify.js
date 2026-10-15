@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Apexify.js — Build visual systems from code](https://raw.githubusercontent.com/EIAS79/Apexify.js-Documentation/main/public/brand/apexify-banner.png)
+![Apexify.js — Every frame. Yours to create.](https://raw.githubusercontent.com/EIAS79/Apexify.js/main/brand/apexify-npm-banner.jpg)
 
 **Programmatic graphics and media generation for Node.js.**
 
