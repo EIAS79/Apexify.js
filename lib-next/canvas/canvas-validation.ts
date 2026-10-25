@@ -79,6 +79,19 @@ function validateFilters(filters: unknown, name: string): void {
   for (let i = 0; i < filters.length; i++) {
     assertRecord(filters[i], `${name}[${i}]`);
     assertFiniteNumericLeaves(filters[i], `${name}[${i}]`);
+    const f = filters[i] as { type?: string; radius?: unknown; intensity?: unknown };
+    if (f.radius !== undefined) {
+      if (f.type !== "gaussianBlur") {
+        throw new ApexifyInputError(`${name}[${i}].radius is supported only for gaussianBlur.`);
+      }
+      assertFiniteNumber(f.radius, `${name}[${i}].radius`, { min: 0, max: 100 });
+      if (f.radius > 0 && f.radius < 0.3) {
+        throw new ApexifyInputError(`${name}[${i}].radius must be 0 or at least 0.3.`);
+      }
+      if (f.intensity !== undefined) {
+        throw new ApexifyInputError(`${name}[${i}] may specify gaussianBlur.radius or intensity, not both.`);
+      }
+    }
   }
 }
 
@@ -176,7 +189,12 @@ export function validateCanvasConfig(canvas: CanvasConfig): void {
     canvas.bgLayers.forEach(validateBackgroundLayer);
   }
   if (canvas.stroke !== undefined) assertFiniteNumericLeaves(canvas.stroke, "canvas.stroke");
-  if (canvas.shadow !== undefined) assertFiniteNumericLeaves(canvas.shadow, "canvas.shadow");
+  if (canvas.shadow !== undefined) {
+    assertFiniteNumericLeaves(canvas.shadow, "canvas.shadow");
+    if (canvas.shadow.borderRadius !== undefined && canvas.shadow.borderRadius !== "circular") {
+      assertFiniteNumber(canvas.shadow.borderRadius, "canvas.shadow.borderRadius", { min: 0 });
+    }
+  }
 }
 
 export function validateInheritedCanvasDimensions(width: number, height: number): void {
@@ -186,3 +204,5 @@ export function validateInheritedCanvasDimensions(width: number, height: number)
 export function validateBackgroundLayerCount(count: number): void {
   assertWithinLimit("maxBackgroundLayers", count);
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

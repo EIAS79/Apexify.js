@@ -1,5 +1,5 @@
 import { createCanvas, SKRSContext2D } from '@napi-rs/canvas';
-import type { PatternOptions, PatternViewport, RenderPatternStackOptions } from "../types";
+import type { PatternOptions, PatternViewport, RenderPatternStackOptions, gradient } from "../types";
 import { validatePatternOptions } from "./canvas-validation";
 import { loadImageCached } from "../image/image-properties";
 import { emitDiagnostic } from "../runtime/diagnostics";
@@ -52,6 +52,21 @@ export class EnhancedPatternRenderer {
 
     layerCtx.save();
     try {
+      // Procedural patterns already paint across the entire viewport.
+      // Restrict the secondary axis for one-axis repeat, or both for
+      // no-repeat. The existing default repeat path stays unchanged.
+      if (geometryOptions.type !== "custom" && geometryOptions.repeat !== undefined && geometryOptions.repeat !== "repeat") {
+        const size = geometryOptions.size ?? 20;
+        const spacing = geometryOptions.spacing ?? 10;
+        const period = Math.min(Math.max(size + spacing, 1), Math.max(cw, ch));
+        const clipWidth = geometryOptions.repeat === "repeat-y" || geometryOptions.repeat === "no-repeat"
+          ? Math.min(cw, period) : cw;
+        const clipHeight = geometryOptions.repeat === "repeat-x" || geometryOptions.repeat === "no-repeat"
+          ? Math.min(ch, period) : ch;
+        layerCtx.beginPath();
+        layerCtx.rect(0, 0, clipWidth, clipHeight);
+        layerCtx.clip();
+      }
       if (geometryOptions.offsetX !== undefined || geometryOptions.offsetY !== undefined) {
         layerCtx.translate(geometryOptions.offsetX ?? 0, geometryOptions.offsetY ?? 0);
       }
@@ -131,9 +146,16 @@ export class EnhancedPatternRenderer {
       layerCtx.save();
       try {
         layerCtx.globalCompositeOperation = "source-in";
+        // PatternOptions.gradient uses the separate GradientConfig contract.
+        // Its angle field is a rotation of linear/radial paint geometry and
+        // an additional conic orientation. It must not disappear silently.
+        const pg = patternOptions.gradient;
+        const normalized = pg.type === "conic"
+          ? { ...pg, startAngle: (pg.startAngle ?? 0) + (pg.angle ?? 0) }
+          : { ...pg, rotate: pg.angle ?? 0 };
         layerCtx.fillStyle = createGradientFill(
           layerCtx,
-          patternOptions.gradient,
+          normalized as gradient,
           { x: 0, y: 0, w: cw, h: ch }
         );
         layerCtx.fillRect(0, 0, cw, ch);
@@ -473,3 +495,5 @@ export class EnhancedPatternRenderer {
     ctx.fill();
   }
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

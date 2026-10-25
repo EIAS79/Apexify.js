@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+const read=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+const matrix=JSON.parse(read('docs/S20_PINNED_BEHAVIOR_COMPATIBILITY.json'));
+test('S20 exact four public option identifiers, untouched accepted pin and deferred paths',()=>{
+ assert.equal(matrix.sourceCommit,'379a5248f09ed39c1b1734fe104b6bd73a77857f');
+ assert.equal(matrix.s19Preserved,'3bca54de95e578face6cfd7af8c57ea422b384b6');
+ assert.equal(matrix.s18Preserved,'472ee4e598091139f2191619ad517ac6338b3b5a');
+ assert.equal(matrix.workspaceStrictFullCountUnchanged,167);
+ assert.equal(matrix.workspaceRePinned,false);
+ const expected=['canvas.patternBg.repeat','canvas.bgLayers.pattern.repeat','canvas.shadow.borderRadius','canvas.shadow.borderPosition'];
+ assert.deepEqual(matrix.record.map((r:any)=>r.path),expected);
+ assert.ok(matrix.record.every((r:any)=>r.source&&r.old&&r.proposed&&r.default&&r.validation&&r.security&&r.regression&&r.consumerRisk&&r.decision));
+ assert.equal(matrix.record.filter((r:any)=>r.decision==='OWNER_ACCEPT_REPEAT_CONTRACT').length,2);
+ assert.equal(matrix.record.filter((r:any)=>r.decision==='OWNER_ACCEPT_SHADOW_OVERRIDE_PRECEDENCE').length,1);
+ assert.equal(matrix.record.filter((r:any)=>r.decision==='OWNER_ACCEPT_DEPRECATED_ALIAS_FALLBACK').length,1);
+});
+test('S20 only opted-in source functions and validation, no S19 speculative angle adapter',()=>{
+ const pattern=read('lib-next/canvas/pattern-renderer.ts');
+ const shadow=read('lib-next/render/shadow-renderer.ts');
+ const validation=read('lib-next/canvas/canvas-validation.ts');
+ assert.ok(pattern.includes('geometryOptions.repeat !== "repeat"'));
+ assert.ok(pattern.includes('layerCtx.rect(0, 0, clipWidth, clipHeight)'));
+ assert.ok(pattern.includes('patternOptions.gradient,'));
+ assert.ok(!pattern.includes('const effectiveGradient'));
+ assert.ok(!pattern.includes('const angle = paint.angle'));
+ assert.ok(!pattern.includes('startAngle: paint.startAngle ?? angle'));
+ assert.ok(shadow.includes('radius = shadow?.borderRadius ?? (f as number | "circular") ?? 0'));
+ assert.ok(shadow.includes('borderPos = shadow?.roundedCorners ?? shadow?.borderPosition ?? (g as borderPosition | undefined) ?? "all"'));
+ assert.ok(validation.includes('assertFiniteNumber(canvas.shadow.borderRadius, "canvas.shadow.borderRadius", { min: 0 });'));
+});
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

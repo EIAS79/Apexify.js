@@ -29,8 +29,8 @@ export function applyShadow(
   } else {
     shadow = a as ShadowOptions | undefined;
     rect = { x: b as number, y: c as number, w: d as number, h: e as number };
-    radius = (f as number | "circular") ?? shadow?.borderRadius ?? 0;
-    borderPos = shadow?.roundedCorners ?? (g as borderPosition | undefined) ?? shadow?.borderPosition ?? "all";
+    radius = shadow?.borderRadius ?? (f as number | "circular") ?? 0;
+    borderPos = shadow?.roundedCorners ?? shadow?.borderPosition ?? (g as borderPosition | undefined) ?? "all";
   }
 
   if (!shadow) return;
@@ -67,3 +67,5 @@ export function applyShadow(
   ctx.globalAlpha = 1;
   ctx.restore();
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

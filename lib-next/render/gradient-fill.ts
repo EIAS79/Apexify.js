@@ -1,6 +1,7 @@
-import type { SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import type { gradient as GradientType } from "../types";
 import { ApexifyInputError } from "../runtime/errors";
+import { assertCanvasResourceLimits } from "../runtime/limits";
 import { createRepeatingGradientPattern } from "./repeating-gradient-pattern";
 
 function rotatePoint(x: number, y: number, px: number, py: number, deg = 0): [number, number] {
@@ -108,11 +109,35 @@ export function createGradientFill(
     } = g;
 
     const [cx, cy] = rotatePoint(centerX, centerY, pivotX, pivotY, conicRotate);
-    const angleRad = ((startAngle + conicRotate) * Math.PI) / 180;
-    const grad = ctx.createConicGradient(angleRad, x + cx, y + cy);
+    // napi-rs/skia currently ignores createConicGradient(startAngle, ...).
+    // A direct native gradient is retained for the zero-angle compatibility path.
+    // Nonzero angular orientation is materialized into a bounded paint surface,
+    // then returned as a CanvasPattern so stroke/shadow/pattern paints share it.
+    const angleDeg = ((startAngle % 360) + (conicRotate % 360)) % 360;
+    if (angleDeg === 0) {
+      const grad = ctx.createConicGradient(0, x + cx, y + cy);
+      addStops(grad, colors);
+      return grad;
+    }
+
+    const surfaceWidth = ctx.canvas.width;
+    const surfaceHeight = ctx.canvas.height;
+    assertCanvasResourceLimits(surfaceWidth, surfaceHeight);
+    const surface = createCanvas(surfaceWidth, surfaceHeight);
+    const surfaceCtx = surface.getContext("2d") as SKRSContext2D;
+    surfaceCtx.translate(x + cx, y + cy);
+    surfaceCtx.rotate((angleDeg * Math.PI) / 180);
+    const grad = surfaceCtx.createConicGradient(0, 0, 0);
     addStops(grad, colors);
-    return grad;
+    surfaceCtx.fillStyle = grad;
+    const span = Math.max(1, Math.ceil(Math.hypot(surfaceWidth, surfaceHeight) * 2));
+    surfaceCtx.fillRect(-span, -span, span * 2, span * 2);
+    const pattern = ctx.createPattern(surface, "no-repeat");
+    if (!pattern) throw new ApexifyInputError("Failed to materialize angled conic gradient.");
+    return pattern;
   }
 
   throw new ApexifyInputError(`Unsupported gradient type ${(g as { type?: string }).type ?? "unknown"}.`);
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

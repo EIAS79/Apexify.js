@@ -2,7 +2,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { resolveTextLayout, type TextProperties, type TextMetrics } from "../types";
 import { getCanvasContext } from "../core/errors";
 import { ApexifyDecodeError, ApexifyError } from "../runtime/errors";
-import { computeCircularArcPlacements } from "./text-curved";
+import { curvedArcBoundingChord, resolveArcRadiusAndSweep } from "./text-curved";
 import {
   computeWrappedTextLines,
   registerTextFontFromPath,
@@ -123,39 +123,24 @@ export class TextMetricsCreator {
 
       if (textProps.textOnCurve) {
         const curve = textProps.textOnCurve;
-        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-          const placements = computeCircularArcPlacements(
-            ctx, lines[lineIndex]!, 0, lineIndex * lineHeight, {
-              sweepDegrees: curve.sweepAngle,
-              radius: curve.radius,
-              up: curve.up !== false,
-              layoutMode: curve.layoutMode,
-              baselineOffset: curve.baselineOffset,
-              startAngleDeg: curve.startAngleDeg,
-            }
+        const sweepRad = (curve.sweepAngle * Math.PI) / 180;
+        let curvedWidth = 0;
+        let maxSagitta = 0;
+        for (const lineMetric of lineNative) {
+          const { R, sweepRad: effectiveSweep } = resolveArcRadiusAndSweep(
+            lineMetric.width,
+            sweepRad,
+            curve.radius,
+            curve.layoutMode
           );
-          for (const glyph of placements ?? []) {
-            const glyphMetrics = ctx.measureText(glyph.grapheme);
-            const halfWidth = Math.max(0, glyphMetrics.width / 2);
-            const halfHeight = Math.max(fontSize / 2,
-              (glyphMetrics.actualBoundingBoxAscent + glyphMetrics.actualBoundingBoxDescent) / 2);
-            const c = Math.abs(Math.cos(glyph.rotationRad));
-            const s = Math.abs(Math.sin(glyph.rotationRad));
-            const dx = halfWidth * c + halfHeight * s;
-            const dy = halfWidth * s + halfHeight * c;
-            left = Math.min(left, glyph.x - dx);
-            right = Math.max(right, glyph.x + dx);
-            top = Math.min(top, glyph.y - dy);
-            bottom = Math.max(bottom, glyph.y + dy);
-          }
+          const { chord, sagitta } = curvedArcBoundingChord(effectiveSweep, R);
+          curvedWidth = Math.max(curvedWidth, chord);
+          maxSagitta = Math.max(maxSagitta, sagitta);
         }
-        // Empty lines still occupy their authored line-height; no glyph has
-        // an ink box, so preserve the ordinary line metrics as a fallback.
-        metrics.width = Number.isFinite(left) ? right - left : widest;
-        metrics.height = Number.isFinite(top) ? bottom - top : lines.length * lineHeight;
+        metrics.width = curvedWidth;
+        metrics.height = Math.max(firstFields.height + maxSagitta, lines.length * lineHeight + maxSagitta);
         metrics.totalHeight = metrics.height;
-        metrics.centerX = metrics.width / 2;
+        metrics.centerX = curvedWidth / 2;
         metrics.centerY = metrics.height / 2;
       }
 
@@ -168,3 +153,5 @@ export class TextMetricsCreator {
 }
 
 export { TextMetricsCreator as TextMetricsService };
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

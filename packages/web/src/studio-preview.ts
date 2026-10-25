@@ -1616,20 +1616,14 @@ function drawCurvedPreviewText(
   const drawRadius = radius + baselineOffset;
   const startExtra = (numberOf(curve.startAngleDeg, 0) * Math.PI) / 180;
   const centerY = up ? radius : -radius;
-  const cosStart = Math.cos(startExtra);
-  const sinStart = Math.sin(startExtra);
 
   units.forEach((unit, index) => {
     const t = centers[index]! / width;
-    const baseAngle = up
-      ? -Math.PI / 2 - sweep / 2 + t * sweep
-      : Math.PI / 2 + sweep / 2 - t * sweep;
-    const dx = drawRadius * Math.cos(baseAngle);
-    const dy = centerY + drawRadius * Math.sin(baseAngle);
-    // Rotate around (0,0), the text anchor, not the circle's remote center.
-    const px = dx * cosStart - dy * sinStart;
-    const py = dx * sinStart + dy * cosStart;
-    const angle = baseAngle + startExtra;
+    const angle = up
+      ? startExtra - Math.PI / 2 - sweep / 2 + t * sweep
+      : startExtra + Math.PI / 2 + sweep / 2 - t * sweep;
+    const px = drawRadius * Math.cos(angle);
+    const py = centerY + drawRadius * Math.sin(angle);
     const rotation = up
       ? angle + Math.PI / 2
       : Math.atan2(-Math.cos(angle), Math.sin(angle));
@@ -1694,12 +1688,8 @@ function applyText(ctx: CanvasRenderingContext2D, value: Jsonish) {
         stringOf(font.family, stringOf(item.fontFamily, 'Arial')),
       ),
     );
-    const bold = boolOf(decorations.bold, boolOf(item.bold, boolOf(item.isBold, false)));
+    const bold = boolOf(decorations.bold, boolOf(item.bold, false));
     const italic = boolOf(decorations.italic, boolOf(item.italic, false));
-    const weight = typeof font.weight === 'number' || typeof font.weight === 'string'
-      ? String(font.weight) : (bold ? 'bold' : 'normal');
-    const style = font.style === 'oblique' || font.style === 'italic' || font.style === 'normal'
-      ? font.style : (italic ? 'italic' : 'normal');
     const x = numberOf(item.x, 0);
     const y = numberOf(item.y, 0);
     const rotation =
@@ -1721,7 +1711,7 @@ function applyText(ctx: CanvasRenderingContext2D, value: Jsonish) {
     ctx.globalAlpha = opacity;
     ctx.translate(x, y);
     if (rotation) ctx.rotate(rotation);
-    ctx.font = `${style} ${weight} ${size}px "${family}"`;
+    ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px "${family}"`;
     if ('letterSpacing' in ctx) {
       (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
         numberOf(layout.letterSpacing, numberOf(item.letterSpacing, 0)) + 'px';
@@ -4299,3 +4289,5 @@ export async function renderApexifyWebPreview(
     };
   }
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

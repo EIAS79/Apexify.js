@@ -134,22 +134,17 @@ export function computeCircularArcPlacements(
   const Rdraw = R + δ;
   const startExtra = ((options.startAngleDeg ?? 0) * Math.PI) / 180;
 
-  // The public anchor is the middle of the *unrotated* arc. Rotate the
-  // entire curve around that anchor, not its remote circle center; otherwise
-  // startAngleDeg moves the midpoint by up to 2R pixels.
-  const centerY = up ? R : -R;
-  const cosStart = Math.cos(startExtra);
-  const sinStart = Math.sin(startExtra);
+  const cx = anchorX;
+  const cy = up ? anchorY + R : anchorY - R;
 
   const placements: GlyphArcPlacement[] = [];
   for (let i = 0; i < graphemes.length; i++) {
     const t = centers[i]! / denom;
-    const baseAngle = up ? -Math.PI / 2 - θ / 2 + t * θ : Math.PI / 2 + θ / 2 - t * θ;
-    const dx = Rdraw * Math.cos(baseAngle);
-    const dy = centerY + Rdraw * Math.sin(baseAngle);
-    const px = anchorX + dx * cosStart - dy * sinStart;
-    const py = anchorY + dx * sinStart + dy * cosStart;
-    const rotationRad = glyphRotationOnCircle(baseAngle + startExtra, up);
+    const α = up ? startExtra - Math.PI / 2 - θ / 2 + t * θ : startExtra + Math.PI / 2 + θ / 2 - t * θ;
+
+    const px = cx + Rdraw * Math.cos(α);
+    const py = cy + Rdraw * Math.sin(α);
+    const rotationRad = glyphRotationOnCircle(α, up);
     placements.push({
       grapheme: graphemes[i]!,
       x: px,
@@ -162,3 +157,5 @@ export function computeCircularArcPlacements(
 
   return placements;
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

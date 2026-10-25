@@ -1,0 +1,93 @@
+{
+  "sourceCommit": "379a5248f09ed39c1b1734fe104b6bd73a77857f",
+  "s19Preserved": "3bca54de95e578face6cfd7af8c57ea422b384b6",
+  "s18Preserved": "472ee4e598091139f2191619ad517ac6338b3b5a",
+  "branch": "codex/createcanvas-safe-subset-s20",
+  "candidateOnly": true,
+  "workspaceRePinned": false,
+  "workspaceStrictFullCountUnchanged": 167,
+  "nativeTests": "tests/canvas-s20-safe-subset.test.ts",
+  "evidenceDirectory": "D:\\ApexifyCanvasS15IntegrationAudit_764cd972_20261022\\S20_SAFE_SUBSET",
+  "intentionalExcluded": [
+    "canvas.patternBg.gradient.angle",
+    "canvas.bgLayers.pattern.gradient.angle",
+    "conic fallback to startAngle",
+    "videoBg",
+    "customBg.filters.radius"
+  ],
+  "affectedSourceFiles": [
+    "lib-next/canvas/pattern-renderer.ts",
+    "lib-next/render/shadow-renderer.ts",
+    "lib-next/canvas/canvas-validation.ts"
+  ],
+  "record": [
+    {
+      "path": "canvas.patternBg.repeat",
+      "declaration": "lib-next/types/pattern.ts PatternOptions.repeat",
+      "source": "lib-next/canvas/pattern-renderer.ts",
+      "old": "Explicit directional/no-repeat ignored for procedural patterns; default repeat",
+      "proposed": "repeat remains full viewport; repeat-x clips vertical axis, repeat-y horizontal, no-repeat both to one size+spacing period bounded by viewport",
+      "default": "Omitted equals repeat, same pinned raw pixel output",
+      "validation": "Existing repeat,repeat-x,repeat-y,no-repeat enum; size/spacing numeric bounds",
+      "security": "No new input/decoder/network. Existing viewport clamp.",
+      "regression": "96 native modes across 12 patterns in root/layer; pinned no-repeat golden; native Chart background",
+      "consumerRisk": "Chart background shares EnhancedPatternRenderer; explicit no-repeat modes intentionally change pixels",
+      "decision": "OWNER_ACCEPT_REPEAT_CONTRACT"
+    },
+    {
+      "path": "canvas.bgLayers.pattern.repeat",
+      "declaration": "lib-next/types/pattern.ts PatternOptions.repeat nested in presetPattern",
+      "source": "lib-next/canvas/pattern-renderer.ts",
+      "old": "Ordered-layer preset pattern repeat modes stored but native ignored",
+      "proposed": "Same bounded clip in ordered layer; root/background layer semantics unchanged otherwise",
+      "default": "Absent repeat exact pin, identity/order retained",
+      "validation": "Same existing enum; typed presetPattern layer validation",
+      "security": "No changed image pattern or asset source",
+      "regression": "12 layer types x 4 raster modes, omitted repeat pixel equality",
+      "consumerRisk": "Chart's bgLayers can share this renderer",
+      "decision": "OWNER_ACCEPT_REPEAT_CONTRACT"
+    },
+    {
+      "path": "canvas.shadow.borderRadius",
+      "declaration": "lib-next/types/common.ts ShadowOptions.borderRadius",
+      "source": "lib-next/render/shadow-renderer.ts, lib-next/canvas/canvas-validation.ts",
+      "old": "Owner root radius supplied as overload positional arg masked explicit shadow radius",
+      "proposed": "shadow.borderRadius if provided, else caller radius, else 0",
+      "default": "No explicit shadow radius preserves original inherited raster",
+      "validation": "number finite and >=0, or 'circular'; negatives and NaN rejected",
+      "security": "Finite geometry; no new inputs, assets or arbitrary path",
+      "regression": "Four unique native radius pixels and parent-radius omission pixel equality; Image direct and public image",
+      "consumerRisk": "Image shares helper but first overload source unaffected; explicit previously masked Canvas radius changes pixels",
+      "decision": "OWNER_ACCEPT_SHADOW_OVERRIDE_PRECEDENCE"
+    },
+    {
+      "path": "canvas.shadow.borderPosition",
+      "declaration": "lib-next/types/common.ts ShadowOptions.borderPosition @deprecated",
+      "source": "lib-next/render/shadow-renderer.ts",
+      "old": "Caller/root borderPosition masked explicit legacy shadow alias",
+      "proposed": "roundedCorners first, then shadow.borderPosition, then positional/root borderPosition, then all",
+      "default": "Omitted alias equals original root fallback; alias remains deprecated",
+      "validation": "Original borderPosition enum unchanged",
+      "security": "No new privilege",
+      "regression": "Four distinct corner raster values, precedence pixel checks, Image shared helper",
+      "consumerRisk": "Explicit legacy shadow alias newly effects Canvas; Image existing first overload unchanged",
+      "decision": "OWNER_ACCEPT_DEPRECATED_ALIAS_FALLBACK"
+    }
+  ],
+  "gateResults": {
+    "native": "7/7",
+    "infrastructureSecurityPhase14": "32/32",
+    "golden": "5/5",
+    "publicCompatibility": "exit 0",
+    "build": "exit 0"
+  },
+  "futureGates": [
+    "owner approve exact four-value raster behavior",
+    "isolated Workspace candidate explicit approval",
+    "167 existing FULL regressions",
+    "4 path Inspector Graph Code browser persistence security",
+    "no push merge repin deploy until separately authorized"
+  ]
+}
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

@@ -26,8 +26,13 @@ export async function applyContextImageFilters(
 
     for (const filter of filters) {
       switch (filter.type) {
-        case "gaussianBlur":
-          if ((filter.intensity ?? 0) > 0) image = image.blur(filter.intensity);
+        case "gaussianBlur": {
+          // Preserve ImageFilter legacy precedence when both knobs are specified.
+          // CanvasConfig disallows ambiguous combinations at its own boundary.
+          const sigma = filter.intensity ?? filter.radius ?? 0;
+          if (sigma > 0) image = image.blur(sigma);
+          break;
+        }
           break;
         case "motionBlur":
           if ((filter.intensity ?? 0) > 0) image = image.convolve(createMotionBlurKernel(filter.intensity!, filter.angle ?? 0));
@@ -137,7 +142,16 @@ function validateFilter(filter: ImageFilter, name: string, width: number, height
   };
 
   switch (filter.type) {
-    case "gaussianBlur": finite(filter.intensity, "intensity", 0, 100); break;
+    case "gaussianBlur":
+      finite(filter.intensity, "intensity", 0, 100);
+      finite(filter.radius, "radius", 0, 100);
+      // ImageFilter may carry legacy radius + intensity together; intensity wins.
+      // The strict CanvasConfig entrypoint separately rejects that combination.
+      if (filter.radius !== undefined && filter.intensity === undefined &&
+          filter.radius > 0 && filter.radius < 0.3) {
+        throw new ApexifyInputError(`${name}.radius must be 0 or at least 0.3.`);
+      }
+      break;
     case "motionBlur":
       finite(filter.intensity, "intensity", 0, 101);
       finite(filter.angle, "angle", -3600, 3600);
@@ -388,3 +402,5 @@ function createEmbossKernel(intensity: number) {
   const kernel = [-2, -1, 0, -1, 1, 1, 0, 1, 2].map((value) => value * intensity);
   return { width: 3, height: 3, kernel, scale: 1, offset: 128 };
 }
+
+[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]
