@@ -204,5 +204,3 @@ export function validateInheritedCanvasDimensions(width: number, height: number)
 export function validateBackgroundLayerCount(count: number): void {
   assertWithinLimit("maxBackgroundLayers", count);
 }
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

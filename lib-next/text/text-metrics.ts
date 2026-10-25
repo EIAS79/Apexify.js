@@ -153,5 +153,3 @@ export class TextMetricsCreator {
 }
 
 export { TextMetricsCreator as TextMetricsService };
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

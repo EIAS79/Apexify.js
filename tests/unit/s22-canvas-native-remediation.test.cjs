@@ -76,5 +76,3 @@ test('S22 customBg radius fails closed for wrong discriminant, conflict, or inva
   await assert.rejects(async()=>painter.createCanvas({width:W,height:H,customBg:{source:src,filters:[bad]}}));
  }
 });
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

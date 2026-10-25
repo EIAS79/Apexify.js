@@ -402,5 +402,3 @@ function createEmbossKernel(intensity: number) {
   const kernel = [-2, -1, 0, -1, 1, 1, 0, 1, 2].map((value) => value * intensity);
   return { width: 3, height: 3, kernel, scale: 1, offset: 128 };
 }
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

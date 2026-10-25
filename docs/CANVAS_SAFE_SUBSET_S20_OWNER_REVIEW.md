@@ -57,5 +57,3 @@ This candidate is review-ready but NOT authorized to be installed:
 5. Require separate owner authorization for merge, remote push, engine repin or deployment. Video security RFC and other native defects remain independent. Production G09 NO-GO persists.
 
 No claim of complete 208-path FULL certification or production readiness is made.
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

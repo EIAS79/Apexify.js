@@ -127,5 +127,3 @@ test('S20 excluded gradient-angle adapter: pinned linear/radial pattern angle re
  }
  console.log('S20_EXCLUDED_GRADIENT_ANGLE_FAMILIES=4_UNCHANGED');
 });
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]

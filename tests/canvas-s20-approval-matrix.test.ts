@@ -31,5 +31,3 @@ test('S20 only opted-in source functions and validation, no S19 speculative angl
  assert.ok(shadow.includes('borderPos = shadow?.roundedCorners ?? shadow?.borderPosition ?? (g as borderPosition | undefined) ?? "all"'));
  assert.ok(validation.includes('assertFiniteNumber(canvas.shadow.borderRadius, "canvas.shadow.borderRadius", { min: 0 });'));
 });
-
-[executed on device: Our-CS (72b6c90b-0420-4c82-9bc1-b52b86b50160)]
